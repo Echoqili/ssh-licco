@@ -1,32 +1,23 @@
 {
-  "$schema": "https://github.com/modelcontextprotocol/registry/blob/main/pkg/model/v0/server.go",
-  "schema_version": "v1",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.github.Echoqili/ssh-licco",
-  "name_for_model": "SSH Server",
-  "name_for_human": "SSH LICCO",
-  "description": "SSH MCP Server - Connect to SSH servers and execute commands via AI assistants.",
-  "description_for_model": "Enables SSH connections to remote servers for command execution and key management.",
-  "description_for_human": "SSH MCP Server - Connect to SSH servers via AI assistants.",
-  "owner": "io.github.Echoqili",
-  "homepage": "https://github.com/Echoqili/ssh-licco",
+  "description": "SSH MCP Server - Connect to SSH servers and execute commands via AI assistants",
+  "status": "active",
   "repository": {
     "url": "https://github.com/Echoqili/ssh-licco",
-    "type": "git"
+    "source": "git"
   },
-  "license": "MIT",
-  "keywords": ["ssh", "mcp", "model-context-protocol", "remote-server", "devops"],
-  "mcp_server": {
-    "type": "stdio",
-    "command": "ssh-licco"
-  },
-  "authentication": {
-    "type": "none"
-  },
-  "required_platforms": ["linux", "darwin", "win32"],
-  "installations": {
-    "pip": {
-      "package": "ssh-licco",
-      "require": ["ssh-licco>=0.1.0"]
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registry_type": "pypi",
+      "registry_base_url": "https://pypi.org",
+      "identifier": "ssh-licco",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio",
+        "command": "ssh-licco"
+      }
     }
-  }
+  ]
 }
