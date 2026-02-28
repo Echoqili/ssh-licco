@@ -37,3 +37,7 @@ Thumbs.db
 
 # SSH MCP specific
 *.log
+server.json
+.mcpregistry_*.token
+mcp-publisher.exe
+mcp-publisher.tar.gz
