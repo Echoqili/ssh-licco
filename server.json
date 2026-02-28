@@ -1,17 +1,13 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.github.Echoqili/ssh-licco",
-  "description": "SSH MCP Server - Connect to SSH servers and execute commands via AI assistants",
-  "status": "active",
+  "description": "SSH MCP Server",
   "repository": {
     "url": "https://github.com/Echoqili/ssh-licco",
-    "source": "git"
+    "sourceType": "git"
   },
-  "version": "0.1.0",
   "packages": [
     {
-      "registry_type": "pypi",
-      "registry_base_url": "https://pypi.org",
+      "registryType": "pypi",
       "identifier": "ssh-licco",
       "version": "0.1.0",
       "transport": {
