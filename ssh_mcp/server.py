@@ -324,7 +324,29 @@ class SSHMCPServer:
         if not session:
             return [TextContent(type="text", text=f"Session not found: {args['session_id']}")]
         
-        return [TextContent(type="text", text="File transfer not yet implemented")]
+        direction = args.get("direction", "upload")
+        local_path = args.get("local_path", "")
+        remote_path = args.get("remote_path", "")
+        
+        if direction == "upload":
+            result = await session.upload_file(local_path, remote_path)
+        elif direction == "download":
+            result = await session.download_file(remote_path, local_path)
+        elif direction == "list":
+            result = await session.list_directory(remote_path or ".")
+        else:
+            return [TextContent(type="text", text=f"Unknown direction: {direction}")]
+        
+        if result.get("success"):
+            output = f"✅ {result.get('message', 'Success')}"
+            if "files" in result:
+                output = f"📁 Files in {result.get('path', '.')}:\n"
+                for f in result["files"]:
+                    output += f"  - {f}\n"
+        else:
+            output = f"❌ {result.get('message', 'Failed')}"
+        
+        return [TextContent(type="text", text=output)]
 
     async def _handle_list_hosts(self, args: dict) -> list[TextContent]:
         hosts = self.config_manager.list_hosts()

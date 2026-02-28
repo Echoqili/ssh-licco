@@ -8,7 +8,7 @@ from enum import Enum
 import uuid
 
 import paramiko
-from paramiko import SSHClient, AutoAddPolicy
+from paramiko import SSHClient, AutoAddPolicy, SFTPClient
 
 from .connection_config import ConnectionConfig
 
@@ -159,6 +159,60 @@ class SSHSession:
     def _open_shell_sync(self, term: str, width: int, height: int) -> paramiko.Channel:
         assert self.client is not None
         return self.client.invoke_shell(term=term, width=width, height=height)
+
+    async def upload_file(self, local_path: str, remote_path: str) -> dict:
+        if not self.is_connected:
+            raise ConnectionError("Not connected to SSH server")
+        async with self._lock:
+            return await asyncio.get_event_loop().run_in_executor(
+                None, self._upload_file_sync, local_path, remote_path
+            )
+
+    def _upload_file_sync(self, local_path: str, remote_path: str) -> dict:
+        assert self.client is not None
+        try:
+            sftp = self.client.open_sftp()
+            sftp.put(local_path, remote_path)
+            sftp.close()
+            return {"success": True, "message": f"File uploaded: {local_path} -> {remote_path}", "session_id": self.session_id}
+        except Exception as e:
+            return {"success": False, "message": f"Upload failed: {str(e)}", "session_id": self.session_id}
+
+    async def download_file(self, remote_path: str, local_path: str) -> dict:
+        if not self.is_connected:
+            raise ConnectionError("Not connected to SSH server")
+        async with self._lock:
+            return await asyncio.get_event_loop().run_in_executor(
+                None, self._download_file_sync, remote_path, local_path
+            )
+
+    def _download_file_sync(self, remote_path: str, local_path: str) -> dict:
+        assert self.client is not None
+        try:
+            sftp = self.client.open_sftp()
+            sftp.get(remote_path, local_path)
+            sftp.close()
+            return {"success": True, "message": f"File downloaded: {remote_path} -> {local_path}", "session_id": self.session_id}
+        except Exception as e:
+            return {"success": False, "message": f"Download failed: {str(e)}", "session_id": self.session_id}
+
+    async def list_directory(self, remote_path: str = ".") -> dict:
+        if not self.is_connected:
+            raise ConnectionError("Not connected to SSH server")
+        async with self._lock:
+            return await asyncio.get_event_loop().run_in_executor(
+                None, self._list_directory_sync, remote_path
+            )
+
+    def _list_directory_sync(self, remote_path: str) -> dict:
+        assert self.client is not None
+        try:
+            sftp = self.client.open_sftp()
+            files = sftp.listdir(remote_path)
+            sftp.close()
+            return {"success": True, "files": files, "path": remote_path, "session_id": self.session_id}
+        except Exception as e:
+            return {"success": False, "message": f"List failed: {str(e)}", "session_id": self.session_id}
 
     async def disconnect(self) -> None:
         async with self._lock:
