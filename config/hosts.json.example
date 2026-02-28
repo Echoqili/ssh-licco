@@ -1,11 +1,12 @@
 {
-  "hosts": [
+  "ssh_hosts": [
     {
-      "name": "my-server",
-      "host": "YOUR_SERVER_IP",
+      "name": "我的服务器",
+      "host": "your-server-ip",
       "port": 22,
       "username": "root",
-      "password": "YOUR_PASSWORD"
+      "password": "your-password-here",
+      "timeout": 30
     }
   ]
 }
