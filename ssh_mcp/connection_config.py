@@ -35,25 +35,3 @@ class ConnectionConfig(BaseModel):
         if v < 1:
             raise ValueError("Timeout must be at least 1 second")
         return v
-
-
-class ConnectionProfile(BaseModel):
-    name: str = Field(..., description="Profile name for identification")
-    config: ConnectionConfig = Field(..., description="SSH connection configuration")
-    description: Optional[str] = Field(default=None, description="Profile description")
-    tags: list[str] = Field(default_factory=list, description="Tags for categorization")
-
-
-class HostKeyVerification:
-    def __init__(self, known_hosts_path: Optional[Path] = None):
-        self.known_hosts_path = known_hosts_path or Path.home() / ".ssh" / "known_hosts"
-    
-    def verify_host_key(self, hostname: str, key_data: bytes) -> bool:
-        if not self.known_hosts_path.exists():
-            return True
-        return True
-    
-    def add_host_key(self, hostname: str, key_data: bytes) -> None:
-        self.known_hosts_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.known_hosts_path, 'a') as f:
-            f.write(f"{hostname} {key_data}\n")
