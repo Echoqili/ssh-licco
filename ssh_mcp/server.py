@@ -11,12 +11,12 @@ from mcp.types import Tool, TextContent
 from .connection_config import ConnectionConfig
 from .session_manager import SessionManager, SessionInfo
 from .key_manager import KeyManager
-from .config_manager import ConfigManager, SSHConfig
+from .config_manager import ConfigManager, SSHConfig, SSHHost
 
 
 class SSHMCPServer:
     def __init__(self):
-        self.server = Server("ssh-mcp", "0.1.0")
+        self.server = Server("ssh-licco", "0.1.0")
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
@@ -57,15 +57,23 @@ class SSHMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "host": {"type": "string", "description": "SSH server hostname or IP"},
+                            "host": {"type": "string", "description": "SSH server hostname or IP (or use name to connect via server.json config)"},
                             "port": {"type": "integer", "description": "SSH server port (default: 22)", "default": 22},
                             "username": {"type": "string", "description": "SSH username"},
                             "password": {"type": "string", "description": "SSH password (optional if using key auth)"},
                             "private_key_path": {"type": "string", "description": "Path to private key file"},
                             "passphrase": {"type": "string", "description": "Passphrase for private key"},
                             "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key"},
-                        },
-                        "required": ["host", "username"]
+                            "name": {"type": "string", "description": "Connect using host from server.json by name"}
+                        }
+                    }
+                ),
+                Tool(
+                    name="ssh_list_hosts",
+                    description="List all configured SSH hosts from server.json",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {}
                     }
                 ),
                 Tool(
@@ -148,6 +156,8 @@ class SSHMCPServer:
                     return await self._handle_generate_key(arguments)
                 elif name == "ssh_file_transfer":
                     return await self._handle_file_transfer(arguments)
+                elif name == "ssh_list_hosts":
+                    return await self._handle_list_hosts(arguments)
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
             except Exception as e:
@@ -212,15 +222,32 @@ class SSHMCPServer:
         return [TextContent(type="text", text=output)]
 
     async def _handle_connect(self, args: dict) -> list[TextContent]:
-        config = ConnectionConfig(
-            host=args["host"],
-            port=args.get("port", 22),
-            username=args["username"],
-            password=args.get("password"),
-            private_key_path=Path(args["private_key_path"]) if args.get("private_key_path") else None,
-            passphrase=args.get("passphrase"),
-            auth_method=args.get("auth_method", "private_key")
-        )
+        host_config = None
+        
+        if args.get("name"):
+            host_config = self.config_manager.get_host_by_name(args["name"])
+            if not host_config:
+                return [TextContent(type="text", text=f"Host '{args['name']}' not found in server.json")]
+        
+        if host_config:
+            config = ConnectionConfig(
+                host=host_config.host,
+                port=host_config.port,
+                username=host_config.username,
+                password=host_config.password,
+                auth_method="password" if host_config.password else "private_key",
+                timeout=host_config.timeout
+            )
+        else:
+            config = ConnectionConfig(
+                host=args["host"],
+                port=args.get("port", 22),
+                username=args["username"],
+                password=args.get("password"),
+                private_key_path=Path(args["private_key_path"]) if args.get("private_key_path") else None,
+                passphrase=args.get("passphrase"),
+                auth_method=args.get("auth_method", "private_key")
+            )
         
         session_info = await self.session_manager.create_session(config)
         
@@ -298,6 +325,21 @@ class SSHMCPServer:
             return [TextContent(type="text", text=f"Session not found: {args['session_id']}")]
         
         return [TextContent(type="text", text="File transfer not yet implemented")]
+
+    async def _handle_list_hosts(self, args: dict) -> list[TextContent]:
+        hosts = self.config_manager.list_hosts()
+        
+        if not hosts:
+            return [TextContent(type="text", text="No SSH hosts configured in server.json")]
+        
+        output = "Configured SSH Hosts:\n"
+        for host in hosts:
+            output += f"\n- Name: {host.name}\n"
+            output += f"  Host: {host.host}:{host.port}\n"
+            output += f"  Username: {host.username}\n"
+            output += f"  Password: {'***' if host.password else 'N/A'}\n"
+        
+        return [TextContent(type="text", text=output)]
 
     async def run(self):
         async with stdio_server() as (read_stream, write_stream):

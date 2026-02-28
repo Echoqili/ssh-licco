@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
 
@@ -14,8 +14,22 @@ class SSHConfig(BaseModel):
     timeout: int = 30
 
 
+class SSHHost(BaseModel):
+    name: str
+    host: str
+    port: int = 22
+    username: str = "root"
+    password: str = ""
+    timeout: int = 30
+
+
+class ServerConfig(BaseModel):
+    ssh_hosts: List[SSHHost] = []
+
+
 class ConfigManager:
     DEFAULT_CONFIG_PATH = Path.home() / ".ssh" / "mcp_config.json"
+    DEFAULT_SERVER_CONFIG_PATH = Path(__file__).parent.parent / "server.json"
     
     def __init__(self, config_path: Optional[Path] = None):
         self.config_path = config_path or self.DEFAULT_CONFIG_PATH
@@ -39,3 +53,31 @@ class ConfigManager:
     def get_default(cls) -> SSHConfig:
         config = cls().load()
         return config if config else SSHConfig()
+    
+    def load_server_config(self) -> Optional[ServerConfig]:
+        server_config_path = self.DEFAULT_SERVER_CONFIG_PATH
+        if not server_config_path.exists():
+            return None
+        try:
+            with open(server_config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if "ssh_hosts" in data:
+                return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
+            return None
+        except Exception:
+            return None
+    
+    def get_host_by_name(self, name: str) -> Optional[SSHHost]:
+        server_config = self.load_server_config()
+        if not server_config:
+            return None
+        for host in server_config.ssh_hosts:
+            if host.name == name:
+                return host
+        return None
+    
+    def list_hosts(self) -> List[SSHHost]:
+        server_config = self.load_server_config()
+        if not server_config:
+            return []
+        return server_config.ssh_hosts

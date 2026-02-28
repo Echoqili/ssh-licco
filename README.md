@@ -125,4 +125,4 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 支持
 
-如遇问题，请提交 [Issue](https://gitee.com/licco/ssh-licco/issues)。
+如遇问题，请提交 [Issue](https://gitee.com/liccolicco/ssh-licco/issues)。
