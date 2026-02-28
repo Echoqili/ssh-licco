@@ -44,7 +44,7 @@ pip install ssh-licco
 ### 从源码安装
 
 ```bash
-git clone https://gitee.com/licco/ssh-licco.git
+git clone https://gitee.com/liccolicco/ssh-licco.git
 cd ssh-licco
 pip install -e .
 ```

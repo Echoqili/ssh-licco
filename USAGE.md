@@ -39,7 +39,7 @@ pip install ssh-licco
 ### 方式二：从源码安装
 
 ```bash
-git clone https://gitee.com/licco/ssh-licco.git
+git clone https://gitee.com/liccolicco/ssh-licco.git
 cd ssh-licco
 pip install -e .
 ```
@@ -460,4 +460,4 @@ twine upload dist/*
 
 ## 技术支持
 
-- 问题反馈：https://gitee.com/licco/ssh-licco/issues
+- 问题反馈：https://gitee.com/liccolicco/ssh-licco/issues
