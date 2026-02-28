@@ -44,7 +44,7 @@ pip install ssh-licco
 ### 从源码安装
 
 ```bash
-git clone https://gitee.com/liccolicco/ssh-licco.git
+git clone https://github.com/Echoqili/ssh-licco.git
 cd ssh-licco
 pip install -e .
 ```
@@ -125,4 +125,4 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 支持
 
-如遇问题，请提交 [Issue](https://gitee.com/liccolicco/ssh-licco/issues)。
+如遇问题，请提交 [Issue](https://github.com/Echoqili/ssh-licco/issues)。

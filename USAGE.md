@@ -25,7 +25,7 @@ pip install ssh-licco
 ### 方式二：从源码安装
 
 ```bash
-git clone https://gitee.com/liccolicco/ssh-licco.git
+git clone https://github.com/Echoqili/ssh-licco.git
 cd ssh-licco
 pip install -e .
 ```
@@ -234,4 +234,4 @@ SSH 配置保存在：`~/.ssh/mcp_config.json`
 
 ## 技术支持
 
-- 问题反馈：https://gitee.com/liccolicco/ssh-licco/issues
+- 问题反馈：https://github.com/Echoqili/ssh-licco/issues

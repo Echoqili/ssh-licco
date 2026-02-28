@@ -17,8 +17,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-homepage = "https://gitee.com/liccolicco/ssh-licco"
-repository = "https://gitee.com/liccolicco/ssh-licco"
+homepage = "https://github.com/Echoqili/ssh-licco"
+repository = "https://github.com/Echoqili/ssh-licco"
 
 dependencies = [
     "mcp>=1.0.0",
