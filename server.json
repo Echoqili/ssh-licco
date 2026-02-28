@@ -1,13 +1,16 @@
 {
+  "$schema": "https://github.com/modelcontextprotocol/registry/blob/main/pkg/model/v0/server.go",
   "schema_version": "v1",
+  "name": "Echoqili/ssh-licco",
   "name_for_model": "SSH Server",
   "name_for_human": "SSH LICCO",
+  "description": "SSH Model Context Protocol Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude and Cursor.",
   "description_for_model": "Enables SSH connections to remote servers for command execution, key management, and file transfers. Supports password and key-based authentication.",
   "description_for_human": "SSH Model Context Protocol Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude and Cursor.",
   "owner": "Echoqili",
   "homepage": "https://github.com/Echoqili/ssh-licco",
   "repository": {
-    "url": "git@github.com:Echoqili/ssh-licco.git",
+    "url": "https://github.com/Echoqili/ssh-licco",
     "type": "git"
   },
   "license": "MIT",
