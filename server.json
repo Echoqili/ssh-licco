@@ -4,9 +4,9 @@
   "name": "Echoqili/ssh-licco",
   "name_for_model": "SSH Server",
   "name_for_human": "SSH LICCO",
-  "description": "SSH Model Context Protocol Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude and Cursor.",
-  "description_for_model": "Enables SSH connections to remote servers for command execution, key management, and file transfers. Supports password and key-based authentication.",
-  "description_for_human": "SSH Model Context Protocol Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude and Cursor.",
+  "description": "SSH MCP Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude.",
+  "description_for_model": "Enables SSH connections to remote servers for command execution, key management, and file transfers.",
+  "description_for_human": "SSH MCP Server - Connect to SSH servers via AI assistants.",
   "owner": "Echoqili",
   "homepage": "https://github.com/Echoqili/ssh-licco",
   "repository": {
