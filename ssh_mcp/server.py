@@ -20,7 +20,20 @@ class SSHMCPServer:
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
+        self._env_config = self._load_env_config()
         self._setup_handlers()
+    
+    def _load_env_config(self) -> dict:
+        """Load SSH configuration from environment variables."""
+        import os
+        config = {}
+        if os.getenv("SSH_HOST"):
+            config["host"] = os.getenv("SSH_HOST", "127.0.0.1")
+            config["port"] = int(os.getenv("SSH_PORT", "22"))
+            config["username"] = os.getenv("SSH_USER", "root")
+            config["password"] = os.getenv("SSH_PASSWORD", "")
+            config["timeout"] = int(os.getenv("SSH_TIMEOUT", "30"))
+        return config
 
     def _setup_handlers(self):
         @self.server.list_tools()
@@ -224,10 +237,22 @@ class SSHMCPServer:
     async def _handle_connect(self, args: dict) -> list[TextContent]:
         host_config = None
         
+        # Try to get host from server.json or config/hosts.json by name
         if args.get("name"):
             host_config = self.config_manager.get_host_by_name(args["name"])
             if not host_config:
-                return [TextContent(type="text", text=f"Host '{args['name']}' not found in server.json")]
+                return [TextContent(type="text", text=f"Host '{args['name']}' not found in configuration files")]
+        
+        # Use environment variable config if no name provided
+        if not host_config and self._env_config:
+            host_config = SSHHost(
+                name="env-server",
+                host=self._env_config.get("host", "127.0.0.1"),
+                port=self._env_config.get("port", 22),
+                username=self._env_config.get("username", "root"),
+                password=self._env_config.get("password", ""),
+                timeout=self._env_config.get("timeout", 30)
+            )
         
         if host_config:
             config = ConnectionConfig(
@@ -239,6 +264,7 @@ class SSHMCPServer:
                 timeout=host_config.timeout
             )
         else:
+            # Use direct parameters from args
             config = ConnectionConfig(
                 host=args["host"],
                 port=args.get("port", 22),
@@ -351,15 +377,25 @@ class SSHMCPServer:
     async def _handle_list_hosts(self, args: dict) -> list[TextContent]:
         hosts = self.config_manager.list_hosts()
         
-        if not hosts:
-            return [TextContent(type="text", text="No SSH hosts configured in server.json")]
-        
         output = "Configured SSH Hosts:\n"
-        for host in hosts:
-            output += f"\n- Name: {host.name}\n"
-            output += f"  Host: {host.host}:{host.port}\n"
-            output += f"  Username: {host.username}\n"
-            output += f"  Password: {'***' if host.password else 'N/A'}\n"
+        
+        # Show hosts from config files
+        if hosts:
+            for host in hosts:
+                output += f"\n- Name: {host.name}\n"
+                output += f"  Host: {host.host}:{host.port}\n"
+                output += f"  Username: {host.username}\n"
+                output += f"  Password: {'***' if host.password else 'N/A'}\n"
+        else:
+            output += "\nNo hosts configured in config files.\n"
+        
+        # Show environment variable config
+        if self._env_config:
+            output += "\n--- Environment Variables ---\n"
+            output += f"Host: {self._env_config.get('host', 'N/A')}\n"
+            output += f"Port: {self._env_config.get('port', 22)}\n"
+            output += f"Username: {self._env_config.get('username', 'N/A')}\n"
+            output += f"Password: {'***' if self._env_config.get('password') else 'Not set'}\n"
         
         return [TextContent(type="text", text=output)]
 
