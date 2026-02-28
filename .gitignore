@@ -35,12 +35,11 @@ ENV/
 .DS_Store
 Thumbs.db
 
-## SSH MCP specific
+# SSH MCP specific
 *.log
 .mcpregistry_*.token
 mcp-publisher.exe
 mcp-publisher.tar.gz
-server.json
 
-# Local config - copy example and customize
-config/
+# Local config
+config/hosts.json
