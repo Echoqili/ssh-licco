@@ -1,0 +1,26 @@
+{
+  "schema_version": "v1",
+  "name_for_model": "SSH Server",
+  "name_for_human": "SSH LICCO",
+  "description_for_model": "Enables SSH connections to remote servers for command execution, key management, and file transfers. Supports password and key-based authentication.",
+  "description_for_human": "SSH Model Context Protocol Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude and Cursor.",
+  "owner": "licco",
+  "homepage": "https://gitee.com/licco/ssh-licco",
+  "repository": "https://gitee.com/licco/ssh-licco",
+  "license": "MIT",
+  "keywords": ["ssh", "mcp", "model-context-protocol", "remote-server", "devops"],
+  "mcp_server": {
+    "type": "stdio",
+    "command": "ssh-licco"
+  },
+  "authentication": {
+    "type": "none"
+  },
+  "required_platforms": ["linux", "darwin", "win32"],
+  "installations": {
+    "pip": {
+      "package": "ssh-licco",
+      "require": ["ssh-licco>=0.1.0"]
+    }
+  }
+}
