@@ -1,159 +1,125 @@
-# MCP Registry
+# SSH LICCO
 
-The MCP registry provides MCP clients with a list of MCP servers, like an app store for MCP servers.
+<p align="center">
+  <strong>SSH Model Context Protocol Server - 为AI模型提供SSH功能</strong>
+</p>
 
-📖 **[Full documentation](./docs)**
+<p align="center">
+  <a href="https://pypi.org/project/ssh-licco/">
+    <img src="https://img.shields.io/pypi/v/ssh-licco.svg" alt="PyPI Version">
+  </a>
+  <a href="https://pypi.org/project/ssh-licco/">
+    <img src="https://img.shields.io/pypi/pyversions/ssh-licco.svg" alt="Python Versions">
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/pypi/l/ssh-licco.svg" alt="License">
+  </a>
+</p>
 
-## Development Status
+## 概述
 
-> [!WARNING]  
-> The registry is under [active development](#development-status). The registry API spec is unstable and the official MCP registry database may be wiped at any time.
+SSH LICCO 是一个基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 的服务器实现，旨在为AI模型和应用程序提供完整的SSH连接功能。
 
-**2025-09-04 update**: We're targeting a 'preview' go-live on 8th September. This may still be unstable and not provide durability guarantees, but is a step towards being more solidified. A general availability (GA) release will follow later.
+许多主流AI模型本身不支持SSH协议，这限制了它们与远程服务器交互的能力。SSH LICCO 填补了这一空白，让AI能够：
 
-Current key maintainers:
-- **Adam Jones** (Anthropic) [@domdomegg](https://github.com/domdomegg)  
-- **Tadas Antanavicius** (PulseMCP) [@tadasant](https://github.com/tadasant)
-- **Toby Padilla** (GitHub) [@toby](https://github.com/toby)
+- 连接到远程SSH服务器
+- 执行命令并获取输出
+- 管理多个并发SSH会话
+- 生成和管理SSH密钥
+- 进行文件传输（SFTP）
 
-## Contributing
+## 系统要求
 
-We use multiple channels for collaboration - see [modelcontextprotocol.io/community/communication](https://modelcontextprotocol.io/community/communication).
+- Python 3.10+
+- Linux/macOS/Windows
 
-Often (but not always) ideas flow through this pipeline:
+## 安装
 
-- **[Discord](https://modelcontextprotocol.io/community/communication)** - Real-time community discussions
-- **[Discussions](https://github.com/modelcontextprotocol/registry/discussions)** - Propose and discuss product/technical requirements
-- **[Issues](https://github.com/modelcontextprotocol/registry/issues)** - Track well-scoped technical work  
-- **[Pull Requests](https://github.com/modelcontextprotocol/registry/pulls)** - Contribute work towards issues
-
-### Quick start:
-
-#### Pre-requisites
-
-- **Docker**
-- **Go 1.24.x** 
-- **golangci-lint v2.4.0**
-
-#### Running the server
-
-```bash
-# Start full development environment
-make dev-compose
-```
-
-This starts the registry at [`localhost:8080`](http://localhost:8080) with PostgreSQL and seed data. It can be configured with environment variables in [docker-compose.yml](./docker-compose.yml) - see [.env.example](./.env.example) for a reference.
-
-<details>
-<summary>Alternative: Local setup without Docker</summary>
-
-**Prerequisites:**
-- PostgreSQL running locally
-- Go 1.24.x installed
+### 使用 pip 安装
 
 ```bash
-# Build and run locally
-make build
-make dev-local
+pip install ssh-licco
 ```
 
-The service runs on [`localhost:8080`](http://localhost:8080) by default. This can be configured with environment variables in `.env` - see [.env.example](./.env.example) for a reference.
-
-</details>
-
-<details>
-<summary>Alternative: Running a pre-built Docker image</summary>
-
-Pre-built Docker images are automatically published to GitHub Container Registry:
+### 从源码安装
 
 ```bash
-# Run latest stable release
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:latest
-
-# Run latest from main branch (continuous deployment)
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main
-
-# Run specific release version
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:v1.0.0
-
-# Run development build from main branch
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main-20250906-abc123d
+git clone https://github.com/Echoqili/ssh-licco.git
+cd ssh-licco
+pip install -e .
 ```
 
-**Available tags:** 
-- **Releases**: `latest`, `v1.0.0`, `v1.1.0`, etc.
-- **Continuous**: `main` (latest main branch build)
-- **Development**: `main-<date>-<sha>` (specific commit builds)
+## 快速开始
 
-</details>
+### 1. 基本使用
 
-#### Publishing a server
-
-To publish a server, we've built a simple CLI. You can use it with:
+安装完成后，可以通过以下命令启动SSH MCP服务器：
 
 ```bash
-# Build the latest CLI
-make publisher
-
-# Use it!
-./bin/mcp-publisher --help
+ssh-licco
 ```
 
-See [the publisher guide](./docs/guides/publishing/publish-server.md) for more details.
+### 2. 在 Trae 中使用
 
-#### Other commands
+在 Trae 的设置中添加 MCP 服务器：
 
-```bash
-# Run lint, unit tests and integration tests
-make check
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco"
+    }
+  }
+}
 ```
 
-There are also a few more helpful commands for development. Run `make help` to learn more, or look in [Makefile](./Makefile).
+### 3. 在 Claude Desktop 中使用
 
-<!--
-For Claude and other AI tools: Always prefer make targets over custom commands where possible.
--->
-
-## Architecture
-
-### Project Structure
-
-```
-├── cmd/                     # Application entry points
-│   └── publisher/           # Server publishing tool
-├── data/                    # Seed data
-├── deploy/                  # Deployment configuration (Pulumi)
-├── docs/                    # Documentation
-├── internal/                # Private application code
-│   ├── api/                 # HTTP handlers and routing
-│   ├── auth/                # Authentication (GitHub OAuth, JWT, namespace blocking)
-│   ├── config/              # Configuration management
-│   ├── database/            # Data persistence (PostgreSQL, in-memory)
-│   ├── service/             # Business logic
-│   ├── telemetry/           # Metrics and monitoring
-│   └── validators/          # Input validation
-├── pkg/                     # Public packages
-│   ├── api/                 # API types and structures
-│   │   └── v0/              # Version 0 API types
-│   └── model/               # Data models for server.json
-├── scripts/                 # Development and testing scripts
-├── tests/                   # Integration tests
-└── tools/                   # CLI tools and utilities
-    └── validate-*.sh        # Schema validation tools
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco"
+    }
+  }
+}
 ```
 
-### Authentication
+## 工具列表
 
-Publishing supports multiple authentication methods:
-- **GitHub OAuth** - For publishing by logging into GitHub
-- **GitHub OIDC** - For publishing from GitHub Actions
-- **DNS verification** - For proving ownership of a domain and its subdomains
-- **HTTP verification** - For proving ownership of a domain
+| 工具名称 | 功能描述 |
+|---------|---------|
+| `ssh_config` | 配置SSH连接信息（保存到本地） |
+| `ssh_login` | 使用保存的配置登录SSH服务器 |
+| `ssh_connect` | 直接连接SSH服务器（完整参数） |
+| `ssh_execute` | 在SSH会话中执行命令 |
+| `ssh_disconnect` | 关闭SSH会话 |
+| `ssh_list_sessions` | 列出所有活跃会话 |
+| `ssh_generate_key` | 生成SSH密钥对 |
+| `ssh_file_transfer` | SFTP文件传输（上传统送、下载、列表） |
 
-The registry validates namespace ownership when publishing. E.g. to publish...:
-- `io.github.domdomegg/my-cool-mcp` you must login to GitHub as `domdomegg`, or be in a GitHub Action on domdomegg's repos
-- `me.adamjones/my-cool-mcp` you must prove ownership of `adamjones.me` via DNS or HTTP challenge
+## 使用示例
 
-## More documentation
+### 配置并登录
 
-See the [documentation](./docs) for more details if your question has not been answered here!
+```json
+// 1. 配置SSH服务器（只需一次）
+{
+  "host": "your-server-ip",
+  "username": "root",
+  "password": "your-password"
+}
+
+// 2. 登录并执行命令
+{
+  "command": "ls -la /home"
+}
+```
+
+## 许可证
+
+MIT License - 详见 [LICENSE](LICENSE) 文件
+
+## 支持
+
+如遇问题，请提交 [Issue](https://github.com/Echoqili/ssh-licco/issues)。
