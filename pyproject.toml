@@ -17,8 +17,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-homepage = "https://github.com/Echoqili/ssh-licco"
-repository = "https://github.com/Echoqili/ssh-licco"
 
 dependencies = [
     "mcp>=1.0.0",
@@ -28,6 +26,10 @@ dependencies = [
     "cryptography>=41.0.0",
     "aiosqlite>=0.19.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Echoqili/ssh-licco"
+Repository = "https://github.com/Echoqili/ssh-licco"
 
 [project.optional-dependencies]
 dev = [
@@ -39,7 +41,7 @@ dev = [
 ]
 
 [project.scripts]
-ssh-licco = "ssh_mcp.server:main"
+ssh-licco = "ssh_mcp.server:run_server"
 
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]
