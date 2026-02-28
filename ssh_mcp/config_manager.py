@@ -29,10 +29,11 @@ class ServerConfig(BaseModel):
 
 class ConfigManager:
     DEFAULT_CONFIG_PATH = Path.home() / ".ssh" / "mcp_config.json"
-    DEFAULT_SERVER_CONFIG_PATH = Path(__file__).parent.parent / "server.json"
+    DEFAULT_SERVER_CONFIG_PATH = Path(__file__).parent / "server.json"
     
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Optional[Path] = None, server_config_path: Optional[Path] = None):
         self.config_path = config_path or self.DEFAULT_CONFIG_PATH
+        self.server_config_path = server_config_path or self.DEFAULT_SERVER_CONFIG_PATH
     
     def load(self) -> Optional[SSHConfig]:
         if not self.config_path.exists():
@@ -55,7 +56,7 @@ class ConfigManager:
         return config if config else SSHConfig()
     
     def load_server_config(self) -> Optional[ServerConfig]:
-        server_config_path = self.DEFAULT_SERVER_CONFIG_PATH
+        server_config_path = self.server_config_path
         if not server_config_path.exists():
             return None
         try:

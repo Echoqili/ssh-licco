@@ -1,47 +1,23 @@
-# SSH LICCO
+# 🚀 SSH LICCO
 
-<p align="center">
-  <strong>SSH Model Context Protocol Server - 为AI模型提供SSH功能</strong>
-</p>
+让 AI 帮你操作服务器！
 
-<p align="center">
-  <a href="https://pypi.org/project/ssh-licco/">
-    <img src="https://img.shields.io/pypi/v/ssh-licco.svg" alt="PyPI Version">
-  </a>
-  <a href="https://pypi.org/project/ssh-licco/">
-    <img src="https://img.shields.io/pypi/pyversions/ssh-licco.svg" alt="Python Versions">
-  </a>
-  <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/pypi/l/ssh-licco.svg" alt="License">
-  </a>
-</p>
+## 这是啥
 
-## 概述
+SSH LICCO 是一个 MCP 服务器，连接 AI 助手和你的 SSH 服务器。有了它，你可以直接用自然语言让 AI 帮你操作服务器，比如：
 
-SSH LICCO 是一个基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 的服务器实现，旨在为AI模型和应用程序提供完整的SSH连接功能。
+- 🔍 查看服务器状态
+- ⚡ 执行各种命令
+- 📁 上传/下载文件
+- 🔑 管理 SSH 密钥
 
-许多主流AI模型本身不支持SSH协议，这限制了它们与远程服务器交互的能力。SSH LICCO 填补了这一空白，让AI能够：
-
-- 连接到远程SSH服务器
-- 执行命令并获取输出
-- 管理多个并发SSH会话
-- 生成和管理SSH密钥
-- 进行文件传输（SFTP）
-
-## 系统要求
-
-- Python 3.10+
-- Linux/macOS/Windows
-
-## 安装
-
-### 使用 pip 安装
+## 快速安装
 
 ```bash
 pip install ssh-licco
 ```
 
-### 从源码安装
+或者从源码安装：
 
 ```bash
 git clone https://github.com/Echoqili/ssh-licco.git
@@ -51,18 +27,9 @@ pip install -e .
 
 ## 快速开始
 
-### 1. 基本使用
+### 1. 配置 MCP
 
-安装完成后，可以通过以下命令启动SSH MCP服务器：
-
-```bash
-ssh-licco
-```
-
-### 2. 在 Trae 中使用
-
-在 Trae 的设置中添加 MCP 服务器：
-
+**Trae/Cursor:**
 ```json
 {
   "mcpServers": {
@@ -73,8 +40,7 @@ ssh-licco
 }
 ```
 
-### 3. 在 Claude Desktop 中使用
-
+**Claude Desktop:**
 ```json
 {
   "mcpServers": {
@@ -85,41 +51,79 @@ ssh-licco
 }
 ```
 
-## 工具列表
+配置文件位置：
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-| 工具名称 | 功能描述 |
-|---------|---------|
-| `ssh_config` | 配置SSH连接信息（保存到本地） |
-| `ssh_login` | 使用保存的配置登录SSH服务器 |
-| `ssh_connect` | 直接连接SSH服务器（完整参数） |
-| `ssh_execute` | 在SSH会话中执行命令 |
-| `ssh_disconnect` | 关闭SSH会话 |
-| `ssh_list_sessions` | 列出所有活跃会话 |
-| `ssh_generate_key` | 生成SSH密钥对 |
-| `ssh_file_transfer` | SFTP文件传输（上传统送、下载、列表） |
+### 2. 开搞！
 
-## 使用示例
+重启你的 AI 应用，然后直接说：
 
-### 配置并登录
+```
+帮我连接 192.168.1.100，用户名 root，密码 123456
+```
+
+或者：
+
+```
+看看服务器现在负载怎么样
+```
+
+## 配置 SSH 主机（推荐）
+
+在 `server.json` 里配好服务器信息，不用每次都输入密码：
 
 ```json
-// 1. 配置SSH服务器（只需一次）
 {
-  "host": "your-server-ip",
-  "username": "root",
-  "password": "your-password"
-}
-
-// 2. 登录并执行命令
-{
-  "command": "ls -la /home"
+  "ssh_hosts": [
+    {
+      "name": "我的服务器",
+      "host": "192.168.1.100",
+      "port": 22,
+      "username": "root",
+      "password": "your_password"
+    }
+  ]
 }
 ```
 
-## 许可证
+然后直接说：
+```
+连接"我的服务器"
+```
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+> ⚠️ 提醒：`server.json` 已经加入 `.gitignore`，不会提交到 GitHub，放心用！
 
-## 支持
+## 能干啥
 
-如遇问题，请提交 [Issue](https://github.com/Echoqili/ssh-licco/issues)。
+| 工具 | 作用 |
+|------|------|
+| ssh_config | 配置 SSH 服务器 |
+| ssh_login | 登录并执行命令 |
+| ssh_connect | 直接连接 |
+| ssh_execute | 执行命令 |
+| ssh_disconnect | 断开连接 |
+| ssh_list_sessions | 查看所有会话 |
+| ssh_generate_key | 生成 SSH 密钥 |
+| ssh_file_transfer | SFTP 文件传输 |
+
+## 常见问题
+
+**Q: 密码安全吗？**  
+A: 密码只保存在本地 `~/.ssh/mcp_config.json`，不会发送到任何地方。
+
+**Q: 能用密钥登录吗？**  
+A: 可以！用 `ssh_connect` 时指定 `private_key_path` 参数即可。
+
+**Q: 支持哪些 AI？**  
+A: 支持所有支持 MCP 的 AI，比如 Trae、Claude Desktop、Cursor 等。
+
+## 技术栈
+
+- Python 3.10+
+- [MCP SDK](https://github.com/modelcontextprotocol/python-sdk)
+- [Paramiko](https://github.com/paramiko/paramiko) - SSH 连接
+
+## License
+
+MIT
