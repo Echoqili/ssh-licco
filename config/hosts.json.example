@@ -1,0 +1,11 @@
+{
+  "hosts": [
+    {
+      "name": "my-server",
+      "host": "YOUR_SERVER_IP",
+      "port": 22,
+      "username": "root",
+      "password": "YOUR_PASSWORD"
+    }
+  ]
+}
