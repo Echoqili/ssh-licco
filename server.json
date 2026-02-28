@@ -1,13 +1,13 @@
 {
   "$schema": "https://github.com/modelcontextprotocol/registry/blob/main/pkg/model/v0/server.go",
   "schema_version": "v1",
-  "name": "Echoqili/ssh-licco",
+  "name": "io.github.Echoqili/ssh-licco",
   "name_for_model": "SSH Server",
   "name_for_human": "SSH LICCO",
-  "description": "SSH MCP Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude.",
-  "description_for_model": "Enables SSH connections to remote servers for command execution, key management, and file transfers.",
+  "description": "SSH MCP Server - Connect to SSH servers and execute commands via AI assistants.",
+  "description_for_model": "Enables SSH connections to remote servers for command execution and key management.",
   "description_for_human": "SSH MCP Server - Connect to SSH servers via AI assistants.",
-  "owner": "Echoqili",
+  "owner": "io.github.Echoqili",
   "homepage": "https://github.com/Echoqili/ssh-licco",
   "repository": {
     "url": "https://github.com/Echoqili/ssh-licco",
