@@ -71,8 +71,16 @@ pip install -e .
 
 ## 配置 SSH 主机（推荐）
 
-在 `server.json` 里配好服务器信息，不用每次都输入密码：
+有两种方式配置服务器信息，不用每次都输入密码：
 
+### 方式 1：使用独立配置文件（推荐）
+
+复制示例文件并修改：
+```bash
+cp config/hosts.json.example config/hosts.json
+```
+
+然后编辑 `config/hosts.json`：
 ```json
 {
   "ssh_hosts": [
@@ -87,12 +95,30 @@ pip install -e .
 }
 ```
 
+### 方式 2：在 MCP 配置时直接指定
+
+在 Trae 的 MCP 配置中添加环境变量：
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "192.168.1.100",
+        "SSH_USER": "root",
+        "SSH_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
+
 然后直接说：
 ```
 连接"我的服务器"
 ```
 
-> ⚠️ 提醒：`server.json` 已经加入 `.gitignore`，不会提交到 GitHub，放心用！
+> ⚠️ 提醒：`config/hosts.json` 已经加入 `.gitignore`，不会提交到 GitHub，放心用！
 
 ## 能干啥
 

@@ -30,6 +30,7 @@ class ServerConfig(BaseModel):
 class ConfigManager:
     DEFAULT_CONFIG_PATH = Path.home() / ".ssh" / "mcp_config.json"
     DEFAULT_SERVER_CONFIG_PATH = Path(__file__).parent / "server.json"
+    DEFAULT_HOSTS_CONFIG_PATH = Path(__file__).parent.parent / "config" / "hosts.json"
     
     def __init__(self, config_path: Optional[Path] = None, server_config_path: Optional[Path] = None):
         self.config_path = config_path or self.DEFAULT_CONFIG_PATH
@@ -56,17 +57,29 @@ class ConfigManager:
         return config if config else SSHConfig()
     
     def load_server_config(self) -> Optional[ServerConfig]:
+        # Try server.json first
         server_config_path = self.server_config_path
-        if not server_config_path.exists():
-            return None
-        try:
-            with open(server_config_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if "ssh_hosts" in data:
-                return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
-            return None
-        except Exception:
-            return None
+        if server_config_path.exists():
+            try:
+                with open(server_config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if "ssh_hosts" in data:
+                    return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
+            except Exception:
+                pass
+        
+        # Fallback to config/hosts.json
+        hosts_config_path = self.DEFAULT_HOSTS_CONFIG_PATH
+        if hosts_config_path.exists():
+            try:
+                with open(hosts_config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if "ssh_hosts" in data:
+                    return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
+            except Exception:
+                pass
+        
+        return None
     
     def get_host_by_name(self, name: str) -> Optional[SSHHost]:
         server_config = self.load_server_config()
