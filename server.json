@@ -6,7 +6,10 @@
   "description_for_human": "SSH Model Context Protocol Server - Connect to SSH servers and execute commands via AI assistants like Trae, Claude and Cursor.",
   "owner": "Echoqili",
   "homepage": "https://github.com/Echoqili/ssh-licco",
-  "repository": "https://github.com/Echoqili/ssh-licco",
+  "repository": {
+    "url": "git@github.com:Echoqili/ssh-licco.git",
+    "type": "git"
+  },
   "license": "MIT",
   "keywords": ["ssh", "mcp", "model-context-protocol", "remote-server", "devops"],
   "mcp_server": {
