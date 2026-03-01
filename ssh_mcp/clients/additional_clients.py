@@ -134,13 +134,19 @@ class AsyncSSHClient(SSHClientInterface):
         """同步连接（异步版本）"""
         try:
             import asyncssh
+            import sys
             
             connect_kwargs = {
                 'host': self.config.host,
                 'port': self.config.port,
                 'username': self.config.username,
-                'client_keys': None,
                 'known_hosts': None,
+                'server_host_key_algs': ['ssh-rsa', 'rsa-sha2-256', 'rsa-sha2-512', 'ssh-ed25519'],
+                'encryption_algs': (
+                    'aes256-ctr,aes192-ctr,aes128-ctr,'
+                    'aes256-gcm@openssh.com,aes128-gcm@openssh.com,'
+                    'aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc'
+                ),
             }
             
             if self.config.auth_method == "password" and self.config.password:
@@ -149,8 +155,22 @@ class AsyncSSHClient(SSHClientInterface):
                 connect_kwargs['client_keys'] = [str(self.config.private_key_path)]
                 if self.config.passphrase:
                     connect_kwargs['passphrase'] = self.config.passphrase
+            else:
+                if self.config.password:
+                    connect_kwargs['password'] = self.config.password
             
-            self._connection = asyncio.run(asyncssh.connect(**connect_kwargs))
+            if sys.platform == 'win32':
+                import asyncio
+                loop = asyncio.ProactorEventLoop()
+                asyncio.set_event_loop(loop)
+                try:
+                    self._connection = loop.run_until_complete(asyncssh.connect(**connect_kwargs))
+                finally:
+                    pass
+            else:
+                async def do_connect():
+                    return await asyncssh.connect(**connect_kwargs)
+                self._connection = asyncio.run(do_connect())
         except ImportError:
             raise ImportError("AsyncSSH is not installed. Install with: pip install asyncssh")
     
@@ -281,6 +301,25 @@ class AsyncSSHClient(SSHClientInterface):
         if self._connection:
             await self._connection.close()
             self._connection = None
+
+    def disconnect(self) -> None:
+        """断开 SSH 连接"""
+        self.close()
+
+    def get_transport_info(self) -> dict:
+        """获取传输层信息"""
+        if not self.is_connected:
+            return {"connected": False}
+        
+        return {
+            "connected": True,
+            "host": self.config.host,
+            "port": self.config.port,
+            "client_type": "asyncssh",
+            "remote_version": "unknown",
+            "cipher": "unknown",
+            "kex": "unknown",
+        }
 
 
 class SystemSSHClient(SSHClientInterface):

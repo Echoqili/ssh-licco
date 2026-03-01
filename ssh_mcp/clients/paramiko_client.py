@@ -84,6 +84,10 @@ class ParamikoClient(SSHClientInterface):
                 connect_kwargs['key_filename'] = str(self.config.private_key_path)
                 if self.config.passphrase:
                     connect_kwargs['passphrase'] = self.config.passphrase
+            else:
+                # Default to password authentication if password is provided
+                if self.config.password:
+                    connect_kwargs['password'] = self.config.password
             
             self.client.connect(**connect_kwargs)
             

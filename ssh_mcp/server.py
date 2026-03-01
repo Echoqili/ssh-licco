@@ -81,7 +81,7 @@ class SSHMCPServer:
                             "passphrase": {"type": "string", "description": "Passphrase for private key"},
                             "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key"},
                             "name": {"type": "string", "description": "Connect using host from server.json by name"},
-                            "client_type": {"type": "string", "enum": ["paramiko", "fabric", "asyncssh", "ssh2"], "default": "paramiko", "description": "SSH client implementation to use"}
+                            "client_type": {"type": "string", "enum": ["asyncssh"], "default": "asyncssh", "description": "SSH client implementation to use (only asyncssh supported)"}
                         }
                     }
                 ),

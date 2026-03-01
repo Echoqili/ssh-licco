@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 AuthMethod = Literal["password", "private_key", "agent"]
-ClientType = Literal["paramiko", "fabric", "asyncssh", "ssh2"]
+ClientType = Literal["paramiko", "asyncssh"]
 
 
 class ConnectionConfig(BaseModel):
