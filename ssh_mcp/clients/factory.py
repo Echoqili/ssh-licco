@@ -46,6 +46,31 @@ class SSHClientFactory:
 # 默认注册 Paramiko 客户端
 SSHClientFactory.register(ClientType.PARAMIKO, ParamikoClient)
 
+# 尝试注册其他客户端（如果已安装）
+try:
+    from .additional_clients import FabricClient
+    SSHClientFactory.register(ClientType.FABRIC, FabricClient)
+except ImportError:
+    pass
+
+try:
+    from .additional_clients import AsyncSSHClient
+    SSHClientFactory.register(ClientType.ASYNCSSH, AsyncSSHClient)
+except ImportError:
+    pass
+
+try:
+    from .additional_clients import SSH2Client
+    SSHClientFactory.register(ClientType.SSH2, SSH2Client)
+except ImportError:
+    pass
+
+try:
+    from .additional_clients import SystemSSHClient
+    SSHClientFactory.register(ClientType.SYSTEM, SystemSSHClient)
+except ImportError:
+    pass
+
 
 class ClientConfig:
     """SSH 客户端配置管理"""
