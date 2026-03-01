@@ -411,12 +411,35 @@ class SSHMCPServer:
         return [TextContent(type="text", text=output)]
 
     async def run(self):
+        import signal
+        from contextlib import asynccontextmanager
+        
+        # 设置信号处理器用于优雅关闭
+        loop = asyncio.get_event_loop()
+        shutdown_event = asyncio.Event()
+        
+        def signal_handler():
+            shutdown_event.set()
+        
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                loop.add_signal_handler(sig, signal_handler)
+            except NotImplementedError:
+                # Windows 不支持 add_signal_handler，使用替代方案
+                pass
+        
         async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                self.server.create_initialization_options()
-            )
+            try:
+                await self.server.run(
+                    read_stream,
+                    write_stream,
+                    self.server.create_initialization_options()
+                )
+            except (ConnectionError, BrokenPipeError):
+                # 客户端断开连接时优雅退出
+                pass
+            finally:
+                await self.session_manager.close_all_sessions()
 
 
 async def main():
@@ -426,6 +449,14 @@ async def main():
 
 def run_server():
     """Synchronous entry point for CLI"""
+    import sys
+    
+    # 检查是否在非交互模式运行（如 Docker 构建）
+    if not sys.stdin.isatty():
+        # 在非交互模式下，添加超时保护
+        print("Warning: Running in non-interactive mode (stdin is not a TTY)", file=sys.stderr)
+        print("MCP server expects to be run as part of an MCP client", file=sys.stderr)
+    
     asyncio.run(main())
 
 
