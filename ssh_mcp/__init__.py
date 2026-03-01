@@ -7,6 +7,7 @@ __all__ = [
     "KeyManager",
     "SSHKeyPair",
     "ConnectionConfig",
+    "ClientType",
     "SessionManager",
     "SSHSession",
     "SessionInfo",
@@ -28,7 +29,7 @@ __all__ = [
 
 from .server import SSHMCPServer
 from .key_manager import KeyManager, SSHKeyPair
-from .connection_config import ConnectionConfig
+from .connection_config import ConnectionConfig, ClientType
 from .session_manager import SessionManager, SSHSession, SessionInfo
 from .config_manager import ConfigManager, SSHConfig
 from .service import SSHService, get_ssh_service
