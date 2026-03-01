@@ -1,5 +1,5 @@
 {
-  "default_client": "paramiko",
+  "default_client": "asyncssh",
   "clients": {
     "paramiko": {
       "enabled": true,
@@ -18,7 +18,7 @@
       "session_timeout": 7200
     },
     "asyncssh": {
-      "enabled": false,
+      "enabled": true,
       "name": "AsyncSSH",
       "description": "异步实现，高性能",
       "timeout": 30,
@@ -29,14 +29,6 @@
       "enabled": false,
       "name": "SSH2 (libssh2)",
       "description": "C 扩展，极致性能",
-      "timeout": 30,
-      "keepalive_interval": 30,
-      "session_timeout": 7200
-    },
-    "system": {
-      "enabled": false,
-      "name": "System SSH",
-      "description": "调用系统 SSH 命令，最稳定",
       "timeout": 30,
       "keepalive_interval": 30,
       "session_timeout": 7200
