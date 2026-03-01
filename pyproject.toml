@@ -47,6 +47,9 @@ ssh-licco = "ssh_mcp.server:run_server"
 requires = ["setuptools>=68.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["ssh_mcp*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
