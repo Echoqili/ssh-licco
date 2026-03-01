@@ -32,14 +32,6 @@
       "timeout": 30,
       "keepalive_interval": 30,
       "session_timeout": 7200
-    },
-    "system": {
-      "enabled": false,
-      "name": "System SSH",
-      "description": "调用系统 SSH 命令，最稳定",
-      "timeout": 30,
-      "keepalive_interval": 30,
-      "session_timeout": 7200
     }
   }
 }
