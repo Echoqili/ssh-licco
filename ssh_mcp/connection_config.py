@@ -17,10 +17,11 @@ class ConnectionConfig(BaseModel):
     private_key_path: Optional[Path] = Field(default=None, description="Path to private key file")
     passphrase: Optional[str] = Field(default=None, description="Passphrase for private key")
     timeout: int = Field(default=30, description="Connection timeout in seconds")
-    keepalive_interval: int = Field(default=60, description="Keepalive interval in seconds")
+    keepalive_interval: int = Field(default=30, description="Keepalive interval in seconds")
     compress: bool = Field(default=False, description="Enable compression")
     look_for_keys: bool = Field(default=True, description="Look for keys in ~/.ssh")
     allow_agent: bool = Field(default=True, description="Use SSH agent for authentication")
+    session_timeout: int = Field(default=7200, description="Session timeout in seconds (default: 2 hours)")
     
     @field_validator("port")
     @classmethod
@@ -34,4 +35,11 @@ class ConnectionConfig(BaseModel):
     def validate_timeout(cls, v: int) -> int:
         if v < 1:
             raise ValueError("Timeout must be at least 1 second")
+        return v
+    
+    @field_validator("session_timeout")
+    @classmethod
+    def validate_session_timeout(cls, v: int) -> int:
+        if v < 300:  # Minimum 5 minutes
+            raise ValueError("Session timeout must be at least 5 minutes (300 seconds)")
         return v
