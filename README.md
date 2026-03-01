@@ -214,11 +214,10 @@ ssh_mcp/
 
 | 客户端 | 类型 | 特点 | 安装 |
 |--------|------|------|------|
-| Paramiko | 同步 | 纯 Python，功能完善 | 内置 |
+| Paramiko | 同步 | 纯 Python，功能完善，默认 | 内置 |
 | Fabric | 同步 | 高级 API，易用性强 | `pip install fabric` |
-| AsyncSSH | 异步 | 高并发性能 | `pip install asyncssh` |
+| AsyncSSH | 异步 | 高并发性能（默认） | `pip install asyncssh` |
 | SSH2 | 同步 | C 扩展，极速 | `pip install ssh2-python` |
-| System | 同步 | 调用系统 SSH，最稳定 | 系统自带 |
 
 ### 配置客户端
 
@@ -226,7 +225,7 @@ ssh_mcp/
 
 ```json
 {
-  "default_client": "paramiko",
+  "default_client": "asyncssh",
   "clients": {
     "paramiko": {
       "enabled": true,
@@ -235,6 +234,10 @@ ssh_mcp/
     },
     "fabric": {
       "enabled": false,
+      "timeout": 30
+    },
+    "asyncssh": {
+      "enabled": true,
       "timeout": 30
     }
   }
