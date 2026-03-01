@@ -182,6 +182,99 @@ A: 支持所有支持 MCP 的 AI，比如 Trae、Claude Desktop、Cursor 等。
 - [MCP SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [Paramiko](https://github.com/paramiko/paramiko) - SSH 连接
 
+## 🏗️ 架构设计
+
+SSH LICCO 采用分层架构设计，遵循大厂最佳实践：
+
+### 核心模块
+
+```
+ssh_mcp/
+├── clients/           # SSH 客户端层（可插拔）
+│   ├── interface.py  # 抽象接口定义
+│   ├── paramiko_client.py  # Paramiko 实现
+│   ├── additional_clients.py  # 其他客户端实现
+│   └── factory.py    # 客户端工厂
+├── service.py        # 业务服务层
+├── session_manager.py  # 会话管理
+├── connection_config.py # 配置模型
+├── exceptions.py     # 统一异常体系
+├── logging_config.py # 日志管理
+└── server.py        # MCP 服务端
+```
+
+### 设计模式
+
+- **工厂模式**：SSHClientFactory 动态创建客户端
+- **策略模式**：支持多种 SSH 客户端实现
+- **单例模式**：全局 SSHService 实例
+- **上下文管理器**：自动连接/断开管理
+
+### 多客户端支持
+
+| 客户端 | 类型 | 特点 | 安装 |
+|--------|------|------|------|
+| Paramiko | 同步 | 纯 Python，功能完善 | 内置 |
+| Fabric | 同步 | 高级 API，易用性强 | `pip install fabric` |
+| AsyncSSH | 异步 | 高并发性能 | `pip install asyncssh` |
+| SSH2 | 同步 | C 扩展，极速 | `pip install ssh2-python` |
+| System | 同步 | 调用系统 SSH，最稳定 | 系统自带 |
+
+### 配置客户端
+
+编辑 `config/client_config.json`：
+
+```json
+{
+  "default_client": "paramiko",
+  "clients": {
+    "paramiko": {
+      "enabled": true,
+      "timeout": 30,
+      "keepalive_interval": 30
+    },
+    "fabric": {
+      "enabled": false,
+      "timeout": 30
+    }
+  }
+}
+```
+
+## 统一异常体系
+
+```python
+from ssh_mcp import (
+    SSHException,
+    ConnectionException,
+    AuthenticationException,
+    CommandExecutionException,
+    FileTransferException,
+)
+
+try:
+    client.connect()
+except AuthenticationException as e:
+    print(f"认证失败: {e.message}")
+except ConnectionException as e:
+    print(f"连接失败: {e.message}")
+```
+
+## 日志配置
+
+```python
+from ssh_mcp import get_logger, SSHLogger
+
+# 获取日志实例
+logger = get_logger("my-app")
+
+# 设置日志级别
+SSHLogger.set_log_level("DEBUG")
+
+# 添加文件日志
+SSHLogger.add_file_handler("logs/ssh-licco.log")
+```
+
 ## License
 
 MIT

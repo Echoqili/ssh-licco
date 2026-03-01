@@ -14,6 +14,8 @@ from .interface import (
     ClientType,
     CommandResult,
     FileListResult,
+    ConnectionResult,
+    FileTransferResult,
 )
 from .factory import (
     SSHClientFactory,
@@ -26,6 +28,8 @@ __all__ = [
     "ClientType",
     "CommandResult",
     "FileListResult",
+    "ConnectionResult",
+    "FileTransferResult",
     "SSHClientFactory",
     "ClientConfig",
     "get_client_config",
