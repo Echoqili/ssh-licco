@@ -438,3 +438,133 @@ SSH 配置保存在此文件中，供 `ssh_login` 工具使用。
 - **问题反馈**: https://github.com/Echoqili/ssh-licco/issues
 - **GitHub**: https://github.com/Echoqili/ssh-licco
 - **License**: MIT
+
+---
+
+## 🆕 新功能：多客户端支持
+
+### 切换客户端类型
+
+```python
+from ssh_mcp.clients import SSHClientFactory, ClientType
+
+# 方式1：全局设置默认客户端
+SSHClientFactory.set_default(ClientType.FABRIC)
+
+# 方式2：创建时指定
+client = SSHClientFactory.create(config, ClientType.ASYNCSSH)
+```
+
+### 获取可用客户端
+
+```python
+from ssh_mcp.clients import SSHClientFactory
+
+# 获取所有可用的客户端类型
+available = SSHClientFactory.get_available_types()
+print(available)  # [ClientType.PARAMIKO, ClientType.FABRIC, ...]
+```
+
+---
+
+## 🆕 新功能：服务层 API
+
+### 使用 SSHService
+
+```python
+from ssh_mcp import ConnectionConfig, get_ssh_service
+
+# 获取服务实例
+service = get_ssh_service()
+
+# 创建配置
+config = ConnectionConfig(
+    host="192.168.1.100",
+    username="root",
+    password="password"
+)
+
+# 连接
+info = service.connect(config)
+print(f"会话ID: {info.session_id}")
+print(f"客户端类型: {info.client_type.value}")
+
+# 执行命令
+result = service.execute_command(info.session_id, "uptime")
+print(result["stdout"])
+
+# 健康检查
+health = service.health_check(info.session_id)
+print(f"状态: {health.status.value}")
+print(f"延迟: {health.latency_ms}ms")
+
+# 列出所有会话
+sessions = service.list_sessions()
+print(f"活跃会话数: {len(sessions)}")
+
+# 断开
+service.disconnect(info.session_id)
+```
+
+---
+
+## 🆕 新功能：异常处理
+
+### 捕获特定异常
+
+```python
+from ssh_mcp import (
+    get_ssh_service,
+    ConnectionConfig,
+    SSHException,
+    AuthenticationException,
+    ConnectionException,
+    CommandExecutionException,
+    FileTransferException,
+)
+
+service = get_ssh_service()
+config = ConnectionConfig(host="192.168.1.100", username="root", password="wrong")
+
+try:
+    info = service.connect(config)
+except AuthenticationException as e:
+    print(f"认证失败: {e.message}")
+except ConnectionException as e:
+    print(f"连接失败: {e.message}")
+except CommandExecutionException as e:
+    print(f"命令执行失败: {e.message}, 命令: {e.command}")
+except FileTransferException as e:
+    print(f"文件传输失败: {e.message}")
+except SSHException as e:
+    print(f"SSH错误: {e.message}")
+```
+
+---
+
+## 🆕 新功能：日志记录
+
+### 基本日志
+
+```python
+from ssh_mcp import get_logger
+
+logger = get_logger("my-app")
+logger.info("应用启动")
+logger.debug("调试信息")
+logger.warning("警告")
+logger.error("错误")
+logger.critical("严重错误")
+```
+
+### 配置日志
+
+```python
+from ssh_mcp import SSHLogger
+
+# 设置日志级别
+SSHLogger.set_log_level("DEBUG")
+
+# 添加文件日志
+SSHLogger.add_file_handler("logs/app.log")
+```
