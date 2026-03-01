@@ -81,7 +81,7 @@ class SSHMCPServer:
                             "passphrase": {"type": "string", "description": "Passphrase for private key"},
                             "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key"},
                             "name": {"type": "string", "description": "Connect using host from server.json by name"},
-                            "client_type": {"type": "string", "enum": ["paramiko", "fabric", "asyncssh", "ssh2"], "default": "paramiko", "description": "SSH client implementation to use"}
+                            "client_type": {"type": "string", "enum": ["asyncssh"], "default": "asyncssh", "description": "SSH client implementation to use (only asyncssh supported)"}
                         }
                     }
                 ),
@@ -152,6 +152,58 @@ class SSHMCPServer:
                         "required": ["session_id", "local_path", "remote_path", "direction"]
                     }
                 ),
+                Tool(
+                    name="ssh_background_task",
+                    description="Execute long-running commands (like Docker build) in background with status polling. Returns task ID for polling.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "command": {"type": "string", "description": "Command to execute in background (e.g., docker build)"},
+                            "workdir": {"type": "string", "description": "Working directory for the command", "default": "/tmp"},
+                            "log_file": {"type": "string", "description": "Log file path", "default": "/tmp/background_task.log"}
+                        },
+                        "required": ["session_id", "command"]
+                    }
+                ),
+                Tool(
+                    name="ssh_task_status",
+                    description="Check status of background task (like Docker build progress)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "task_id": {"type": "string", "description": "Task ID returned from ssh_background_task"}
+                        },
+                        "required": ["session_id", "task_id"]
+                    }
+                ),
+                Tool(
+                    name="ssh_docker_build",
+                    description="Build Docker image on remote server in background (solves timeout issues)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "dockerfile_path": {"type": "string", "description": "Path to Dockerfile (default: ./Dockerfile)", "default": "./Dockerfile"},
+                            "image_name": {"type": "string", "description": "Docker image name and tag (e.g., myapp:latest)"},
+                            "context": {"type": "string", "description": "Build context path (default: .)", "default": "."}
+                        },
+                        "required": ["session_id", "image_name"]
+                    }
+                ),
+                Tool(
+                    name="ssh_docker_status",
+                    description="Check Docker build or container status on remote server",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "image_name": {"type": "string", "description": "Docker image name to check (optional)"}
+                        },
+                        "required": ["session_id"]
+                    }
+                ),
             ]
 
         @self.server.call_tool()
@@ -175,6 +227,14 @@ class SSHMCPServer:
                     return await self._handle_file_transfer(arguments)
                 elif name == "ssh_list_hosts":
                     return await self._handle_list_hosts(arguments)
+                elif name == "ssh_background_task":
+                    return await self._handle_background_task(arguments)
+                elif name == "ssh_task_status":
+                    return await self._handle_task_status(arguments)
+                elif name == "ssh_docker_build":
+                    return await self._handle_docker_build(arguments)
+                elif name == "ssh_docker_status":
+                    return await self._handle_docker_status(arguments)
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
             except Exception as e:
@@ -191,10 +251,10 @@ class SSHMCPServer:
         self.config_manager.save(config)
         return [TextContent(
             type="text",
-            text=f"SSH配置已保存:\n"
-                 f"主机: {config.host}:{config.port}\n"
-                 f"用户名: {config.username}\n"
-                 f"配置文件: {self.config_manager.config_path}"
+            text=f"SSH\u914d\u7f6e\u5df2\u4fdd\u5b58:\n"
+                 f"\u4e3b\u673a: {config.host}:{config.port}\n"
+                 f"\u7528\u6237\u540d: {config.username}\n"
+                 f"\u914d\u7f6e\u6587\u4ef6: {self.config_manager.config_path}"
         )]
 
     async def _handle_login(self, args: dict) -> list[TextContent]:
@@ -202,11 +262,11 @@ class SSHMCPServer:
         if not config_data:
             return [TextContent(
                 type="text",
-                text="请先使用 ssh_config 工具配置SSH连接信息"
+                text="\u8bf7\u5148\u4f7f\u7528 ssh_config \u5de5\u5177\u914d\u7f6eSSH\u8fde\u63a5\u4fe1\u606f"
             )]
         
         if not config_data.password:
-            return [TextContent(type="text", text="密码未配置，请先使用 ssh_config 设置密码")]
+            return [TextContent(type="text", text="\u5bc6\u7801\u672a\u914d\u7f6e\uff0c\u8bf7\u5148\u4f7f\u7528 ssh_config \u8bbe\u7f6e\u5bc6\u7801")]
         
         config = ConnectionConfig(
             host=config_data.host,
@@ -219,35 +279,33 @@ class SSHMCPServer:
         
         session_info = await self.session_manager.create_session(config)
         
-        output = f"SSH登录成功!\n"
-        output += f"主机: {session_info.host}:{session_info.port}\n"
+        output = f"SSH\u767b\u5f55\u6210\u529f!\n"
+        output += f"\u4e3b\u673a: {session_info.host}:{session_info.port}\n"
         output += f"Session ID: {session_info.session_id}\n"
-        output += f"用户名: {session_info.username}\n"
-        output += f"连接时间: {session_info.connected_at.isoformat()}"
+        output += f"\u7528\u6237\u540d: {session_info.username}\n"
+        output += f"\u8fde\u63a5\u65f6\u95f4: {session_info.connected_at.isoformat()}"
         
         command = args.get("command")
         if command:
             session = await self.session_manager.get_session(session_info.session_id)
             result = await session.execute_command(command)
-            output += f"\n\n--- 命令输出 ---\n"
+            output += f"\n\n--- \u547d\u4ee4\u8f93\u51fa ---\n"
             output += f"Exit Code: {result['exit_code']}\n"
             if result["stdout"]:
                 output += f"\n{result['stdout']}"
             if result["stderr"]:
-                output += f"\n--- 错误 ---\n{result['stderr']}"
+                output += f"\n--- \u9519\u8bef ---\n{result['stderr']}"
         
         return [TextContent(type="text", text=output)]
 
     async def _handle_connect(self, args: dict) -> list[TextContent]:
         host_config = None
         
-        # Try to get host from server.json or config/hosts.json by name
         if args.get("name"):
             host_config = self.config_manager.get_host_by_name(args["name"])
             if not host_config:
                 return [TextContent(type="text", text=f"Host '{args['name']}' not found in configuration files")]
         
-        # Use environment variable config if no name provided
         if not host_config and self._env_config:
             host_config = SSHHost(
                 name="env-server",
@@ -258,7 +316,6 @@ class SSHMCPServer:
                 timeout=self._env_config.get("timeout", 30)
             )
         
-        # Get client type from args, env config, or default to paramiko
         client_type = args.get("client_type") or self._env_config.get("client_type", "paramiko")
         
         if host_config:
@@ -274,7 +331,6 @@ class SSHMCPServer:
                 client_type=client_type
             )
         else:
-            # Use direct parameters from args
             config = ConnectionConfig(
                 host=args["host"],
                 port=args.get("port", 22),
@@ -382,13 +438,13 @@ class SSHMCPServer:
             return [TextContent(type="text", text=f"Unknown direction: {direction}")]
         
         if result.get("success"):
-            output = f"✅ {result.get('message', 'Success')}"
+            output = f"\u2705 {result.get('message', 'Success')}"
             if "files" in result:
-                output = f"📁 Files in {result.get('path', '.')}:\n"
+                output = f"\ud83d\udcc2 Files in {result.get('path', '.')}:\n"
                 for f in result["files"]:
                     output += f"  - {f}\n"
         else:
-            output = f"❌ {result.get('message', 'Failed')}"
+            output = f"\u274c {result.get('message', 'Failed')}"
         
         return [TextContent(type="text", text=output)]
 
@@ -397,7 +453,6 @@ class SSHMCPServer:
         
         output = "Configured SSH Hosts:\n"
         
-        # Show hosts from config files
         if hosts:
             for host in hosts:
                 output += f"\n- Name: {host.name}\n"
@@ -407,7 +462,6 @@ class SSHMCPServer:
         else:
             output += "\nNo hosts configured in config files.\n"
         
-        # Show environment variable config
         if self._env_config:
             output += "\n--- Environment Variables ---\n"
             output += f"Host: {self._env_config.get('host', 'N/A')}\n"
@@ -417,11 +471,170 @@ class SSHMCPServer:
         
         return [TextContent(type="text", text=output)]
 
+    async def _handle_background_task(self, args: dict) -> list[TextContent]:
+        """Handle background task execution for long-running commands like Docker build"""
+        import uuid
+        import os
+        
+        session_id = args.get("session_id")
+        command = args.get("command")
+        workdir = args.get("workdir", "/tmp")
+        log_file = args.get("log_file", "/tmp/background_task.log")
+        
+        if not session_id or not command:
+            return [TextContent(type="text", text="Error: session_id and command are required")]
+        
+        task_id = str(uuid.uuid4())[:8]
+        
+        background_command = f"""
+cd {workdir} && nohup {command} > {log_file} 2>&1 &
+echo $! > /tmp/task_{task_id}.pid
+echo "Task started with PID: $(cat /tmp/task_{task_id}.pid)"
+echo "Log file: {log_file}"
+"""
+        
+        try:
+            result = self.session_manager.execute_command(session_id, background_command, timeout=30)
+            
+            output = f"""�\ude80 Background Task Started!
+
+Task ID: {task_id}
+Command: {command}
+Working Directory: {workdir}
+Log File: {log_file}
+
+Use ssh_task_status to check progress:
+- Session ID: {session_id}
+- Task ID: {task_id}
+
+Example command:
+  \u67e5\u770b\u4efb\u52a1\u72b6\u6001\uff0csession_id={session_id}\uff0ctask_id={task_id}
+"""
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error starting background task: {str(e)}")]
+
+    async def _handle_task_status(self, args: dict) -> list[TextContent]:
+        """Check status of background task"""
+        
+        session_id = args.get("session_id")
+        task_id = args.get("task_id")
+        
+        if not session_id or not task_id:
+            return [TextContent(type="text", text="Error: session_id and task_id are required")]
+        
+        pid_file = f"/tmp/task_{task_id}.pid"
+        log_file = "/tmp/background_task.log"
+        
+        try:
+            check_pid_cmd = f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
+            result = self.session_manager.execute_command(session_id, check_pid_cmd, timeout=10)
+            status = result.get("stdout", "").strip()
+            
+            log_cmd = f"if [ -f {log_file} ]; then tail -20 {log_file}; else echo 'No log file yet'; fi"
+            log_result = self.session_manager.execute_command(session_id, log_cmd, timeout=10)
+            log_output = log_result.get("stdout", "")
+            
+            exit_code = None
+            if status == "COMPLETED":
+                exit_cmd = f"if [ -f {log_file} ]; then echo 'Exit code: 0 (check log for actual)'; else echo 'N/A'; fi"
+                exit_result = self.session_manager.execute_command(session_id, exit_cmd, timeout=10)
+                exit_code = exit_result.get("stdout", "")
+            
+            output = f"""\ud83d\udcca Task Status: {task_id}
+
+Status: {status}
+
+--- Recent Log Output ---
+{log_output}
+
+---
+Use this command to check again:
+  \u67e5\u770b\u4efb\u52a1\u72b6\u6001\uff0csession_id={session_id}\uff0ctask_id={task_id}
+"""
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error checking task status: {str(e)}")]
+
+    async def _handle_docker_build(self, args: dict) -> list[TextContent]:
+        """Handle Docker build on remote server"""
+        import uuid
+        
+        session_id = args.get("session_id")
+        dockerfile_path = args.get("dockerfile_path", "./Dockerfile")
+        image_name = args.get("image_name")
+        context = args.get("context", ".")
+        
+        if not session_id or not image_name:
+            return [TextContent(type="text", text="Error: session_id and image_name are required")]
+        
+        task_id = str(uuid.uuid4())[:8]
+        log_file = f"/tmp/docker_build_{task_id}.log"
+        
+        docker_build_cmd = f"""
+cd {context} && nohup docker build -t {image_name} -f {dockerfile_path} . > {log_file} 2>&1 &
+echo $! > /tmp/docker_task_{task_id}.pid
+echo "Docker build started"
+"""
+        
+        try:
+            result = self.session_manager.execute_command(session_id, docker_build_cmd, timeout=30)
+            
+            output = f"""\ud83d\udc33 Docker Build Started!
+
+Task ID: {task_id}
+Image: {image_name}
+Dockerfile: {dockerfile_path}
+Context: {context}
+Log File: {log_file}
+
+Use ssh_docker_status to check progress:
+  \u67e5\u770b Docker \u72b6\u6001\uff0csession_id={session_id}\uff0cimage_name={image_name}
+"""
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error starting Docker build: {str(e)}")]
+
+    async def _handle_docker_status(self, args: dict) -> list[TextContent]:
+        """Check Docker build and container status"""
+        
+        session_id = args.get("session_id")
+        image_name = args.get("image_name")
+        
+        if not session_id:
+            return [TextContent(type="text", text="Error: session_id is required")]
+        
+        try:
+            containers_cmd = "docker ps --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'"
+            containers_result = self.session_manager.execute_command(session_id, containers_cmd, timeout=10)
+            
+            output = "\ud83d\udc33 Docker Status\n\n"
+            output += "--- Running Containers ---\n"
+            output += containers_result.get("stdout", "No running containers\n")
+            
+            if image_name:
+                images_cmd = f"docker images {image_name} --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
+                images_result = self.session_manager.execute_command(session_id, images_cmd, timeout=10)
+                output += "\n--- Docker Images ---\n"
+                output += images_result.get("stdout", f"No images found matching {image_name}\n")
+            
+            log_files_cmd = "ls -la /tmp/docker_build_*.log 2>/dev/null | tail -5 || echo 'No build logs found'"
+            log_result = self.session_manager.execute_command(session_id, log_files_cmd, timeout=10)
+            output += "\n--- Recent Build Logs ---\n"
+            output += log_result.get("stdout", "")
+            
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error checking Docker status: {str(e)}")]
+
     async def run(self):
         import signal
         from contextlib import asynccontextmanager
         
-        # 设置信号处理器用于优雅关闭
         loop = asyncio.get_event_loop()
         shutdown_event = asyncio.Event()
         
@@ -432,7 +645,6 @@ class SSHMCPServer:
             try:
                 loop.add_signal_handler(sig, signal_handler)
             except NotImplementedError:
-                # Windows 不支持 add_signal_handler，使用替代方案
                 pass
         
         async with stdio_server() as (read_stream, write_stream):
@@ -443,7 +655,6 @@ class SSHMCPServer:
                     self.server.create_initialization_options()
                 )
             except (ConnectionError, BrokenPipeError):
-                # 客户端断开连接时优雅退出
                 pass
             finally:
                 await self.session_manager.close_all_sessions()
@@ -458,9 +669,7 @@ def run_server():
     """Synchronous entry point for CLI"""
     import sys
     
-    # 检查是否在非交互模式运行（如 Docker 构建）
     if not sys.stdin.isatty():
-        # 在非交互模式下，添加超时保护
         print("Warning: Running in non-interactive mode (stdin is not a TTY)", file=sys.stderr)
         print("MCP server expects to be run as part of an MCP client", file=sys.stderr)
     
