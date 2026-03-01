@@ -335,9 +335,9 @@ SSH LICCO 支持多种 SSH 客户端实现，可根据需求选择：
 
 | 客户端 | 类型 | 特点 | 安装 |
 |--------|------|------|------|
-| Paramiko | 同步 | 纯 Python，功能完善，默认 | 内置 |
+| Paramiko | 同步 | 纯 Python，功能完善 | 内置 |
 | Fabric | 同步 | 高级 API，易用性强 | `pip install fabric` |
-| AsyncSSH | 异步 | 高并发性能 | `pip install asyncssh` |
+| AsyncSSH | 异步 | 高并发性能（默认） | `pip install asyncssh` |
 | SSH2 | 同步 | C 扩展，极速 | `pip install ssh2-python` |
 
 ### 配置客户端
@@ -346,7 +346,7 @@ SSH LICCO 支持多种 SSH 客户端实现，可根据需求选择：
 
 ```json
 {
-  "default_client": "paramiko",
+  "default_client": "asyncssh",
   "clients": {
     "paramiko": {
       "enabled": true,
@@ -361,6 +361,12 @@ SSH LICCO 支持多种 SSH 客户端实现，可根据需求选择：
       "session_timeout": 7200
     },
     "asyncssh": {
+      "enabled": true,
+      "timeout": 30,
+      "keepalive_interval": 30,
+      "session_timeout": 7200
+    },
+    "ssh2": {
       "enabled": false,
       "timeout": 30,
       "keepalive_interval": 30,
@@ -375,8 +381,8 @@ SSH LICCO 支持多种 SSH 客户端实现，可根据需求选择：
 ```python
 from ssh_mcp.clients import SSHClientFactory, ClientType
 
-# 切换到 Fabric 客户端
-SSHClientFactory.set_default(ClientType.FABRIC)
+# 切换到 Paramiko 客户端
+SSHClientFactory.set_default(ClientType.PARAMIKO)
 ```
 
 ---
@@ -474,7 +480,7 @@ config = ConnectionConfig(
     session_timeout=7200
 )
 
-# 创建客户端（默认 Paramiko）
+# 创建客户端（默认 AsyncSSH）
 client = SSHClientFactory.create(config)
 
 # 连接
