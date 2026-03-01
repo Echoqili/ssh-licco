@@ -1,0 +1,40 @@
+# ⚠️ 重要提示：SSH MCP 服务器不适合作为 Docker 构建步骤运行
+#
+# MCP 服务器设计为与 AI 客户端（如 Trae、Cursor、Claude Desktop）一起使用
+# 它需要：
+# 1. 持久的 stdio 连接
+# 2. 与 MCP 客户端的双向通信
+# 3. 后台运行以保持 SSH 会话
+
+# ❌ 错误用法 - 不要在 Docker 构建中运行 MCP：
+# RUN ssh-licco  # 这会超时！
+
+# ✅ 正确用法：
+# 1. 在宿主机安装 ssh-licco
+# 2. 在 AI 客户端配置 MCP 服务器
+# 3. 使用 AI 客户端通过 MCP 操作 Docker
+
+# 如果你需要在 Docker 中使用 SSH 功能，建议：
+# 1. 使用多阶段构建
+# 2. 在运行时通过 docker exec 执行命令
+# 3. 或者使用 SSH 客户端直接从宿主机操作
+
+# 示例：构建一个包含 SSH 工具的基础镜像
+FROM python:3.11-slim
+
+# 安装 SSH 客户端
+RUN apt-get update && apt-get install -y \
+    openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制项目文件
+COPY . .
+
+# 安装依赖（不包括 ssh-licco）
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 默认命令
+CMD ["python", "app.py"]
