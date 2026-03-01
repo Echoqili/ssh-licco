@@ -13,10 +13,8 @@ from .logging_config import get_logger
 
 class ClientType(Enum):
     """支持的 SSH 客户端类型"""
-    PARAMIKO = "paramiko"
-    FABRIC = "fabric"
     ASYNCSSH = "asyncssh"
-    SSH2 = "ssh2"
+    PARAMIKO = "paramiko"
 
 
 class HealthCheckStatus(Enum):
