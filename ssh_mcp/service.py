@@ -17,7 +17,6 @@ class ClientType(Enum):
     FABRIC = "fabric"
     ASYNCSSH = "asyncssh"
     SSH2 = "ssh2"
-    SYSTEM = "system"
 
 
 class HealthCheckStatus(Enum):

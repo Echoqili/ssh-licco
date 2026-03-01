@@ -218,7 +218,6 @@ ssh_mcp/
 | Fabric | 同步 | 高级 API，易用性强 | `pip install fabric` |
 | AsyncSSH | 异步 | 高并发性能 | `pip install asyncssh` |
 | SSH2 | 同步 | C 扩展，极速 | `pip install ssh2-python` |
-| System | 同步 | 调用系统 SSH，最稳定 | 系统自带 |
 
 ### 配置客户端
 

@@ -65,12 +65,6 @@ try:
 except ImportError:
     pass
 
-try:
-    from .additional_clients import SystemSSHClient
-    SSHClientFactory.register(ClientType.SYSTEM, SystemSSHClient)
-except ImportError:
-    pass
-
 
 class ClientConfig:
     """SSH 客户端配置管理"""
