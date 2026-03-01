@@ -106,7 +106,9 @@ cp config/hosts.json.example config/hosts.json
       "env": {
         "SSH_HOST": "192.168.1.100",
         "SSH_USER": "root",
-        "SSH_PASSWORD": "your_password"
+        "SSH_PASSWORD": "your_password",
+        "SSH_KEEPALIVE_INTERVAL": "30",
+        "SSH_SESSION_TIMEOUT": "7200"
       }
     }
   }
@@ -119,6 +121,36 @@ cp config/hosts.json.example config/hosts.json
 ```
 
 > ⚠️ 提醒：`config/hosts.json` 已经加入 `.gitignore`，不会提交到 GitHub，放心用！
+
+## 🔥 长连接功能（避免账户锁定）
+
+频繁连接 SSH 服务器可能导致账户被锁定？SSH LICCO 默认启用长连接和自动保活：
+
+- **自动保活**：每 30 秒发送心跳包，保持连接活跃
+- **持久会话**：默认保持 2 小时，避免频繁重连
+- **可配置**：根据需求调整保活间隔和会话时长
+
+### 配置长连接
+
+在 MCP 配置中添加：
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "43.143.207.242",
+        "SSH_USER": "root",
+        "SSH_PASSWORD": "your-password",
+        "SSH_KEEPALIVE_INTERVAL": "30",
+        "SSH_SESSION_TIMEOUT": "7200"
+      }
+    }
+  }
+}
+```
+
+详细配置见 [CONFIG_GUIDE.md](CONFIG_GUIDE.md)
 
 ## 能干啥
 
