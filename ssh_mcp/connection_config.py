@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 AuthMethod = Literal["password", "private_key", "agent"]
+ClientType = Literal["paramiko", "fabric", "asyncssh", "ssh2"]
 
 
 class ConnectionConfig(BaseModel):
@@ -22,6 +23,7 @@ class ConnectionConfig(BaseModel):
     look_for_keys: bool = Field(default=True, description="Look for keys in ~/.ssh")
     allow_agent: bool = Field(default=True, description="Use SSH agent for authentication")
     session_timeout: int = Field(default=7200, description="Session timeout in seconds (default: 2 hours)")
+    client_type: ClientType = Field(default="paramiko", description="SSH client implementation to use")
     
     @field_validator("port")
     @classmethod

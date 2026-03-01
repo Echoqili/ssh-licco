@@ -35,6 +35,7 @@ class SSHMCPServer:
             config["timeout"] = int(os.getenv("SSH_TIMEOUT", "30"))
             config["keepalive_interval"] = int(os.getenv("SSH_KEEPALIVE_INTERVAL", "30"))
             config["session_timeout"] = int(os.getenv("SSH_SESSION_TIMEOUT", "7200"))
+            config["client_type"] = os.getenv("SSH_CLIENT_TYPE", "paramiko")
         return config
 
     def _setup_handlers(self):
@@ -79,7 +80,8 @@ class SSHMCPServer:
                             "private_key_path": {"type": "string", "description": "Path to private key file"},
                             "passphrase": {"type": "string", "description": "Passphrase for private key"},
                             "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key"},
-                            "name": {"type": "string", "description": "Connect using host from server.json by name"}
+                            "name": {"type": "string", "description": "Connect using host from server.json by name"},
+                            "client_type": {"type": "string", "enum": ["paramiko", "fabric", "asyncssh", "ssh2"], "default": "paramiko", "description": "SSH client implementation to use"}
                         }
                     }
                 ),
@@ -256,6 +258,9 @@ class SSHMCPServer:
                 timeout=self._env_config.get("timeout", 30)
             )
         
+        # Get client type from args, env config, or default to paramiko
+        client_type = args.get("client_type") or self._env_config.get("client_type", "paramiko")
+        
         if host_config:
             config = ConnectionConfig(
                 host=host_config.host,
@@ -265,7 +270,8 @@ class SSHMCPServer:
                 auth_method="password" if host_config.password else "private_key",
                 timeout=host_config.timeout,
                 keepalive_interval=getattr(host_config, 'keepalive_interval', 30),
-                session_timeout=getattr(host_config, 'session_timeout', 7200)
+                session_timeout=getattr(host_config, 'session_timeout', 7200),
+                client_type=client_type
             )
         else:
             # Use direct parameters from args
@@ -279,7 +285,8 @@ class SSHMCPServer:
                 auth_method=args.get("auth_method", "private_key"),
                 timeout=args.get("timeout", 30),
                 keepalive_interval=args.get("keepalive_interval", 30),
-                session_timeout=args.get("session_timeout", 7200)
+                session_timeout=args.get("session_timeout", 7200),
+                client_type=client_type
             )
         
         session_info = await self.session_manager.create_session(config)
