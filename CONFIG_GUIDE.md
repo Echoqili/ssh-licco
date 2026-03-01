@@ -324,3 +324,196 @@ A: 密码保存在本地文件，不会上传到 GitHub 或任何服务器
 - [README.md](README.md) - 项目说明
 - [USAGE.md](USAGE.md) - 详细使用指南
 - [GitHub Issues](https://github.com/Echoqili/ssh-licco/issues) - 问题反馈
+
+---
+
+## 🖥️ 客户端类型配置
+
+SSH LICCO 支持多种 SSH 客户端实现，可根据需求选择：
+
+### 支持的客户端
+
+| 客户端 | 类型 | 特点 | 安装 |
+|--------|------|------|------|
+| Paramiko | 同步 | 纯 Python，功能完善 | 内置 |
+| Fabric | 同步 | 高级 API，易用性强 | `pip install fabric` |
+| AsyncSSH | 异步 | 高并发性能（默认） | `pip install asyncssh` |
+| SSH2 | 同步 | C 扩展，极速 | `pip install ssh2-python` |
+
+### 配置客户端
+
+编辑 `config/client_config.json`：
+
+```json
+{
+  "default_client": "asyncssh",
+  "clients": {
+    "paramiko": {
+      "enabled": true,
+      "timeout": 30,
+      "keepalive_interval": 30,
+      "session_timeout": 7200
+    },
+    "fabric": {
+      "enabled": false,
+      "timeout": 30,
+      "keepalive_interval": 30,
+      "session_timeout": 7200
+    },
+    "asyncssh": {
+      "enabled": true,
+      "timeout": 30,
+      "keepalive_interval": 30,
+      "session_timeout": 7200
+    },
+    "ssh2": {
+      "enabled": false,
+      "timeout": 30,
+      "keepalive_interval": 30,
+      "session_timeout": 7200
+    }
+  }
+}
+```
+
+### 切换客户端
+
+```python
+from ssh_mcp.clients import SSHClientFactory, ClientType
+
+# 切换到 Paramiko 客户端
+SSHClientFactory.set_default(ClientType.PARAMIKO)
+```
+
+---
+
+## 🔔 异常处理
+
+SSH LICCO 提供统一的异常体系，便于错误处理：
+
+### 异常类型
+
+```python
+from ssh_mcp import (
+    SSHException,           # 基础异常
+    ConnectionException,    # 连接异常
+    AuthenticationException, # 认证异常
+    CommandExecutionException, # 命令执行异常
+    FileTransferException, # 文件传输异常
+    SessionException,       # 会话异常
+    TimeoutException,       # 超时异常
+    ConfigurationException, # 配置异常
+)
+```
+
+### 使用示例
+
+```python
+from ssh_mcp import SSHService, get_ssh_service
+from ssh_mcp import ConnectionException, AuthenticationException
+
+service = get_ssh_service()
+
+try:
+    info = service.connect(config)
+except AuthenticationException as e:
+    print(f"认证失败: {e.message}")
+except ConnectionException as e:
+    print(f"连接失败: {e.message}")
+except SSHException as e:
+    print(f"SSH错误: {e.message}")
+```
+
+---
+
+## 📝 日志配置
+
+### 基本使用
+
+```python
+from ssh_mcp import get_logger, SSHLogger
+
+# 获取日志实例
+logger = get_logger("my-app")
+logger.info("Application started")
+logger.debug("Debug information")
+logger.error("Error occurred")
+```
+
+### 高级配置
+
+```python
+from ssh_mcp import SSHLogger
+
+# 设置日志级别
+SSHLogger.set_log_level("DEBUG")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# 添加文件日志
+SSHLogger.add_file_handler("logs/ssh-licco.log", level="DEBUG")
+```
+
+### 日志格式
+
+```
+2024-01-15 10:30:45 | INFO     | ssh-licco | Connected to 192.168.1.100:22 in 125.50ms
+2024-01-15 10:30:46 | DEBUG    | Paramiko.192.168.1.100 | Executing command: ls -la
+```
+
+---
+
+## 🔧 编程接口
+
+### 基础连接
+
+```python
+from ssh_mcp import ConnectionConfig
+from ssh_mcp.clients import SSHClientFactory
+
+# 创建配置
+config = ConnectionConfig(
+    host="192.168.1.100",
+    port=22,
+    username="root",
+    password="password",
+    timeout=30,
+    keepalive_interval=30,
+    session_timeout=7200
+)
+
+# 创建客户端（默认 AsyncSSH）
+client = SSHClientFactory.create(config)
+
+# 连接
+result = client.connect()
+print(f"连接结果: {result.message}, 延迟: {result.latency_ms}ms")
+
+# 执行命令
+cmd_result = client.execute_command("ls -la")
+print(f"输出: {cmd_result.stdout}")
+
+# 断开
+client.close()
+```
+
+### 使用服务层
+
+```python
+from ssh_mcp import ConnectionConfig, get_ssh_service
+
+service = get_ssh_service()
+
+# 连接
+info = service.connect(config)
+print(f"会话ID: {info.session_id}")
+
+# 执行命令
+result = service.execute_command(info.session_id, "uptime")
+print(f"结果: {result}")
+
+# 健康检查
+health = service.health_check(info.session_id)
+print(f"状态: {health.status.value}, 延迟: {health.latency_ms}ms")
+
+# 断开
+service.disconnect(info.session_id)
+```
