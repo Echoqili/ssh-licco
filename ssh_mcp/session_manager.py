@@ -34,6 +34,7 @@ class SessionInfo:
     last_activity: datetime
     command_count: int = 0
     error_message: Optional[str] = None
+    last_keepalive: datetime = field(default_factory=datetime.now)
 
 
 class SSHSession:
@@ -43,6 +44,9 @@ class SSHSession:
         self.session_id = str(uuid.uuid4())
         self._state = SessionState.DISCONNECTED
         self._connected_at: Optional[datetime] = None
+        self._last_activity: datetime = datetime.now()
+        self._last_keepalive: datetime = datetime.now()
+        self._keepalive_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
 
     @property
@@ -66,6 +70,7 @@ class SSHSession:
                 )
                 self._connected_at = datetime.now()
                 self._state = SessionState.CONNECTED
+                self._start_keepalive()
                 return self._get_session_info()
             except Exception as e:
                 self._state = SessionState.ERROR
@@ -93,6 +98,37 @@ class SSHSession:
                 connect_kwargs['passphrase'] = self.config.passphrase
         
         self.client.connect(**connect_kwargs)
+        
+        # Enable keepalive
+        transport = self.client.get_transport()
+        if transport:
+            transport.set_keepalive(self.config.keepalive_interval)
+
+    def _start_keepalive(self):
+        """Start background keepalive task."""
+        if self._keepalive_task:
+            self._keepalive_task.cancel()
+        
+        async def keepalive_loop():
+            while self.is_connected:
+                try:
+                    # Sleep for the keepalive interval
+                    await asyncio.sleep(self.config.keepalive_interval)
+                    
+                    # Check if we should still be connected
+                    if not self.is_connected:
+                        break
+                    
+                    # Send keepalive
+                    transport = await asyncio.get_event_loop().run_in_executor(None, lambda: self.client.get_transport() if self.client else None)
+                    if transport:
+                        transport.send_ignore()
+                        self._last_keepalive = datetime.now()
+                except Exception as e:
+                    print(f"Keepalive failed for session {self.session_id}: {e}")
+                    break
+        
+        self._keepalive_task = asyncio.create_task(keepalive_loop())
 
     async def execute_command(self, command: str, timeout: int = 30) -> dict:
         if not self.is_connected:
@@ -100,6 +136,7 @@ class SSHSession:
         
         async with self._lock:
             self._state = SessionState.EXECUTING
+            self._last_activity = datetime.now()
             try:
                 result = await asyncio.get_event_loop().run_in_executor(
                     None, self._execute_command_sync, command, timeout
@@ -132,6 +169,7 @@ class SSHSession:
         
         async with self._lock:
             self._state = SessionState.EXECUTING
+            self._last_activity = datetime.now()
             try:
                 async for line in asyncio.get_event_loop().run_in_executor(
                     None, self._execute_command_stream_sync, command
@@ -152,6 +190,7 @@ class SSHSession:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
+        self._last_activity = datetime.now()
         return await asyncio.get_event_loop().run_in_executor(
             None, self._open_shell_sync, term, width, height
         )
@@ -164,6 +203,7 @@ class SSHSession:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         async with self._lock:
+            self._last_activity = datetime.now()
             return await asyncio.get_event_loop().run_in_executor(
                 None, self._upload_file_sync, local_path, remote_path
             )
@@ -182,6 +222,7 @@ class SSHSession:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         async with self._lock:
+            self._last_activity = datetime.now()
             return await asyncio.get_event_loop().run_in_executor(
                 None, self._download_file_sync, remote_path, local_path
             )
@@ -200,6 +241,7 @@ class SSHSession:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         async with self._lock:
+            self._last_activity = datetime.now()
             return await asyncio.get_event_loop().run_in_executor(
                 None, self._list_directory_sync, remote_path
             )
@@ -216,6 +258,9 @@ class SSHSession:
 
     async def disconnect(self) -> None:
         async with self._lock:
+            if self._keepalive_task:
+                self._keepalive_task.cancel()
+                self._keepalive_task = None
             if self.client:
                 self.client.close()
                 self.client = None
@@ -229,7 +274,8 @@ class SSHSession:
             username=self.config.username,
             state=self._state,
             connected_at=self._connected_at or datetime.now(),
-            last_activity=datetime.now()
+            last_activity=self._last_activity,
+            last_keepalive=self._last_keepalive
         )
 
 

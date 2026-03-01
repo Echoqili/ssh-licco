@@ -10,6 +10,96 @@ SSH LICCO 支持多种配置方式，你可以根据需求选择：
 
 ---
 
+## 🔧 长连接配置
+
+### 为什么需要长连接？
+
+频繁连接 SSH 服务器可能导致：
+- 触发服务器的安全机制（如 fail2ban）
+- 账户被锁定
+- 连接超时或失败
+
+### 长连接功能
+
+SSH LICCO 默认启用长连接和自动保活功能：
+
+- **保活间隔（keepalive_interval）**: 每 30 秒发送一次心跳包
+- **会话超时（session_timeout）**: 会话保持 2 小时（7200 秒）
+
+### 配置长连接
+
+#### 在 config/hosts.json 中配置
+
+```json
+{
+  "ssh_hosts": [
+    {
+      "name": "我的服务器",
+      "host": "43.143.207.242",
+      "port": 22,
+      "username": "root",
+      "password": "your-password",
+      "timeout": 60,
+      "keepalive_interval": 30,
+      "session_timeout": 7200
+    }
+  ]
+}
+```
+
+#### 在 MCP 环境变量中配置
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "43.143.207.242",
+        "SSH_USER": "root",
+        "SSH_PASSWORD": "your-password",
+        "SSH_PORT": "22",
+        "SSH_TIMEOUT": "60",
+        "SSH_KEEPALIVE_INTERVAL": "30",
+        "SSH_SESSION_TIMEOUT": "7200"
+      }
+    }
+  }
+}
+```
+
+### 推荐配置
+
+| 场景 | keepalive_interval | session_timeout |
+|------|-------------------|-----------------|
+| 一般使用 | 30 秒 | 2 小时（7200 秒） |
+| 频繁操作 | 20 秒 | 4 小时（14400 秒） |
+| 偶尔使用 | 60 秒 | 1 小时（3600 秒） |
+| 不稳定网络 | 15 秒 | 2 小时（7200 秒） |
+
+### 查看会话状态
+
+在 Trae 中说：
+```
+查看当前会话
+```
+
+会显示：
+- Session ID
+- 主机信息
+- 连接时间
+- 最后活动时间
+- 最后保活时间
+
+### 手动断开连接
+
+如果需要手动断开长连接：
+```
+断开连接 [session_id]
+```
+
+---
+
 ## 方式 1：独立配置文件（推荐）
 
 ### 步骤
@@ -72,7 +162,10 @@ SSH LICCO 支持多种配置方式，你可以根据需求选择：
            "SSH_HOST": "43.143.207.242",
            "SSH_USER": "root",
            "SSH_PASSWORD": "your-password",
-           "SSH_PORT": "22"
+           "SSH_PORT": "22",
+           "SSH_TIMEOUT": "30",
+           "SSH_KEEPALIVE_INTERVAL": "30",
+           "SSH_SESSION_TIMEOUT": "7200"
          }
        }
      }
@@ -88,6 +181,18 @@ SSH LICCO 支持多种配置方式，你可以根据需求选择：
 - ✅ 配置集中管理
 - ✅ 适合单个服务器
 - ⚠️ 密码在配置文件中，需注意安全
+
+### 环境变量说明
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `SSH_HOST` | - | SSH 服务器 IP |
+| `SSH_USER` | root | SSH 用户名 |
+| `SSH_PASSWORD` | - | SSH 密码 |
+| `SSH_PORT` | 22 | SSH 端口 |
+| `SSH_TIMEOUT` | 30 | 连接超时（秒） |
+| `SSH_KEEPALIVE_INTERVAL` | 30 | 保活间隔（秒） |
+| `SSH_SESSION_TIMEOUT` | 7200 | 会话超时（秒），默认 2 小时 |
 
 ---
 
@@ -191,6 +296,8 @@ python test_connect.py
 | username | string | root | 否 | SSH 用户名 |
 | password | string | - | 否 | SSH 密码（或使用密钥） |
 | timeout | number | 30 | 否 | 连接超时（秒） |
+| keepalive_interval | number | 30 | 否 | 保活间隔（秒），建议 30-60 |
+| session_timeout | number | 7200 | 否 | 会话超时（秒），默认 2 小时 |
 | private_key_path | string | - | 否 | 私钥路径 |
 | passphrase | string | - | 否 | 私钥密码 |
 
