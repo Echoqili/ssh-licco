@@ -1,5 +1,5 @@
 {
-  "default_client": "paramiko",
+  "default_client": "asyncssh",
   "clients": {
     "paramiko": {
       "enabled": true,
@@ -18,7 +18,7 @@
       "session_timeout": 7200
     },
     "asyncssh": {
-      "enabled": false,
+      "enabled": true,
       "name": "AsyncSSH",
       "description": "异步实现，高性能",
       "timeout": 30,
