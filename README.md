@@ -1,7 +1,7 @@
 # 🚀 SSH LICCO
 
 [![PyPI version](https://badge.fury.io/py/ssh-licco.svg)](https://badge.fury.io/py/ssh-licco)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10-3.13](https://img.shields.io/badge/python-3.10--3.13-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **让 AI 帮你操作服务器！**
@@ -20,6 +20,13 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的 SSH 服务器，让 A
 - 🔑 **密钥管理** - 生成、保存和管理 SSH 密钥对
 - 📝 **详细日志记录** - 支持多级日志和文件输出
 - 🚀 **高性能异步** - 基于 asyncio 的异步架构
+
+### 技术栈
+- Python 3.10 - 3.13
+- MCP SDK 1.0+
+- AsyncSSH 2.17.0+
+- Pydantic 2.0+
+- asyncio 异步架构
 
 ## 📦 安装
 
@@ -44,6 +51,11 @@ git clone https://github.com/Echoqili/ssh-licco.git
 cd ssh-licco
 pip install -e ".[dev]"
 ```
+
+**Python 版本要求：**
+- ✅ Python 3.10, 3.11, 3.12, 3.13
+- ❌ Python 3.9 及以下版本不支持
+- ❌ Python 3.14 及以上版本未测试
 
 ## 🚀 快速开始
 
@@ -233,18 +245,25 @@ ssh_mcp/
 - **单例模式**：全局 SSHService 实例
 - **上下文管理器**：自动连接/断开管理
 
-### 多客户端支持
+### 客户端支持
+
+当前仅支持 **AsyncSSH** 客户端：
 
 | 客户端 | 类型 | 特点 | 安装 |
 |--------|------|------|------|
-| Paramiko | 同步 | 纯 Python，功能完善 | 内置 |
-| Fabric | 同步 | 高级 API，易用性强 | `pip install fabric` |
-| AsyncSSH | 异步 | 高并发性能（默认） | `pip install asyncssh` |
-| SSH2 | 同步 | C 扩展，极速 | `pip install ssh2-python` |
+| **AsyncSSH** | 异步 | 高并发性能，异步架构，默认且唯一 | `pip install asyncssh` |
+
+**说明：** 为了简化维护和优化性能，本项目目前仅支持 AsyncSSH 客户端。AsyncSSH 提供：
+- ✅ 异步架构，高并发性能
+- ✅ 低资源占用
+- ✅ 现代化的 API 设计
+- ✅ 活跃的社区支持
 
 ### 配置客户端类型
 
-**方式 1：在 MCP 配置中全局指定**
+当前默认且仅支持 **AsyncSSH** 客户端，无需额外配置。
+
+如需指定（兼容性）：
 
 ```json
 {
@@ -256,52 +275,6 @@ ssh_mcp/
       }
     }
   }
-}
-```
-
-**方式 2：通过配置文件**
-
-```json
-{
-  "default_client": "asyncssh",
-  "clients": {
-    "paramiko": {
-      "enabled": true,
-      "timeout": 30,
-      "keepalive_interval": 30
-    },
-    "fabric": {
-      "enabled": false,
-      "timeout": 30
-    },
-    "asyncssh": {
-      "enabled": true,
-      "timeout": 30
-    }
-  }
-}
-```
-
-**方式 2：在连接时指定**
-
-```
-连接 192.168.1.100，用户名 root，密码 secret，client_type=fabric
-```
-
-**方式 3：在配置文件中为每个服务器指定**
-
-```json
-{
-  "ssh_hosts": [
-    {
-      "name": "服务器 1",
-      "client_type": "paramiko"
-    },
-    {
-      "name": "服务器 2",
-      "client_type": "fabric"
-    }
-  ]
 }
 ```
 
