@@ -7,30 +7,92 @@
 
 ---
 
-## [0.1.1] - 2026-03-01
-
-### 重大变更
-- **仅支持 AsyncSSH 客户端** - 移除对其他客户端的支持，简化架构
-- **Python 版本范围** - 明确支持 Python 3.10 - 3.13
-
-### 移除
-- 移除 Paramiko 客户端支持
-- 移除 Fabric 客户端支持
-- 移除 SSH2 客户端支持
-- 移除相关依赖（paramiko, cryptography, aiosqlite）
-
-### 改进
-- 简化配置文件，仅保留 AsyncSSH 配置
-- 更新所有文档，反映单一客户端策略
-- 优化依赖关系，减少安装包大小
+## [0.2.1] - 2026-03-03
 
 ### 新增
-- 添加 Python 3.13 支持
-- 明确 Python 版本范围：>=3.10,<3.14
+- **连接池模块** (`connection_pool.py`) - 高性能连接复用
+  - `ConnectionPool` - 连接池管理器
+  - `PoolConfig` - 连接池配置
+  - `PooledSSHClient` - 池化客户端封装
+  - 连接健康检查与自动回收
+  - 线程安全，支持并发访问
+
+- **批量执行模块** (`batch_executor.py`) - 多主机并行管理
+  - `BatchExecutor` - 同步批量执行器
+  - `AsyncBatchExecutor` - 异步批量执行器
+  - `BatchExecutionResult` - - `HostResult 执行结果
+ ` - 单主机结果
+  - 支持进度回调
+  - 失败隔离机制
+
+- **审计日志模块** (`audit_logger.py`) - 操作审计记录
+  - `AuditLogger` - 审计日志管理器
+  - `AuditEventType` - 事件类型枚举
+  - `get_audit_logger()` - 便捷获取实例
+  - 连接/断开事件记录
+  - 命令执行事件记录
+  - 文件传输事件记录
+  - 认证成功/失败记录
+
+- **重试配置** (`connection_config.py`)
+  - `RetryConfig` - 重试配置类
+  - 支持最大重试次数
+  - 支持指数退避
+  - 支持超时重试
+
+### 改进
+- 密钥认证优先 - 默认启用 `prefer_key_auth`
+- 安全强化 - 默认关闭 `look_for_keys` 和 `allow_agent`
+- 默认客户端改为 `asyncssh`
+- 异常体系扩展 - 新增 `PoolExhaustedException`、`RetryExhaustedException`
+
+### 文档更新
+- README.md 新增连接池、批量执行、审计日志功能说明
+- 更新架构设计文档
 
 ---
 
-## [0.1.0] - 2026-03-01
+## [0.2.0] - 2026-03-01
+
+### 新增
+- **统一异常体系** - 8种异常类型，便于错误处理
+  - `SSHException` - 基础异常
+  - `ConnectionException` - 连接异常
+  - `AuthenticationException` - 认证异常
+  - `CommandExecutionException` - 命令执行异常
+  - `FileTransferException` - 文件传输异常
+  - `SessionException` - 会话异常
+  - `TimeoutException` - 超时异常
+  - `ConfigurationException` - 配置异常
+
+- **日志管理系统** - 单例模式，支持控制台和文件日志
+  - `SSHLogger` - 日志管理器类
+  - `get_logger()` - 便捷获取日志实例
+  - 支持设置日志级别
+  - 支持添加文件日志处理器
+
+- **业务服务层** - 统一的连接和会话管理
+  - `SSHService` - 核心服务类
+  - 健康检查功能 (`health_check`)
+  - 会话管理 (`connect`, `disconnect`, `list_sessions`)
+  - 连接信息追踪 (`ConnectionInfo`)
+
+- **可插拔客户端架构** - 多种 SSH 客户端支持
+  - `SSHClientInterface` - 抽象接口
+  - `SSHClientFactory` - 客户端工厂
+  - `ParamikoClient` - 纯 Python 实现
+  - `FabricClient` - 高级 API
+  - `AsyncSSHClient` - 异步高性能
+  - `SSH2Client` - C 扩展
+
+### 改进
+- 设置 **AsyncSSH** 为默认客户端
+- 分层架构设计，职责分离
+- 完整的类型提示
+- 性能监控（连接延迟、传输速度）
+
+### 移除
+- 移除 System SSH 客户端
 
 ---
 
@@ -44,10 +106,23 @@
   - 命令执行功能
   - SFTP 文件传输（上传、下载、列表）
   - SSH 密钥生成和管理
-  
+  - 长连接支持（自动保活）
+  - 可配置会话超时
+
 - **工具**
   - `ssh_config` - 配置 SSH 连接信息
   - `ssh_login` - 使用保存的配置登录
+  - `ssh_connect` - 直接连接 SSH
+  - `ssh_execute` - 执行命令
+  - `ssh_disconnect` - 断开连接
+  - `ssh_list_sessions` - 列出所有会话
+  - `ssh_generate_key` - 生成 SSH 密钥
+  - `ssh_file_transfer` - SFTP 文件传输
+
+- **配置方式**
+  - 环境变量配置
+  - 配置文件 (hosts.json)
+  - MCP 注册表配置
   - `ssh_connect` - 直接连接 SSH
   - `ssh_execute` - 执行命令
   - `ssh_disconnect` - 断开连接
