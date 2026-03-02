@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from typing import AsyncIterator
 from pathlib import Path
 
 from ..connection_config import ConnectionConfig
 from .interface import SSHClientInterface, ClientType, CommandResult, FileListResult
+
+
+def _run_async(coro):
+    """在 Windows 上使用 ProactorEventLoop 运行异步代码"""
+    if sys.platform == 'win32':
+        loop = asyncio.ProactorEventLoop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            pass
+    else:
+        return asyncio.run(coro)
 
 
 class FabricClient(SSHClientInterface):
@@ -170,7 +184,7 @@ class AsyncSSHClient(SSHClientInterface):
             else:
                 async def do_connect():
                     return await asyncssh.connect(**connect_kwargs)
-                self._connection = asyncio.run(do_connect())
+                self._connection = _run_async(do_connect())
         except ImportError:
             raise ImportError("AsyncSSH is not installed. Install with: pip install asyncssh")
     
@@ -203,7 +217,14 @@ class AsyncSSHClient(SSHClientInterface):
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
-        result = asyncio.run(self._connection.run(command, timeout=timeout))
+        import sys
+        if sys.platform == 'win32':
+            import asyncio
+            loop = asyncio.ProactorEventLoop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self._connection.run(command, timeout=timeout))
+        else:
+            result = _run_async(self._connection.run(command, timeout=timeout))
         return CommandResult(
             stdout=result.stdout,
             stderr=result.stderr,
@@ -240,7 +261,7 @@ class AsyncSSHClient(SSHClientInterface):
             raise ConnectionError("Not connected to SSH server")
         
         try:
-            asyncio.run(self._connection.scp(local_path, remote_path))
+            _run_async(self._connection.scp(local_path, remote_path))
             return {"success": True, "message": f"File uploaded: {local_path} -> {remote_path}"}
         except Exception as e:
             return {"success": False, "message": f"Upload failed: {str(e)}"}
@@ -262,7 +283,7 @@ class AsyncSSHClient(SSHClientInterface):
             raise ConnectionError("Not connected to SSH server")
         
         try:
-            asyncio.run(self._connection.scp(remote_path, local_path))
+            _run_async(self._connection.scp(remote_path, local_path))
             return {"success": True, "message": f"File downloaded: {remote_path} -> {local_path}"}
         except Exception as e:
             return {"success": False, "message": f"Download failed: {str(e)}"}
@@ -284,7 +305,7 @@ class AsyncSSHClient(SSHClientInterface):
             raise ConnectionError("Not connected to SSH server")
         
         try:
-            result = asyncio.run(self._connection.run(f"ls -la {remote_path}"))
+            result = _run_async(self._connection.run(f"ls -la {remote_path}"))
             files = [line.split()[-1] for line in result.stdout.splitlines() if line.strip()]
             return FileListResult(files=files, path=remote_path)
         except Exception:
@@ -293,7 +314,7 @@ class AsyncSSHClient(SSHClientInterface):
     def close(self) -> None:
         """关闭连接"""
         if self._connection:
-            asyncio.run(self._connection.close())
+            _run_async(self._connection.close())
             self._connection = None
     
     async def close_async(self) -> None:

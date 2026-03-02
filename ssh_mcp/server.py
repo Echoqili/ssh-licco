@@ -152,6 +152,58 @@ class SSHMCPServer:
                         "required": ["session_id", "local_path", "remote_path", "direction"]
                     }
                 ),
+                Tool(
+                    name="ssh_background_task",
+                    description="Execute long-running commands (like Docker build) in background with status polling. Returns task ID for polling.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "command": {"type": "string", "description": "Command to execute in background (e.g., docker build)"},
+                            "workdir": {"type": "string", "description": "Working directory for the command", "default": "/tmp"},
+                            "log_file": {"type": "string", "description": "Log file path", "default": "/tmp/background_task.log"}
+                        },
+                        "required": ["session_id", "command"]
+                    }
+                ),
+                Tool(
+                    name="ssh_task_status",
+                    description="Check status of background task (like Docker build progress)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "task_id": {"type": "string", "description": "Task ID returned from ssh_background_task"}
+                        },
+                        "required": ["session_id", "task_id"]
+                    }
+                ),
+                Tool(
+                    name="ssh_docker_build",
+                    description="Build Docker image on remote server in background (solves timeout issues)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "dockerfile_path": {"type": "string", "description": "Path to Dockerfile (default: ./Dockerfile)", "default": "./Dockerfile"},
+                            "image_name": {"type": "string", "description": "Docker image name and tag (e.g., myapp:latest)"},
+                            "context": {"type": "string", "description": "Build context path (default: .)", "default": "."}
+                        },
+                        "required": ["session_id", "image_name"]
+                    }
+                ),
+                Tool(
+                    name="ssh_docker_status",
+                    description="Check Docker build or container status on remote server",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "image_name": {"type": "string", "description": "Docker image name to check (optional)"}
+                        },
+                        "required": ["session_id"]
+                    }
+                ),
             ]
 
         @self.server.call_tool()
@@ -175,6 +227,14 @@ class SSHMCPServer:
                     return await self._handle_file_transfer(arguments)
                 elif name == "ssh_list_hosts":
                     return await self._handle_list_hosts(arguments)
+                elif name == "ssh_background_task":
+                    return await self._handle_background_task(arguments)
+                elif name == "ssh_task_status":
+                    return await self._handle_task_status(arguments)
+                elif name == "ssh_docker_build":
+                    return await self._handle_docker_build(arguments)
+                elif name == "ssh_docker_status":
+                    return await self._handle_docker_status(arguments)
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
             except Exception as e:
@@ -416,6 +476,175 @@ class SSHMCPServer:
             output += f"Password: {'***' if self._env_config.get('password') else 'Not set'}\n"
         
         return [TextContent(type="text", text=output)]
+
+    async def _handle_background_task(self, args: dict) -> list[TextContent]:
+        """Handle background task execution for long-running commands like Docker build"""
+        import uuid
+        import os
+        
+        session_id = args.get("session_id")
+        command = args.get("command")
+        workdir = args.get("workdir", "/tmp")
+        log_file = args.get("log_file", "/tmp/background_task.log")
+        
+        if not session_id or not command:
+            return [TextContent(type="text", text="Error: session_id and command are required")]
+        
+        # Create a unique task ID
+        task_id = str(uuid.uuid4())[:8]
+        
+        # Wrap command to run in background with logging
+        # Use nohup and redirect output to log file
+        background_command = f"""
+cd {workdir} && nohup {command} > {log_file} 2>&1 &
+echo $! > /tmp/task_{task_id}.pid
+echo "Task started with PID: $(cat /tmp/task_{task_id}.pid)"
+echo "Log file: {log_file}"
+"""
+        
+        try:
+            result = self.session_manager.execute_command(session_id, background_command, timeout=30)
+            
+            output = f"""🚀 Background Task Started!
+
+Task ID: {task_id}
+Command: {command}
+Working Directory: {workdir}
+Log File: {log_file}
+
+Use ssh_task_status to check progress:
+- Session ID: {session_id}
+- Task ID: {task_id}
+
+Example command:
+  查看任务状态，session_id={session_id}，task_id={task_id}
+"""
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error starting background task: {str(e)}")]
+
+    async def _handle_task_status(self, args: dict) -> list[TextContent]:
+        """Check status of background task"""
+        
+        session_id = args.get("session_id")
+        task_id = args.get("task_id")
+        
+        if not session_id or not task_id:
+            return [TextContent(type="text", text="Error: session_id and task_id are required")]
+        
+        pid_file = f"/tmp/task_{task_id}.pid"
+        log_file = "/tmp/background_task.log"
+        
+        try:
+            # Check if process is still running
+            check_pid_cmd = f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
+            result = self.session_manager.execute_command(session_id, check_pid_cmd, timeout=10)
+            status = result.get("stdout", "").strip()
+            
+            # Get recent log output
+            log_cmd = f"if [ -f {log_file} ]; then tail -20 {log_file}; else echo 'No log file yet'; fi"
+            log_result = self.session_manager.execute_command(session_id, log_cmd, timeout=10)
+            log_output = log_result.get("stdout", "")
+            
+            # Get exit code if completed
+            exit_code = None
+            if status == "COMPLETED":
+                exit_cmd = f"if [ -f {log_file} ]; then echo 'Exit code: 0 (check log for actual)'; else echo 'N/A'; fi"
+                exit_result = self.session_manager.execute_command(session_id, exit_cmd, timeout=10)
+                exit_code = exit_result.get("stdout", "")
+            
+            output = f"""📊 Task Status: {task_id}
+
+Status: {status}
+
+--- Recent Log Output ---
+{log_output}
+
+---
+Use this command to check again:
+  查看任务状态，session_id={session_id}，task_id={task_id}
+"""
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error checking task status: {str(e)}")]
+
+    async def _handle_docker_build(self, args: dict) -> list[TextContent]:
+        """Handle Docker build on remote server"""
+        import uuid
+        
+        session_id = args.get("session_id")
+        dockerfile_path = args.get("dockerfile_path", "./Dockerfile")
+        image_name = args.get("image_name")
+        context = args.get("context", ".")
+        
+        if not session_id or not image_name:
+            return [TextContent(type="text", text="Error: session_id and image_name are required")]
+        
+        task_id = str(uuid.uuid4())[:8]
+        log_file = f"/tmp/docker_build_{task_id}.log"
+        
+        docker_build_cmd = f"""
+cd {context} && nohup docker build -t {image_name} -f {dockerfile_path} . > {log_file} 2>&1 &
+echo $! > /tmp/docker_task_{task_id}.pid
+echo "Docker build started"
+"""
+        
+        try:
+            result = self.session_manager.execute_command(session_id, docker_build_cmd, timeout=30)
+            
+            output = f"""🐳 Docker Build Started!
+
+Task ID: {task_id}
+Image: {image_name}
+Dockerfile: {dockerfile_path}
+Context: {context}
+Log File: {log_file}
+
+Use ssh_docker_status to check progress:
+  查看 Docker 状态，session_id={session_id}，image_name={image_name}
+"""
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error starting Docker build: {str(e)}")]
+
+    async def _handle_docker_status(self, args: dict) -> list[TextContent]:
+        """Check Docker build and container status"""
+        
+        session_id = args.get("session_id")
+        image_name = args.get("image_name")
+        
+        if not session_id:
+            return [TextContent(type="text", text="Error: session_id is required")]
+        
+        try:
+            # Check running containers
+            containers_cmd = "docker ps --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'"
+            containers_result = self.session_manager.execute_command(session_id, containers_cmd, timeout=10)
+            
+            output = "🐳 Docker Status\n\n"
+            output += "--- Running Containers ---\n"
+            output += containers_result.get("stdout", "No running containers\n")
+            
+            # Check images if requested
+            if image_name:
+                images_cmd = f"docker images {image_name} --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
+                images_result = self.session_manager.execute_command(session_id, images_cmd, timeout=10)
+                output += "\n--- Docker Images ---\n"
+                output += images_result.get("stdout", f"No images found matching {image_name}\n")
+            
+            # Check Docker build logs if exists
+            log_files_cmd = "ls -la /tmp/docker_build_*.log 2>/dev/null | tail -5 || echo 'No build logs found'"
+            log_result = self.session_manager.execute_command(session_id, log_files_cmd, timeout=10)
+            output += "\n--- Recent Build Logs ---\n"
+            output += log_result.get("stdout", "")
+            
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error checking Docker status: {str(e)}")]
 
     async def run(self):
         import signal
