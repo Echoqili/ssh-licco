@@ -20,6 +20,9 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的 SSH 服务器，让 A
 - 🔑 **密钥管理** - 生成、保存和管理 SSH 密钥对
 - 📝 **详细日志记录** - 支持多级日志和文件输出
 - 🚀 **高性能异步** - 基于 asyncio 的异步架构
+- 🔌 **连接池** - 高性能连接复用
+- 📊 **批量执行** - 多主机并行命令执行
+- 📝 **审计日志** - 完整操作审计记录
 
 ### 技术栈
 - Python 3.10 - 3.13
@@ -192,12 +195,124 @@ cp config/hosts.json.example config/hosts.json
         "SSH_HOST": "43.143.207.242",
         "SSH_USER": "root",
         "SSH_PASSWORD": "your-password",
-        "SSH_KEEPALIVE_INTERVAL": "30",  // 保活间隔（秒）
-        "SSH_SESSION_TIMEOUT": "7200"    // 会话超时（秒）
+        "SSH_KEEPALIVE_INTERVAL": "30",
+        "SSH_SESSION_TIMEOUT": "7200"
       }
     }
   }
 }
+```
+
+## 🔌 连接池（高性能）
+
+SSH LICCO 支持连接池功能，提供高效的连接复用：
+
+- **连接复用**：避免频繁建立连接的开销
+- **健康检查**：自动检测并回收无效连接
+- **线程安全**：支持并发访问
+- **配置灵活**：可调整最大连接数、空闲时间等
+
+### 连接池配置
+
+```python
+from ssh_mcp import ConnectionConfig, PoolConfig, ConnectionPool
+
+# 配置连接池
+pool_config = PoolConfig(
+    min_size=1,           # 最小连接数
+    max_size=10,          # 最大连接数
+    max_idle_time=300,    # 最大空闲时间（秒）
+    max_use_count=100,   # 单连接最大使用次数
+    acquire_timeout=30    # 获取连接超时（秒）
+)
+
+# 创建连接池
+config = ConnectionConfig(
+    host="192.168.1.100",
+    username="admin",
+    private_key_path="~/.ssh/id_rsa"
+)
+pool = ConnectionPool(config, pool_config)
+pool.initialize()
+
+# 使用连接池
+with pool.acquire() as client:
+    result = client.execute_command("ls -la")
+```
+
+## 📊 批量执行（多主机管理）
+
+支持批量并行执行命令，管理多台服务器：
+
+- **并行执行**：多主机同时执行命令
+- **失败隔离**：单主机异常不影响其他主机
+- **进度回调**：实时反馈执行进度
+- **异步支持**：AsyncBatchExecutor 实现高并发
+
+### 批量执行示例
+
+```python
+from ssh_mcp import (
+    ConnectionConfig, 
+    BatchExecutor, 
+    AsyncBatchExecutor
+)
+
+# 配置多台主机
+hosts = [
+    ConnectionConfig(host="192.168.1.100", username="admin", private_key_path="~/.ssh/id_rsa"),
+    ConnectionConfig(host="192.168.1.101", username="admin", private_key_path="~/.ssh/id_rsa"),
+    ConnectionConfig(host="192.168.1.102", username="admin", private_key_path="~/.ssh/id_rsa"),
+]
+
+# 同步批量执行
+executor = BatchExecutor(hosts, max_workers=10)
+result = executor.execute("uptime")
+
+print(f"成功: {result.success_count}, 失败: {result.failed_count}")
+for host_result in result.results:
+    print(f"{host_result.host}: {host_result.stdout}")
+
+# 异步批量执行
+async_executor = AsyncBatchExecutor(hosts, max_concurrent=50)
+result = await async_executor.execute("df -h")
+```
+
+## 📝 审计日志
+
+完整的操作审计日志，满足合规要求：
+
+- **结构化日志**：JSON 格式便于分析
+- **操作记录**：连接、执行命令、文件传输
+- **认证审计**：成功/失败认证记录
+
+### 使用审计日志
+
+```python
+from ssh_mcp import get_audit_logger, AuditEventType
+
+# 初始化审计日志
+audit = get_audit_logger("logs/audit.log")
+
+# 记录连接事件
+audit.log_connect(
+    username="admin",
+    host="192.168.1.100",
+    port=22,
+    client_type="asyncssh",
+    session_id="session-123"
+)
+
+# 记录命令执行
+audit.log_command(
+    username="admin",
+    host="192.168.1.100",
+    command="ls -la",
+    return_code=0,
+    stdout_length=1024,
+    stderr_length=0,
+    session_id="session-123"
+)
 ```
 
 详细配置说明见 [CONFIG_GUIDE.md](CONFIG_GUIDE.md)
@@ -233,6 +348,9 @@ ssh_mcp/
 ├── service.py           # 业务服务层
 ├── session_manager.py   # 会话管理
 ├── connection_config.py # 配置模型
+├── connection_pool.py  # 连接池管理
+├── batch_executor.py   # 批量执行器
+├── audit_logger.py     # 审计日志
 ├── exceptions.py        # 统一异常体系
 ├── logging_config.py    # 日志管理
 └── server.py           # MCP 服务端
