@@ -7,6 +7,51 @@
 
 ---
 
+## [0.2.1] - 2026-03-03
+
+### 新增
+- **连接池模块** (`connection_pool.py`) - 高性能连接复用
+  - `ConnectionPool` - 连接池管理器
+  - `PoolConfig` - 连接池配置
+  - `PooledSSHClient` - 池化客户端封装
+  - 连接健康检查与自动回收
+  - 线程安全，支持并发访问
+
+- **批量执行模块** (`batch_executor.py`) - 多主机并行管理
+  - `BatchExecutor` - 同步批量执行器
+  - `AsyncBatchExecutor` - 异步批量执行器
+  - `BatchExecutionResult` - - `HostResult 执行结果
+ ` - 单主机结果
+  - 支持进度回调
+  - 失败隔离机制
+
+- **审计日志模块** (`audit_logger.py`) - 操作审计记录
+  - `AuditLogger` - 审计日志管理器
+  - `AuditEventType` - 事件类型枚举
+  - `get_audit_logger()` - 便捷获取实例
+  - 连接/断开事件记录
+  - 命令执行事件记录
+  - 文件传输事件记录
+  - 认证成功/失败记录
+
+- **重试配置** (`connection_config.py`)
+  - `RetryConfig` - 重试配置类
+  - 支持最大重试次数
+  - 支持指数退避
+  - 支持超时重试
+
+### 改进
+- 密钥认证优先 - 默认启用 `prefer_key_auth`
+- 安全强化 - 默认关闭 `look_for_keys` 和 `allow_agent`
+- 默认客户端改为 `asyncssh`
+- 异常体系扩展 - 新增 `PoolExhaustedException`、`RetryExhaustedException`
+
+### 文档更新
+- README.md 新增连接池、批量执行、审计日志功能说明
+- 更新架构设计文档
+
+---
+
 ## [0.2.0] - 2026-03-01
 
 ### 新增

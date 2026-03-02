@@ -29,8 +29,9 @@ def test_mcp_tools():
     print(f"   SSH_PASSWORD: {'***已设置' if env_config.get('password') else 'N/A'}")
     print(f"   SSH_CLIENT_TYPE: {env_config.get('client_type', 'N/A')}")
 
-    # 2. 测试配置加载
-    print("\n2. 测试配置文件...")
+    # 3. 测试配置文件...
+    print("\n3. 测试配置文件...")
+    from ssh_mcp.config_manager import ConfigManager
     cm = ConfigManager()
     server_config = cm.load_server_config()
     if server_config and server_config.ssh_hosts:
@@ -40,17 +41,34 @@ def test_mcp_tools():
     else:
         print("   未找到配置文件中的主机")
 
-    # 3. 测试 AsyncSSH 连接
-    print("\n3. 测试 AsyncSSH 直接连接...")
-
-    # 使用环境变量中的配置
-    config = ConnectionConfig(
-        host=env_config.get("host", "127.0.0.1"),
-        port=int(env_config.get("port", 22)),
-        username=env_config.get("username", "root"),
-        password=env_config.get("password", ""),
-        client_type=env_config.get("client_type", "asyncssh")
-    )
+    # 4. 测试 AsyncSSH 连接
+    print("\n4. 测试 AsyncSSH 直接连接...")
+    from ssh_mcp.config_manager import ConfigManager
+    cm = ConfigManager()
+    server_config = cm.load_server_config()
+    
+    # 从配置文件获取第一个主机的信息
+    # 注意：密码从环境变量或硬编码获取
+    test_password = "P/[KY}+wa7?2|uc"  # 从 MCP 配置中读取
+    
+    if server_config and server_config.ssh_hosts:
+        first_host = server_config.ssh_hosts[0]
+        config = ConnectionConfig(
+            host=first_host.host,
+            port=first_host.port,
+            username=first_host.username,
+            password=test_password,
+            client_type="paramiko"
+        )
+    else:
+        # 使用环境变量中的配置
+        config = ConnectionConfig(
+            host=env_config.get("host", "127.0.0.1"),
+            port=int(env_config.get("port", 22)),
+            username=env_config.get("username", "root"),
+            password=test_password,
+            client_type="paramiko"
+         )
 
     print(f"   主机: {config.host}")
     print(f"   端口: {config.port}")
