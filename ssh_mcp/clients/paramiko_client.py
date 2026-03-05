@@ -74,8 +74,10 @@ class ParamikoClient(SSHClientInterface):
                 'username': self.config.username,
                 'timeout': timeout,
                 'compress': self.config.compress,
-                'look_for_keys': self.config.look_for_keys,
-                'allow_agent': self.config.allow_agent,
+                'look_for_keys': False,
+                'allow_agent': False,
+                'banner_timeout': max(timeout, 60),
+                'auth_timeout': max(timeout, 60),
             }
             
             if self.config.auth_method == "password" and self.config.password:
