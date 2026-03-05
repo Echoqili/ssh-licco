@@ -32,7 +32,7 @@ class SSHMCPServer:
             config["port"] = int(os.getenv("SSH_PORT", "22"))
             config["username"] = os.getenv("SSH_USER", "root")
             config["password"] = os.getenv("SSH_PASSWORD", "")
-            config["timeout"] = int(os.getenv("SSH_TIMEOUT", "30"))
+            config["timeout"] = int(os.getenv("SSH_TIMEOUT", "60"))
             config["keepalive_interval"] = int(os.getenv("SSH_KEEPALIVE_INTERVAL", "30"))
             config["session_timeout"] = int(os.getenv("SSH_SESSION_TIMEOUT", "7200"))
             config["client_type"] = os.getenv("SSH_CLIENT_TYPE", "paramiko")
