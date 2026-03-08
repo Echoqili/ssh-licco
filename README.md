@@ -5,35 +5,29 @@
 [![PyPI version](https://badge.fury.io/py/ssh-licco.svg)](https://badge.fury.io/py/ssh-licco)
 [![Python 3.10-3.13](https://img.shields.io/badge/python-3.10--3.13-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MCP Registry](https://img.shields.io/badge/MCP-Registry-green.svg)](https://registry.modelcontextprotocol.io/)
 
-**让 AI 帮你操作服务器！**
+> **让 AI 帮你操作服务器！** 通过自然语言对话，AI 可以帮你执行命令、管理文件、查看日志、部署应用等。
 
-SSH LICCO 是一个基于 Model Context Protocol (MCP) 的 SSH 服务器，让 AI 助手（Trae、Cursor、Claude Desktop 等）能够直接连接和管理你的 SSH 服务器。通过自然语言对话，AI 可以帮你执行命令、管理文件、查看日志、部署应用等。
+---
 
-## ✨ 核心特性
+## ✨ 特性亮点
 
-- 🎯 **自然语言控制** - 直接用对话方式操作服务器
-- 🔐 **多种认证方式** - 支持密码、密钥、Agent 转发
-- 🔗 **长连接支持** - 自动保活，避免频繁连接导致账户锁定
-- 📦 **多客户端支持** - Paramiko、Fabric、AsyncSSH 可插拔
-- 🛡️ **完善的异常处理** - 统一的异常体系和错误处理
+- 🎯 **自然语言控制** - 用对话方式操作服务器
+- 🔐 **多种认证方式** - 密码、密钥、Agent 转发
+- 🔗 **长连接支持** - 自动保活，避免账户锁定
+- 📦 **异步高性能** - 基于 AsyncSSH 的异步架构
+- 🛡️ **完善的异常处理** - 统一的错误处理机制
 - 📊 **会话管理** - 支持多个并发 SSH 会话
-- 📁 **SFTP 文件传输** - 上传、下载、列出目录
-- 🔑 **密钥管理** - 生成、保存和管理 SSH 密钥对
-- 📝 **详细日志记录** - 支持多级日志和文件输出
-- 🚀 **高性能异步** - 基于 asyncio 的异步架构
-- 🔌 **连接池** - 高性能连接复用
+- 📁 **SFTP 文件传输** - 上传、下载、目录管理
+- 🔑 **密钥管理** - 生成和管理 SSH 密钥对
+- 📝 **审计日志** - 完整的操作审计记录
+- 🚀 **连接池** - 高性能连接复用
 - 📊 **批量执行** - 多主机并行命令执行
-- 📝 **审计日志** - 完整操作审计记录
 
-### 技术栈
-- Python 3.10 - 3.13
-- MCP SDK 1.0+
-- AsyncSSH 2.17.0+
-- Pydantic 2.0+
-- asyncio 异步架构
+---
 
-## 📦 安装
+## 📦 快速安装
 
 ### 方式一：pip 安装（推荐）
 
@@ -41,7 +35,13 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的 SSH 服务器，让 A
 pip install ssh-licco
 ```
 
-### 方式二：从源码安装
+### 方式二：MCP 安装
+
+```bash
+mcp install io.github.Echoqili/ssh-licco
+```
+
+### 方式三：从源码安装
 
 ```bash
 git clone https://github.com/Echoqili/ssh-licco.git
@@ -49,24 +49,15 @@ cd ssh-licco
 pip install -e .
 ```
 
-### 开发环境安装
+**Python 版本要求：** Python 3.10, 3.11, 3.12, 3.13
 
-```bash
-git clone https://github.com/Echoqili/ssh-licco.git
-cd ssh-licco
-pip install -e ".[dev]"
-```
-
-**Python 版本要求：**
-- ✅ Python 3.10, 3.11, 3.12, 3.13
-- ❌ Python 3.9 及以下版本不支持
-- ❌ Python 3.14 及以上版本未测试
+---
 
 ## 🚀 快速开始
 
-### 1. 配置 MCP 服务器
+### 1️⃣ 配置 MCP 服务器
 
-#### 在 Trae / Cursor 中使用
+#### 在 Trae / Cursor / Claude Desktop 中使用
 
 打开设置 → MCP → 添加新服务器：
 
@@ -80,26 +71,28 @@ pip install -e ".[dev]"
 }
 ```
 
-#### 在 Claude Desktop 中使用
+### 2️⃣ 配置 SSH 连接（可选但推荐）
 
-配置文件位置：
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+#### 方式 A：环境变量配置
 
 ```json
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco"
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "192.168.1.100",
+        "SSH_USER": "root",
+        "SSH_PASSWORD": "your_password",
+        "SSH_KEEPALIVE_INTERVAL": "30",
+        "SSH_SESSION_TIMEOUT": "7200"
+      }
     }
   }
 }
 ```
 
-### 2. 配置 SSH 主机（可选但推荐）
-
-#### 方式 1：使用配置文件
+#### 方式 B：配置文件
 
 ```bash
 cp config/hosts.json.example config/hosts.json
@@ -115,209 +108,123 @@ cp config/hosts.json.example config/hosts.json
       "host": "192.168.1.100",
       "port": 22,
       "username": "root",
-      "password": "your_password",
-      "timeout": 30
-    },
-    {
-      "name": "测试服务器",
-      "host": "192.168.1.101",
-      "port": 2222,
-      "username": "admin",
-      "password": "test123"
+      "password": "your_password"
     }
   ]
 }
 ```
 
-#### 方式 2：直接在 MCP 配置中指定
-
-```json
-{
-  "mcpServers": {
-    "ssh": {
-      "command": "ssh-licco",
-      "env": {
-        "SSH_HOST": "192.168.1.100",
-        "SSH_USER": "root",
-        "SSH_PASSWORD": "your_password",
-        "SSH_KEEPALIVE_INTERVAL": "30",
-        "SSH_SESSION_TIMEOUT": "7200",
-        "SSH_CLIENT_TYPE": "asyncssh"
-      }
-    }
-  }
-}
-```
-
-### 3. 开始使用
+### 3️⃣ 开始使用
 
 重启 AI 应用后，直接用自然语言对话：
 
-**示例 1：查看服务器状态**
+#### 示例 1：查看服务器状态
 ```
 帮我看看服务器的负载情况
 ```
 
-**示例 2：执行命令**
+#### 示例 2：执行命令
 ```
 在服务器上执行 docker ps 查看运行中的容器
 ```
 
-**示例 3：管理文件**
+#### 示例 3：管理文件
 ```
 列出 /var/log 目录下的所有文件
 ```
 
-**示例 4：安装软件**
+#### 示例 4：安装软件
 ```
 在服务器上安装 nginx
 ```
 
-**示例 5：上传文件**
+#### 示例 5：上传文件
 ```
 把本地的 config.yaml 上传到服务器的 /etc 目录
 ```
 
-## 🔥 长连接功能（避免账户锁定）
+---
+
+## 🔥 核心功能
+
+### 长连接支持（避免账户锁定）
 
 频繁连接 SSH 服务器可能导致账户被锁定。SSH LICCO 默认启用长连接和自动保活：
 
-- **自动保活**：每 30 秒发送心跳包，保持连接活跃
-- **持久会话**：默认保持 2 小时，避免频繁重连
-- **可配置**：根据需求调整保活间隔和会话时长
-
-### 配置参数
+- **自动保活**：每 30 秒发送心跳包
+- **持久会话**：默认保持 2 小时
+- **可配置**：根据需求调整参数
 
 ```json
 {
-  "mcpServers": {
-    "ssh": {
-      "command": "ssh-licco",
-      "env": {
-        "SSH_HOST": "43.143.207.242",
-        "SSH_USER": "root",
-        "SSH_PASSWORD": "your-password",
-        "SSH_KEEPALIVE_INTERVAL": "30",
-        "SSH_SESSION_TIMEOUT": "7200"
-      }
-    }
-  }
+  "SSH_KEEPALIVE_INTERVAL": "30",
+  "SSH_SESSION_TIMEOUT": "7200"
 }
 ```
 
-## 🔌 连接池（高性能）
+### 连接池（高性能）
 
-SSH LICCO 支持连接池功能，提供高效的连接复用：
-
-- **连接复用**：避免频繁建立连接的开销
+- **连接复用**：避免频繁建立连接
 - **健康检查**：自动检测并回收无效连接
 - **线程安全**：支持并发访问
-- **配置灵活**：可调整最大连接数、空闲时间等
-
-### 连接池配置
 
 ```python
 from ssh_mcp import ConnectionConfig, PoolConfig, ConnectionPool
 
-# 配置连接池
 pool_config = PoolConfig(
-    min_size=1,           # 最小连接数
-    max_size=10,          # 最大连接数
-    max_idle_time=300,    # 最大空闲时间（秒）
-    max_use_count=100,   # 单连接最大使用次数
-    acquire_timeout=30    # 获取连接超时（秒）
+    min_size=1,
+    max_size=10,
+    max_idle_time=300
 )
 
-# 创建连接池
-config = ConnectionConfig(
-    host="192.168.1.100",
-    username="admin",
-    private_key_path="~/.ssh/id_rsa"
-)
+config = ConnectionConfig(host="192.168.1.100", username="admin")
 pool = ConnectionPool(config, pool_config)
 pool.initialize()
 
-# 使用连接池
 with pool.acquire() as client:
     result = client.execute_command("ls -la")
 ```
 
-## 📊 批量执行（多主机管理）
-
-支持批量并行执行命令，管理多台服务器：
+### 批量执行（多主机管理）
 
 - **并行执行**：多主机同时执行命令
-- **失败隔离**：单主机异常不影响其他主机
-- **进度回调**：实时反馈执行进度
-- **异步支持**：AsyncBatchExecutor 实现高并发
-
-### 批量执行示例
+- **失败隔离**：单主机异常不影响其他
+- **异步支持**：高并发批量操作
 
 ```python
-from ssh_mcp import (
-    ConnectionConfig, 
-    BatchExecutor, 
-    AsyncBatchExecutor
-)
+from ssh_mcp import ConnectionConfig, BatchExecutor
 
-# 配置多台主机
 hosts = [
-    ConnectionConfig(host="192.168.1.100", username="admin", private_key_path="~/.ssh/id_rsa"),
-    ConnectionConfig(host="192.168.1.101", username="admin", private_key_path="~/.ssh/id_rsa"),
-    ConnectionConfig(host="192.168.1.102", username="admin", private_key_path="~/.ssh/id_rsa"),
+    ConnectionConfig(host="192.168.1.100", username="admin"),
+    ConnectionConfig(host="192.168.1.101", username="admin"),
+    ConnectionConfig(host="192.168.1.102", username="admin"),
 ]
 
-# 同步批量执行
 executor = BatchExecutor(hosts, max_workers=10)
 result = executor.execute("uptime")
 
-print(f"成功: {result.success_count}, 失败: {result.failed_count}")
-for host_result in result.results:
-    print(f"{host_result.host}: {host_result.stdout}")
-
-# 异步批量执行
-async_executor = AsyncBatchExecutor(hosts, max_concurrent=50)
-result = await async_executor.execute("df -h")
+print(f"成功：{result.success_count}, 失败：{result.failed_count}")
 ```
 
-## 📝 审计日志
-
-完整的操作审计日志，满足合规要求：
+### 审计日志
 
 - **结构化日志**：JSON 格式便于分析
-- **操作记录**：连接、执行命令、文件传输
+- **操作记录**：连接、命令、文件传输
 - **认证审计**：成功/失败认证记录
 
-### 使用审计日志
-
 ```python
-from ssh_mcp import get_audit_logger, AuditEventType
+from ssh_mcp import get_audit_logger
 
-# 初始化审计日志
 audit = get_audit_logger("logs/audit.log")
-
-# 记录连接事件
-audit.log_connect(
-    username="admin",
-    host="192.168.1.100",
-    port=22,
-    client_type="asyncssh",
-    session_id="session-123"
-)
-
-# 记录命令执行
 audit.log_command(
     username="admin",
     host="192.168.1.100",
     command="ls -la",
-    return_code=0,
-    stdout_length=1024,
-    stderr_length=0,
-    session_id="session-123"
+    return_code=0
 )
 ```
 
-详细配置说明见 [CONFIG_GUIDE.md](CONFIG_GUIDE.md)
+---
 
 ## 🛠️ 可用工具
 
@@ -332,92 +239,61 @@ audit.log_command(
 | `ssh_generate_key` | 生成 SSH 密钥 | 创建 RSA 或 ED25519 密钥对 |
 | `ssh_file_transfer` | SFTP 文件传输 | 上传、下载、列出目录 |
 
-详细使用说明见 [USAGE.md](USAGE.md)
+详细使用说明见 [📖 使用指南](USAGE.md)
+
+---
 
 ## 🏗️ 架构设计
 
-SSH LICCO 采用分层架构设计，遵循最佳实践：
-
-### 核心模块
-
 ```
 ssh_mcp/
-├── clients/              # SSH 客户端层（可插拔）
-│   ├── interface.py     # 抽象接口定义
-│   ├── paramiko_client.py  # Paramiko 实现
-│   ├── additional_clients.py # 其他客户端实现
+├── clients/              # SSH 客户端层
+│   ├── interface.py     # 抽象接口
+│   ├── asyncssh_client.py  # AsyncSSH 实现
 │   └── factory.py       # 客户端工厂
 ├── service.py           # 业务服务层
 ├── session_manager.py   # 会话管理
-├── connection_config.py # 配置模型
-├── connection_pool.py  # 连接池管理
-├── batch_executor.py   # 批量执行器
-├── audit_logger.py     # 审计日志
-├── exceptions.py        # 统一异常体系
-├── logging_config.py    # 日志管理
-└── server.py           # MCP 服务端
+├── connection_pool.py   # 连接池
+├── batch_executor.py    # 批量执行器
+├── audit_logger.py      # 审计日志
+├── exceptions.py        # 异常体系
+└── server.py            # MCP 服务端
 ```
 
-### 设计模式
+**设计模式：**
+- 工厂模式 - SSHClientFactory 动态创建客户端
+- 策略模式 - 支持多种 SSH 客户端实现
+- 单例模式 - 全局 SSHService 实例
+- 上下文管理器 - 自动连接/断开管理
 
-- **工厂模式**：SSHClientFactory 动态创建客户端
-- **策略模式**：支持多种 SSH 客户端实现
-- **单例模式**：全局 SSHService 实例
-- **上下文管理器**：自动连接/断开管理
+**客户端支持：**
+- ✅ **AsyncSSH** - 异步架构，高并发性能（默认且推荐）
 
-### 客户端支持
-
-当前仅支持 **AsyncSSH** 客户端：
-
-| 客户端 | 类型 | 特点 | 安装 |
-|--------|------|------|------|
-| **AsyncSSH** | 异步 | 高并发性能，异步架构，默认且唯一 | `pip install asyncssh` |
-
-**说明：** 为了简化维护和优化性能，本项目目前仅支持 AsyncSSH 客户端。AsyncSSH 提供：
-- ✅ 异步架构，高并发性能
-- ✅ 低资源占用
-- ✅ 现代化的 API 设计
-- ✅ 活跃的社区支持
-
-### 配置客户端类型
-
-当前默认且仅支持 **AsyncSSH** 客户端，无需额外配置。
-
-如需指定（兼容性）：
-
-```json
-{
-  "mcpServers": {
-    "ssh": {
-      "command": "ssh-licco",
-      "env": {
-        "SSH_CLIENT_TYPE": "asyncssh"
-      }
-    }
-  }
-}
-```
-
-详见 [🔌 客户端类型配置指南](docs/CLIENT_TYPES.md)
+---
 
 ## 🔒 安全注意事项
 
 ⚠️ **重要提示：**
 
-1. **密码安全** - 密码仅本地存储，建议使用后清除配置文件
+1. **密码安全** - 密码仅本地存储，建议使用后清除
 2. **不要分享** - 不要在公开场合分享服务器密码
-3. **密钥认证** - 优先使用 SSH 密钥认证而非密码
-4. **普通用户** - 尽量使用普通用户而非 root 用户
-5. **文件权限** - 确保 `config/hosts.json` 文件权限设置为 600
-6. **环境变量** - 使用环境变量存储敏感信息更安全
+3. **密钥认证** - 优先使用 SSH 密钥认证
+4. **普通用户** - 尽量使用普通用户而非 root
+5. **文件权限** - 确保配置文件权限为 600
+6. **环境变量** - 使用环境变量存储敏感信息
+
+---
 
 ## 📚 文档
 
 - [📖 使用指南](USAGE.md) - 详细的工具使用说明
-- [⚙️ 配置指南](CONFIG_GUIDE.md) - 完整的配置选项说明
-- [🐳 Docker 超时问题](DOCKER_MCP_TIMEOUT.md) - Docker 构建相关问题
+- [⚙️ 配置指南](CONFIG_GUIDE.md) - 完整的配置选项
+- [🐳 Docker 超时问题](DOCKER_MCP_TIMEOUT.md) - Docker 构建问题
 - [📝 API 参考](docs/API_REFERENCE.md) - API 接口文档
-- [❓ 故障排除](docs/TROUBLESHOOTING.md) - 常见问题和解决方案
+- [❓ 故障排除](docs/TROUBLESHOOTING.md) - 常见问题
+- [📊 MCP Registry 状态](MCP_REGISTRY_STATUS.md) - Registry 发布说明
+
+---
 
 ## 💻 开发
 
@@ -444,6 +320,8 @@ cd docs
 mkdocs build
 ```
 
+---
+
 ## 🤝 贡献
 
 欢迎贡献代码、报告问题或提出建议！
@@ -456,22 +334,27 @@ mkdocs build
 
 详见 [CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
+---
+
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+MIT License - 详见 [LICENSE](LICENSE) 文件
+
+---
 
 ## 🙏 致谢
 
 - [MCP SDK](https://github.com/modelcontextprotocol/python-sdk) - Model Context Protocol
-- [Paramiko](https://github.com/paramiko/paramiko) - SSH 库
-- [Fabric](https://github.com/fabric/fabric) - 高级 SSH 库
 - [AsyncSSH](https://github.com/ronf/asyncssh) - 异步 SSH 库
+
+---
 
 ## 📬 联系方式
 
 - **项目地址**: https://github.com/Echoqili/ssh-licco
 - **问题反馈**: https://github.com/Echoqili/ssh-licco/issues
 - **PyPI**: https://pypi.org/project/ssh-licco/
+- **MCP Registry**: https://registry.modelcontextprotocol.io/servers/io.github.Echoqili/ssh-licco
 
 ---
 
