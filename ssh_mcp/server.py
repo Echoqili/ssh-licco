@@ -241,11 +241,12 @@ class SSHMCPServer:
                 return [TextContent(type="text", text=f"Error: {str(e)}")]
 
     async def _handle_config(self, args: dict) -> list[TextContent]:
+        import os
         config = SSHConfig(
             host=args.get("host", "127.0.0.1"),
             port=args.get("port", 22),
             username=args.get("username", "root"),
-            password=args.get("password", ""),
+            password=args.get("password", "") or os.getenv("SSH_PASSWORD", ""),
             timeout=args.get("timeout", 30)
         )
         self.config_manager.save(config)
