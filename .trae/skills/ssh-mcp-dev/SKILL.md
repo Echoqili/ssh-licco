@@ -69,11 +69,91 @@ python sync_version.py 0.1.7
 - `pyproject.toml` - Auto-synced
 - `VERSION` - Backup
 
-### Release Process
-1. Update version: `python sync_version.py x.x.x`
-2. Build: `python -m build`
-3. Upload: `python -m twine upload dist/*`
-4. Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
+### Release Process (Tag After Push)
+
+**Standard Workflow:**
+```bash
+# Step 1: Update version files
+python sync_version.py 0.1.7
+
+# Step 2: Commit and push code
+git add .
+git commit -m "release: v0.1.7"
+git push origin master
+
+# Step 3: Create and push tag (AFTER code is pushed)
+git tag v0.1.7
+git push origin v0.1.7 --tags
+
+# Step 4: Build and upload to PyPI
+python -m build
+python -m twine upload dist/*
+```
+
+**What `sync_version.py` does:**
+1. ✅ Updates version in `ssh_mcp/__init__.py`
+2. ✅ Updates version in `pyproject.toml`
+3. ✅ Updates `VERSION` file
+4. ℹ️ Shows next steps (manual git operations)
+
+**Why Tag After Push:**
+- ✅ Ensures code is successfully pushed first
+- ✅ Tag points to committed code on remote
+- ✅ Clear separation between code and tag
+- ✅ Easy to rollback if needed
+
+**Complete Release Checklist:**
+```bash
+# 1. Update version
+python sync_version.py 0.1.7
+
+# 2. Commit changes
+git add .
+git commit -m "release: v0.1.7"
+
+# 3. Push code to GitHub
+git push origin master
+
+# 4. Create and push tag
+git tag v0.1.7
+git push origin v0.1.7 --tags
+
+# 5. Build package
+python -m build
+
+# 6. Upload to PyPI
+python -m twine upload dist/*
+
+# 7. Create GitHub Release (optional)
+# Go to GitHub -> Releases -> Create new release from tag v0.1.7
+```
+
+**Quick Release Script:**
+```bash
+# Create release.sh
+cat > release.sh << 'EOF'
+#!/bin/bash
+VERSION=$1
+if [ -z "$VERSION" ]; then
+    echo "Usage: ./release.sh <version>"
+    exit 1
+fi
+
+python sync_version.py $VERSION
+git add .
+git commit -m "release: v$VERSION"
+git push origin master
+git tag v$VERSION
+git push origin v$VERSION --tags
+python -m build
+python -m twine upload dist/*
+echo "✅ Release v$VERSION complete!"
+EOF
+
+chmod +x release.sh
+
+# Usage: ./release.sh 0.1.7
+```
 
 ## Docker Configuration
 
@@ -182,6 +262,158 @@ Available tools:
 1. **MCP Config** (mcp.json env) - Highest
 2. **Local Config** (config/hosts.json)
 3. **User Parameters** - Lowest
+
+## MCP Tool Usage Priority
+
+**Golden Rule: ALWAYS prefer MCP tools over direct commands for ANY operation**
+
+### Universal Priority Order (High to Low)
+
+1. **MCP Tools (Any MCP)** - ⭐⭐⭐⭐⭐
+   - **SSH MCP**: ssh_execute, ssh_docker_build, ssh_file_transfer, etc.
+   - **GitHub MCP**: github_create_issue, github_create_pull, github_search_repos, etc.
+   - **Other MCPs**: Any available MCP server tools
+   - ✅ Use for ALL operations when available
+   - ✅ Automatically handles authentication, connection management
+   - ✅ Built-in error handling and retry logic
+   - ✅ Centralized configuration and audit logging
+
+2. **Native Commands** - ⭐⭐
+   - Docker commands (docker build, docker run)
+   - Git commands (git push, git commit)
+   - System commands
+   - ⚠️ Use ONLY when no MCP tool is available
+   - ⚠️ Requires manual configuration and error handling
+
+3. **Manual/Alternative Methods** - ⭐
+   - Direct API calls
+   - Custom scripts
+   - Web interface operations
+   - ❌ Last resort when MCP and native commands both unavailable
+
+### Why Use MCP Tools?
+
+✅ **Benefits:**
+- Automatic connection pooling and authentication
+- Built-in error handling and retry logic
+- Centralized configuration management
+- Audit logging for all operations
+- Consistent interface across operations
+- Better security (no credentials exposure in logs)
+- Type-safe with proper error messages
+- Community-maintained and tested
+
+❌ **Without MCP Tools:**
+- Manual connection and auth management
+- Inconsistent error handling
+- No audit trail
+- Security risks (credentials in scripts/logs)
+- Configuration duplication
+- Fragile custom implementations
+
+### Decision Flow
+
+```
+Start Operation
+    ↓
+Is there an MCP tool? ──YES──→ Use MCP Tool ✅
+    ↓ NO
+Can use native command? ──YES──→ Use Native Command ⚠️
+    ↓ NO
+Find alternative method ❌
+    (API call, script, manual)
+```
+
+### Example Usage
+
+**✅ Recommended (MCP Tools - Any MCP):**
+
+```python
+# SSH MCP - Remote operations
+result = await ssh_execute(
+    command="docker build -t ssh-licco:latest .",
+    host="production-server"
+)
+
+# GitHub MCP - Repository operations  
+issue = await github_create_issue(
+    owner="Echoqili",
+    repo="ssh-licco",
+    title="Release v0.1.7",
+    labels="release,enhancement"
+)
+
+# Multiple MCPs - Combined workflow
+await ssh_file_transfer(file="dist/*.whl", target="/app/")
+await github_create_release(tag="v0.1.7", notes="New release")
+```
+
+**⚠️ Acceptable (Native Commands - No MCP available):**
+
+```bash
+# Only when no MCP tool exists
+git commit -m "feat: add new feature"
+docker build -t ssh-licco:latest .
+```
+
+**❌ Avoid (Direct Methods - Last resort):**
+
+```bash
+# Don't use if MCP exists
+ssh root@server "command"                    # → Use ssh_execute
+curl -X POST api.github.com/repos/...     # → Use github_* MCP
+echo "password" | sudo -S command         # → Use MCP with stored config
+```
+
+### Integration with Development Workflow
+
+```
+Task Category              → Preferred Tool
+─────────────────────────────────────────────────────
+Remote Server Operations  → SSH MCP Tools
+   - Docker Build          → ssh_docker_build
+   - File Transfer         → ssh_file_transfer
+   - Command Execution     → ssh_execute
+   - Status Check          → ssh_docker_status
+
+GitHub Operations         → GitHub MCP Tools
+   - Create Issue          → github_create_issue
+   - Create PR             → github_create_pull
+   - Search Repos          → github_search_repos
+   - Manage Releases       → github_create_release
+
+Local Development         → Native Commands
+   - Git Operations        → git commit, git push
+   - Docker Build (local)  → docker build
+   - Testing              → pytest, python
+
+Emergency/Fallback        → Manual Methods
+   - Direct API calls      → curl, requests
+   - Web interface         → Browser operations
+   - Custom scripts        → Last resort
+```
+
+### MCP Tool Discovery
+
+When starting a new task, always check for available MCP tools:
+
+1. **Check MCP Servers**: What MCP servers are configured?
+   - SSH MCP (ssh-licco)
+   - GitHub MCP
+   - Other MCPs...
+
+2. **List Available Tools**: What tools does each MCP provide?
+   - Review tool documentation
+   - Check tool capabilities
+
+3. **Choose Best Tool**: Select the most appropriate MCP tool
+   - Prefer specialized MCP tools over generic ones
+   - Consider error handling and logging features
+
+4. **Fallback Strategy**: If no MCP tool available
+   - Try native commands
+   - Then consider custom scripts
+   - Document the gap for future MCP development
 
 ## MCP Configuration Example
 
