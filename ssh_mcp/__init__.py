@@ -1,64 +1,10 @@
-"""SSH MCP Server - Model Context Protocol Server for SSH functionality."""
+# SSH-licco 版本信息
+# 所有代码中的版本信息都从这里读取
+# 版本号: 0.1.7
 
-__version__ = "0.2.1"
-
-__all__ = [
-    "SSHMCPServer",
-    "KeyManager",
-    "SSHKeyPair",
-    "ConnectionConfig",
-    "ClientType",
-    "RetryConfig",
-    "SessionManager",
-    "SSHSession",
-    "SessionInfo",
-    "ConfigManager",
-    "SSHConfig",
-    "SSHService",
-    "get_ssh_service",
-    "ConnectionPool",
-    "PoolConfig",
-    "PooledSSHClient",
-    "BatchExecutor",
-    "AsyncBatchExecutor",
-    "BatchExecutionResult",
-    "HostResult",
-    "AuditLogger",
-    "AuditEventType",
-    "get_audit_logger",
-    "SSHException",
-    "ConnectionException",
-    "AuthenticationException",
-    "CommandExecutionException",
-    "FileTransferException",
-    "SessionException",
-    "TimeoutException",
-    "ConfigurationException",
-    "PoolExhaustedException",
-    "RetryExhaustedException",
-    "get_logger",
-    "SSHLogger",
-]
-
-from .server import SSHMCPServer
-from .key_manager import KeyManager, SSHKeyPair
-from .connection_config import ConnectionConfig, ClientType, RetryConfig
-from .session_manager import SessionManager, SSHSession, SessionInfo
-from .config_manager import ConfigManager, SSHConfig
-from .service import SSHService, get_ssh_service
-from .connection_pool import ConnectionPool, PoolConfig, PooledSSHClient
-from .batch_executor import BatchExecutor, AsyncBatchExecutor, BatchExecutionResult, HostResult
-from .audit_logger import AuditLogger, AuditEventType, get_audit_logger
-from .exceptions import (
-    SSHException,
-    ConnectionException,
-    AuthenticationException,
-    CommandExecutionException,
-    FileTransferException,
-    SessionException,
-    TimeoutException,
-    ConfigurationException,
-    PoolExhaustedException,
-    RetryExhaustedException,
-)
-from .logging_config import get_logger, SSHLogger
+__version__ = "0.1.7"
+__author__ = "SSH LICCO Team"
+__email__ = "contact@ssh-licco.dev"
+__license__ = "MIT"
+__description__ = "SSH Model Context Protocol Server - Enable SSH functionality for AI models"
+__url__ = "https://github.com/Echoqili/ssh-licco"

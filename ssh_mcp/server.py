@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 from pathlib import Path
+from importlib.metadata import version as get_version
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -13,10 +14,15 @@ from .session_manager import SessionManager, SessionInfo
 from .key_manager import KeyManager
 from .config_manager import ConfigManager, SSHConfig, SSHHost
 
+try:
+    __version__ = get_version("ssh-licco")
+except Exception:
+    from . import __version__
+
 
 class SSHMCPServer:
     def __init__(self):
-        self.server = Server("ssh-licco", "0.1.4")
+        self.server = Server("ssh-licco", __version__)
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
@@ -373,6 +379,9 @@ class SSHMCPServer:
         
         # Get client type from args, env config, or default to paramiko
         client_type = args.get("client_type") or self._env_config.get("client_type", "paramiko")
+        
+        # 隐藏密码显示
+        password_display = "***" if host_config.password else "未设置"
         
         if host_config:
             config = ConnectionConfig(
