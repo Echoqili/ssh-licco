@@ -1,40 +1,17 @@
 {
   "mcpServers": {
-    "GitHub": {
-      "command": "npx",
+    "github": {
+      "command": "docker",
       "args": [
-        "-y",
-        "@modelcontextprotocol/server-github"
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server"
       ],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
-      },
-      "fromGalleryId": "modelcontextprotocol.servers_github"
-    },
-    "Gitee": {
-      "command": "mcp-gitee",
-      "args": [
-        "--transport",
-        "sse",
-        "--sse-address",
-        "0.0.0.0:8000"
-      ],
-      "env": {
-        "GITEE_ACCESS_TOKEN": "db27f8f697db1f76d4886b69946a4cd8",
-        "GITEE_API_BASE": "https://gitee.com/api/v5"
-      },
-      "fromGalleryId": "oschina.mcp-gitee"
-    },
-    "ssh": {
-      "command": "ssh-licco",
-      "env": {
-        "SSH_HOST": "43.143.207.242",
-        "SSH_USER": "root",
-        "SSH_PASSWORD": "P/[KY}+wa7?2|uc",
-        "SSH_PORT": "22",
-        "SSH_TIMEOUT": "120",
-        "SSH_KEEPALIVE_INTERVAL": "30",
-        "SSH_SESSION_TIMEOUT": "7200"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
       }
     }
   }
