@@ -21,6 +21,9 @@ class SSHHost(BaseModel):
     username: str = "root"
     password: str = ""
     timeout: int = 30
+    keepalive_interval: int = 30
+    session_timeout: int = 7200
+    banner_timeout: int = 60
 
 
 class ServerConfig(BaseModel):
@@ -95,3 +98,54 @@ class ConfigManager:
         if not server_config:
             return []
         return server_config.ssh_hosts
+    
+    def add_host(self, host: SSHHost) -> None:
+        """Add a new SSH host to config/hosts.json"""
+        config_path = self.DEFAULT_HOSTS_CONFIG_PATH
+        
+        # Load existing config
+        data = {"ssh_hosts": []}
+        if config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception:
+                pass
+        
+        # Check if host already exists
+        for i, h in enumerate(data.get("ssh_hosts", [])):
+            if h.get("name") == host.name:
+                # Update existing
+                data["ssh_hosts"][i] = host.model_dump()
+                break
+        else:
+            # Add new
+            data.setdefault("ssh_hosts", []).append(host.model_dump())
+        
+        # Save config
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    
+    def remove_host(self, name: str) -> bool:
+        """Remove an SSH host from config/hosts.json by name"""
+        config_path = self.DEFAULT_HOSTS_CONFIG_PATH
+        
+        if not config_path.exists():
+            return False
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Find and remove host
+            original_count = len(data.get("ssh_hosts", []))
+            data["ssh_hosts"] = [h for h in data.get("ssh_hosts", []) if h.get("name") != name]
+            
+            if len(data["ssh_hosts"]) < original_count:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                return True
+            return False
+        except Exception:
+            return False
