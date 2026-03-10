@@ -15,7 +15,8 @@
 
 - 🎯 **自然语言控制** - 用对话方式操作服务器
 - 🔐 **多种认证方式** - 密码、密钥、Agent 转发
-- 🔗 **长连接支持** - 自动保活，避免账户锁定
+- 🔗 **长连接支持** - 自动保活（30 秒心跳），避免账户锁定
+- ⏱️ **可配置超时** - Banner 超时 (60s)、会话超时 (2 小时)
 - 📦 **异步高性能** - 基于 AsyncSSH 的异步架构
 - 🛡️ **完善的异常处理** - 统一的错误处理机制
 - 📊 **会话管理** - 支持多个并发 SSH 会话
@@ -24,6 +25,8 @@
 - 📝 **审计日志** - 完整的操作审计记录
 - 🚀 **连接池** - 高性能连接复用
 - 📊 **批量执行** - 多主机并行命令执行
+- 🐳 **Docker 支持** - Docker 构建和状态监控
+- 📋 **后台任务** - 异步任务执行和状态跟踪
 
 ---
 
@@ -73,7 +76,7 @@ pip install -e .
 
 ### 2️⃣ 配置 SSH 连接（可选但推荐）
 
-#### 方式 A：环境变量配置
+#### 方式 A：环境变量配置（推荐）
 
 ```json
 {
@@ -84,6 +87,8 @@ pip install -e .
         "SSH_HOST": "192.168.1.100",
         "SSH_USER": "root",
         "SSH_PASSWORD": "your_password",
+        "SSH_PORT": "22",
+        "SSH_TIMEOUT": "60",
         "SSH_KEEPALIVE_INTERVAL": "30",
         "SSH_SESSION_TIMEOUT": "7200"
       }
@@ -91,6 +96,15 @@ pip install -e .
   }
 }
 ```
+
+**环境变量说明：**
+- `SSH_HOST`: SSH 服务器地址
+- `SSH_USER`: 用户名
+- `SSH_PASSWORD`: 密码
+- `SSH_PORT`: 端口（默认 22）
+- `SSH_TIMEOUT`: 连接超时（秒）
+- `SSH_KEEPALIVE_INTERVAL`: 保活间隔（秒）
+- `SSH_SESSION_TIMEOUT`: 会话超时（秒）
 
 #### 方式 B：配置文件
 
@@ -108,7 +122,11 @@ cp config/hosts.json.example config/hosts.json
       "host": "192.168.1.100",
       "port": 22,
       "username": "root",
-      "password": "your_password"
+      "password": "your_password",
+      "timeout": 30,
+      "keepalive_interval": 30,
+      "session_timeout": 7200,
+      "banner_timeout": 60
     }
   ]
 }
@@ -147,7 +165,7 @@ cp config/hosts.json.example config/hosts.json
 
 ## 🔥 核心功能
 
-### 长连接支持（避免账户锁定）
+### 1. 长连接支持（避免账户锁定）
 
 频繁连接 SSH 服务器可能导致账户被锁定。SSH LICCO 默认启用长连接和自动保活：
 
@@ -162,7 +180,7 @@ cp config/hosts.json.example config/hosts.json
 }
 ```
 
-### 连接池（高性能）
+### 2. 连接池（高性能）
 
 - **连接复用**：避免频繁建立连接
 - **健康检查**：自动检测并回收无效连接
@@ -185,7 +203,7 @@ with pool.acquire() as client:
     result = client.execute_command("ls -la")
 ```
 
-### 批量执行（多主机管理）
+### 3. 批量执行（多主机管理）
 
 - **并行执行**：多主机同时执行命令
 - **失败隔离**：单主机异常不影响其他
@@ -206,7 +224,7 @@ result = executor.execute("uptime")
 print(f"成功：{result.success_count}, 失败：{result.failed_count}")
 ```
 
-### 审计日志
+### 4. 审计日志
 
 - **结构化日志**：JSON 格式便于分析
 - **操作记录**：连接、命令、文件传输
@@ -224,6 +242,18 @@ audit.log_command(
 )
 ```
 
+### 5. Docker 支持
+
+- **Docker 构建**：支持 Docker 镜像构建
+- **状态监控**：查看 Docker 服务状态
+- **后台任务**：异步执行长时间任务
+
+### 6. 后台任务管理
+
+- **任务创建**：创建后台任务
+- **状态跟踪**：查看任务执行状态
+- **结果查询**：获取任务执行结果
+
 ---
 
 ## 🛠️ 可用工具
@@ -238,6 +268,13 @@ audit.log_command(
 | `ssh_list_sessions` | 列出活跃会话 | 查看所有 SSH 会话 |
 | `ssh_generate_key` | 生成 SSH 密钥 | 创建 RSA 或 ED25519 密钥对 |
 | `ssh_file_transfer` | SFTP 文件传输 | 上传、下载、列出目录 |
+| `ssh_list_hosts` | 列出配置的主机 | 查看已配置的主机列表 |
+| `ssh_background_task` | 创建后台任务 | 执行长时间运行的任务 |
+| `ssh_task_status` | 查看任务状态 | 获取后台任务的执行状态 |
+| `ssh_docker_build` | Docker 镜像构建 | 构建 Docker 镜像 |
+| `ssh_docker_status` | Docker 状态检查 | 查看 Docker 服务状态 |
+| `ssh_add_host` | 添加主机配置 | 添加新的 SSH 主机配置 |
+| `ssh_remove_host` | 移除主机配置 | 删除已配置的 SSH 主机 |
 
 详细使用说明见 [📖 使用指南](USAGE.md)
 
