@@ -16,7 +16,7 @@ from .config_manager import ConfigManager, SSHConfig, SSHHost
 
 class SSHMCPServer:
     def __init__(self):
-        self.server = Server("ssh-licco", "0.1.0")
+        self.server = Server("ssh-licco", "0.1.3")
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
@@ -316,7 +316,9 @@ class SSHMCPServer:
                 port=self._env_config.get("port", 22),
                 username=self._env_config.get("username", "root"),
                 password=self._env_config.get("password", ""),
-                timeout=self._env_config.get("timeout", 30)
+                timeout=self._env_config.get("timeout", 30),
+                keepalive_interval=self._env_config.get("keepalive_interval", 30),
+                session_timeout=self._env_config.get("session_timeout", 7200)
             )
         
         # Get client type from args, env config, or default to paramiko
