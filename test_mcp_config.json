@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "43.143.207.242",
+        "SSH_USER": "root",
+        "SSH_PASSWORD": "P/[KY}+wa7?2|uc",
+        "SSH_PORT": "22",
+        "SSH_TIMEOUT": "120",
+        "SSH_KEEPALIVE_INTERVAL": "30",
+        "SSH_SESSION_TIMEOUT": "7200"
+      }
+    }
+  }
+}
