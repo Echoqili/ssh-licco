@@ -16,7 +16,7 @@ from .config_manager import ConfigManager, SSHConfig, SSHHost
 
 class SSHMCPServer:
     def __init__(self):
-        self.server = Server("ssh-licco", "0.1.0")
+        self.server = Server("ssh-licco", "0.1.4")
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
@@ -204,6 +204,33 @@ class SSHMCPServer:
                         "required": ["session_id"]
                     }
                 ),
+                Tool(
+                    name="ssh_add_host",
+                    description="Add a new SSH server to config/hosts.json (for managing multiple servers)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Server name (e.g., 'production', 'dev-server')"},
+                            "host": {"type": "string", "description": "Server hostname or IP"},
+                            "port": {"type": "integer", "description": "SSH port", "default": 22},
+                            "username": {"type": "string", "description": "SSH username", "default": "root"},
+                            "password": {"type": "string", "description": "SSH password (optional)"},
+                            "timeout": {"type": "integer", "description": "Connection timeout", "default": 60}
+                        },
+                        "required": ["name", "host"]
+                    }
+                ),
+                Tool(
+                    name="ssh_remove_host",
+                    description="Remove an SSH server from config/hosts.json by name",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Server name to remove"}
+                        },
+                        "required": ["name"]
+                    }
+                ),
             ]
 
         @self.server.call_tool()
@@ -235,6 +262,10 @@ class SSHMCPServer:
                     return await self._handle_docker_build(arguments)
                 elif name == "ssh_docker_status":
                     return await self._handle_docker_status(arguments)
+                elif name == "ssh_add_host":
+                    return await self._handle_add_host(arguments)
+                elif name == "ssh_remove_host":
+                    return await self._handle_remove_host(arguments)
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
             except Exception as e:
@@ -242,20 +273,26 @@ class SSHMCPServer:
 
     async def _handle_config(self, args: dict) -> list[TextContent]:
         import os
+        # Use environment variable for password if not provided in args
+        password = args.get("password")
+        if not password:
+            password = os.getenv("SSH_PASSWORD", "")
+        
         config = SSHConfig(
             host=args.get("host", "127.0.0.1"),
             port=args.get("port", 22),
             username=args.get("username", "root"),
-            password=args.get("password", "") or os.getenv("SSH_PASSWORD", ""),
+            password=password,
             timeout=args.get("timeout", 30)
         )
         self.config_manager.save(config)
         return [TextContent(
             type="text",
-            text=f"SSH配置已保存:\n"
-                 f"主机: {config.host}:{config.port}\n"
-                 f"用户名: {config.username}\n"
-                 f"配置文件: {self.config_manager.config_path}"
+            text=f"SSH 配置已保存:\n"
+                 f"主机：{config.host}:{config.port}\n"
+                 f"用户名：{config.username}\n"
+                 f"密码：{'已设置' if password else '未设置 (将使用环境变量 SSH_PASSWORD)'}\n"
+                 f"配置文件：{self.config_manager.config_path}"
         )]
 
     async def _handle_login(self, args: dict) -> list[TextContent]:
@@ -263,7 +300,7 @@ class SSHMCPServer:
         if not config_data:
             return [TextContent(
                 type="text",
-                text="请先使用 ssh_config 工具配置SSH连接信息"
+                text="请先使用 ssh_config 工具配置 SSH 连接信息"
             )]
         
         if not config_data.password:
@@ -280,11 +317,11 @@ class SSHMCPServer:
         
         session_info = await self.session_manager.create_session(config)
         
-        output = f"SSH登录成功!\n"
-        output += f"主机: {session_info.host}:{session_info.port}\n"
+        output = f"SSH 登录成功!\n"
+        output += f"主机：{session_info.host}:{session_info.port}\n"
         output += f"Session ID: {session_info.session_id}\n"
-        output += f"用户名: {session_info.username}\n"
-        output += f"连接时间: {session_info.connected_at.isoformat()}"
+        output += f"用户名：{session_info.username}\n"
+        output += f"连接时间：{session_info.connected_at.isoformat()}"
         
         command = args.get("command")
         if command:
@@ -302,21 +339,36 @@ class SSHMCPServer:
     async def _handle_connect(self, args: dict) -> list[TextContent]:
         host_config = None
         
-        # Try to get host from server.json or config/hosts.json by name
-        if args.get("name"):
-            host_config = self.config_manager.get_host_by_name(args["name"])
-            if not host_config:
-                return [TextContent(type="text", text=f"Host '{args['name']}' not found in configuration files")]
-        
-        # Use environment variable config if no name provided
-        if not host_config and self._env_config:
+        # Priority 1: Use environment variable config from MCP server.json if configured
+        if self._env_config and self._env_config.get("host"):
             host_config = SSHHost(
                 name="env-server",
                 host=self._env_config.get("host", "127.0.0.1"),
                 port=self._env_config.get("port", 22),
                 username=self._env_config.get("username", "root"),
                 password=self._env_config.get("password", ""),
-                timeout=self._env_config.get("timeout", 30)
+                timeout=self._env_config.get("timeout", 30),
+                keepalive_interval=self._env_config.get("keepalive_interval", 30),
+                session_timeout=self._env_config.get("session_timeout", 7200)
+            )
+        
+        # Priority 2: Try to get host from config/hosts.json by name
+        if not host_config and args.get("name"):
+            host_config = self.config_manager.get_host_by_name(args["name"])
+            if not host_config:
+                return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
+        
+        # Priority 3: Use parameters from args if no env config or name provided
+        if not host_config and args.get("host"):
+            host_config = SSHHost(
+                name="args-server",
+                host=args["host"],
+                port=args.get("port", 22),
+                username=args.get("username", "root"),
+                password=args.get("password", ""),
+                timeout=args.get("timeout", 30),
+                keepalive_interval=args.get("keepalive_interval", 30),
+                session_timeout=args.get("session_timeout", 7200)
             )
         
         # Get client type from args, env config, or default to paramiko
@@ -456,25 +508,28 @@ class SSHMCPServer:
     async def _handle_list_hosts(self, args: dict) -> list[TextContent]:
         hosts = self.config_manager.list_hosts()
         
-        output = "Configured SSH Hosts:\n"
+        output = "📋 SSH 服务器配置列表\n\n"
         
-        # Show hosts from config files
+        # Priority 1: Environment variable config from MCP server.json
+        if self._env_config and self._env_config.get("host"):
+            output += "🔹 [优先级 1] MCP 配置文件 (mcp.json)\n"
+            output += f"  主机：{self._env_config.get('host')}:{self._env_config.get('port', 22)}\n"
+            output += f"  用户：{self._env_config.get('username')}\n"
+            output += f"  密码：{'***' if self._env_config.get('password') else '未设置'}\n"
+            output += f"  超时：{self._env_config.get('timeout', 30)}s\n\n"
+        
+        # Priority 2: Hosts from config/hosts.json
+        output += "🔹 [优先级 2] 本地配置文件 (config/hosts.json)\n"
         if hosts:
-            for host in hosts:
-                output += f"\n- Name: {host.name}\n"
-                output += f"  Host: {host.host}:{host.port}\n"
-                output += f"  Username: {host.username}\n"
-                output += f"  Password: {'***' if host.password else 'N/A'}\n"
+            for i, host in enumerate(hosts, 1):
+                output += f"\n  {i}. {host.name}\n"
+                output += f"     主机：{host.host}:{host.port}\n"
+                output += f"     用户：{host.username}\n"
+                output += f"     密码：{'***' if host.password else '未设置'}\n"
+                output += f"     超时：{host.timeout}s\n"
         else:
-            output += "\nNo hosts configured in config files.\n"
-        
-        # Show environment variable config
-        if self._env_config:
-            output += "\n--- Environment Variables ---\n"
-            output += f"Host: {self._env_config.get('host', 'N/A')}\n"
-            output += f"Port: {self._env_config.get('port', 22)}\n"
-            output += f"Username: {self._env_config.get('username', 'N/A')}\n"
-            output += f"Password: {'***' if self._env_config.get('password') else 'Not set'}\n"
+            output += "  (空)\n"
+            output += "  💡 提示：使用 '添加 SSH 服务器' 命令来添加新服务器\n"
         
         return [TextContent(type="text", text=output)]
 
@@ -646,6 +701,64 @@ Use ssh_docker_status to check progress:
             
         except Exception as e:
             return [TextContent(type="text", text=f"Error checking Docker status: {str(e)}")]
+
+    async def _handle_add_host(self, args: dict) -> list[TextContent]:
+        """Add a new SSH server to config/hosts.json"""
+        from .config_manager import SSHHost
+        
+        name = args.get("name")
+        host = args.get("host")
+        port = args.get("port", 22)
+        username = args.get("username", "root")
+        password = args.get("password", "")
+        timeout = args.get("timeout", 60)
+        
+        if not name or not host:
+            return [TextContent(type="text", text="❌ 错误：name 和 host 是必填参数")]
+        
+        # Create new host entry
+        new_host = SSHHost(
+            name=name,
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            timeout=timeout,
+            keepalive_interval=30,
+            session_timeout=7200
+        )
+        
+        # Add to config
+        self.config_manager.add_host(new_host)
+        
+        return [TextContent(
+            type="text",
+            text=f"✅ SSH 服务器已添加!\n\n"
+                 f"名称：{name}\n"
+                 f"主机：{host}:{port}\n"
+                 f"用户：{username}\n"
+                 f"超时：{timeout}s\n\n"
+                 f"💡 使用 '连接 SSH' 命令时指定 name='{name}' 来连接此服务器"
+        )]
+
+    async def _handle_remove_host(self, args: dict) -> list[TextContent]:
+        """Remove an SSH server from config/hosts.json"""
+        name = args.get("name")
+        
+        if not name:
+            return [TextContent(type="text", text="❌ 错误：需要提供服务器名称")]
+        
+        # Remove from config
+        if self.config_manager.remove_host(name):
+            return [TextContent(
+                type="text",
+                text=f"✅ SSH 服务器 '{name}' 已删除"
+            )]
+        else:
+            return [TextContent(
+                type="text",
+                text=f"❌ 未找到名为 '{name}' 的服务器"
+            )]
 
     async def run(self):
         import signal

@@ -20,26 +20,69 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Virtual environments
 venv/
 env/
 ENV/
+.venv
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
-
-# OS
+*~
 .DS_Store
-Thumbs.db
 
-# SSH MCP specific
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Type checking
+.mypy_cache/
+.pytype/
+
+# Logs
 *.log
-.mcpregistry_*.token
-mcp-publisher.exe
-mcp-publisher.tar.gz
+logs/
 
-# Local config
-config/hosts.json
+# Environment variables
+.env
+.env.local
+
+# Temporary scripts from development
+# Publishing scripts (one-time use)
+auto_publish_*.py
+check_*.py
+cleanup_*.py
+create_release*.py
+delete_*.py
+final_*.py
+get_*.py
+manual_*.py
+monitor_*.py
+publish_*.py
+push_*.py
+republish_*.py
+rerun_*.py
+test_*.py
+trigger_*.py
+verify_*.py
+wait_*.py
+
+# Batch files
+*.bat
+
+# Text files
+*.txt
+!README.md
+!LICENSE
+!CONTRIBUTING.md
+
+# Temporary config
+server.json
+
+# Workflow skill (temporary)
+git-workflow-skill.md
