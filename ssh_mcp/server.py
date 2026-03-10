@@ -16,7 +16,7 @@ from .config_manager import ConfigManager, SSHConfig, SSHHost
 
 class SSHMCPServer:
     def __init__(self):
-        self.server = Server("ssh-licco", "0.1.3")
+        self.server = Server("ssh-licco", "0.1.5")
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
