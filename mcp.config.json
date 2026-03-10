@@ -7,7 +7,7 @@
         "@modelcontextprotocol/server-github"
       ],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN_HERE"
       },
       "fromGalleryId": "modelcontextprotocol.servers_github"
     },
@@ -20,7 +20,7 @@
         "0.0.0.0:8000"
       ],
       "env": {
-        "GITEE_ACCESS_TOKEN": "db27f8f697db1f76d4886b69946a4cd8",
+        "GITEE_ACCESS_TOKEN": "YOUR_GITEE_TOKEN_HERE",
         "GITEE_API_BASE": "https://gitee.com/api/v5"
       },
       "fromGalleryId": "oschina.mcp-gitee"
@@ -28,9 +28,9 @@
     "ssh": {
       "command": "ssh-licco",
       "env": {
-        "SSH_HOST": "43.143.207.242",
-        "SSH_USER": "root",
-        "SSH_PASSWORD": "P/[KY}+wa7?2|uc",
+        "SSH_HOST": "YOUR_SSH_HOST",
+        "SSH_USER": "YOUR_SSH_USER",
+        "SSH_PASSWORD": "YOUR_SSH_PASSWORD",
         "SSH_PORT": "22",
         "SSH_TIMEOUT": "120",
         "SSH_KEEPALIVE_INTERVAL": "30",
