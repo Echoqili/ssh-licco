@@ -1,5 +1,6 @@
 # 版本同步脚本
-# 使用方法: python sync_version.py 0.1.7
+# 使用方法：python sync_version.py 0.1.7
+# 仅更新版本号文件，不自动 commit 和打 tag
 import sys
 import re
 from pathlib import Path
@@ -17,8 +18,8 @@ def update_version(new_version: str):
         flags=re.MULTILINE
     )
     content = re.sub(
-        r'^# 版本号: [\d.]+',
-        f'# 版本号: {new_version}',
+        r'^# 版本号：[\d.]+',
+        f'# 版本号：{new_version}',
         content,
         flags=re.MULTILINE
     )
@@ -43,6 +44,12 @@ def update_version(new_version: str):
     print(f"✅ Updated VERSION -> {new_version}")
     
     print(f"\n🎉 Version updated to {new_version} everywhere!")
+    print(f"\n💡 Next steps:")
+    print(f"   1. git add .")
+    print(f"   2. git commit -m 'release: v{new_version}'")
+    print(f"   3. git push origin master")
+    print(f"   4. git tag v{new_version}")
+    print(f"   5. git push origin v{new_version} --tags")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
