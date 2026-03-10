@@ -1,0 +1,15 @@
+{
+  "ssh_hosts": [
+    {
+      "name": "我的服务器",
+      "host": "43.143.207.242",
+      "port": 22,
+      "username": "root",
+      "password": "",
+      "timeout": 120,
+      "keepalive_interval": 30,
+      "session_timeout": 7200,
+      "banner_timeout": 120
+    }
+  ]
+}

@@ -76,7 +76,7 @@ class ParamikoClient(SSHClientInterface):
                 'compress': self.config.compress,
                 'look_for_keys': False,
                 'allow_agent': False,
-                'banner_timeout': max(timeout, 60),
+                'banner_timeout': getattr(self.config, 'banner_timeout', max(timeout, 60)),
                 'auth_timeout': max(timeout, 60),
             }
             

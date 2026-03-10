@@ -33,6 +33,7 @@ class ConnectionConfig(BaseModel):
     allow_agent: bool = Field(default=False, description="Use SSH agent for authentication (建议关闭)")
     session_timeout: int = Field(default=7200, description="Session timeout in seconds (default: 2 hours)")
     client_type: ClientType = Field(default="asyncssh", description="SSH client implementation to use")
+    banner_timeout: int = Field(default=60, description="Banner timeout in seconds")
     
     retry_config: Optional[RetryConfig] = Field(
         default=None, 
