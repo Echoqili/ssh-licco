@@ -53,6 +53,146 @@ python -m twine upload dist/* -u __token__ -p <TOKEN>
 python -c "from ssh_mcp import __version__; print(__version__)"
 ```
 
+## Git Remote Management
+
+**Check Current Remote:**
+```bash
+# View all remotes
+git remote -v
+
+# Check current branch
+git branch --show-current
+
+# Verify remote URL
+git remote get-url origin
+```
+
+**Multiple Remotes Setup:**
+```bash
+# Add multiple remotes
+git remote add origin https://github.com/Echoqili/ssh-licco.git
+git remote add upstream https://github.com/organization/ssh-licco.git
+
+# View remotes
+git remote -v
+```
+
+**Push to Correct Remote (Auto-Detect):**
+```bash
+# Script to auto-detect and push to correct remote
+# Check which remote is the primary (origin)
+CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null)
+
+if [[ "$CURRENT_REMOTE" == *"Echoqili"* ]]; then
+    echo "✅ Pushing to personal repo: origin"
+    git push origin master
+elif [[ "$CURRENT_REMOTE" == *"organization"* ]]; then
+    echo "✅ Pushing to org repo: origin"
+    git push origin master
+else
+    echo "⚠️  Unknown remote, please verify:"
+    git remote -v
+fi
+```
+
+**Release Workflow with Remote Check:**
+```bash
+# 1. Check remote before release
+echo "Current remote:"
+git remote -v
+
+# 2. Confirm correct repository
+read -p "Push to this remote? (y/n): " confirm
+if [ "$confirm" != "y" ]; then
+    echo "❌ Aborted. Please check remote configuration."
+    exit 1
+fi
+
+# 3. Proceed with release
+python sync_version.py 0.1.7
+git add .
+git commit -m "release: v0.1.7"
+git push origin master
+
+# 4. Tag and push
+git tag v0.1.7
+git push origin v0.1.7 --tags
+```
+
+**Smart Release Script (with Remote Detection):**
+```bash
+#!/bin/bash
+# release.sh - Auto-detects correct remote
+
+VERSION=$1
+if [ -z "$VERSION" ]; then
+    echo "Usage: ./release.sh <version>"
+    exit 1
+fi
+
+# Check remote
+REMOTE_URL=$(git remote get-url origin)
+echo "📡 Current remote: $REMOTE_URL"
+
+# Extract repo owner
+if [[ "$REMOTE_URL" == *"Echoqili"* ]]; then
+    REPO_OWNER="Echoqili"
+elif [[ "$REMOTE_URL" == *"github.com"* ]]; then
+    REPO_OWNER=$(echo "$REMOTE_URL" | sed -n 's/.*github.com[:/]\([^/]*\).*/\1/p')
+else
+    REPO_OWNER="unknown"
+fi
+
+echo "📦 Repository owner: $REPO_OWNER"
+read -p "Continue release? (y/n): " confirm
+
+if [ "$confirm" != "y" ]; then
+    echo "❌ Release aborted."
+    exit 1
+fi
+
+# Execute release
+python sync_version.py $VERSION
+git add .
+git commit -m "release: v$VERSION"
+git push origin master
+git tag v$VERSION
+git push origin v$VERSION --tags
+python -m build
+python -m twine upload dist/*
+
+echo "✅ Release v$VERSION to $REPO_OWNER completed!"
+```
+
+**CI/CD Remote Configuration:**
+```yaml
+# .github/workflows/release.yml
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Verify repository owner
+        run: |
+          if [[ "${{ github.repository_owner }}" != "Echoqili" ]]; then
+            echo "⚠️  Release from fork: ${{ github.repository_owner }}"
+            exit 0  # Skip release for forks
+          fi
+          echo "✅ Official release from Echoqili"
+      
+      - name: Build and publish
+        run: |
+          python -m build
+          python -m twine upload dist/*
+```
+
 ## Version Management
 
 ### Update Version
