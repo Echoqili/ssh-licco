@@ -21,6 +21,8 @@ class SSHHost(BaseModel):
     username: str = "root"
     password: str = ""
     timeout: int = 30
+    keepalive_interval: int = 30
+    session_timeout: int = 7200
 
 
 class ServerConfig(BaseModel):
