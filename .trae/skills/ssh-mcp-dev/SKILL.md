@@ -10,7 +10,7 @@ description: "SSH MCP server development guide. Invoke when working on ssh-licco
 - **Project Name**: ssh-licco
 - **Description**: SSH Model Context Protocol Server - Enable SSH functionality for AI models
 - **Repository**: https://github.com/Echoqili/ssh-licco
-- **Current Version**: 0.1.6 (stored in `ssh_mcp/__init__.py`)
+- **Current Version**: 0.1.7 (stored in `ssh_mcp/__init__.py`)
 
 ## Project Structure
 
@@ -30,8 +30,76 @@ ssh-mcp/
 ├── Dockerfile           # Docker image build
 ├── pyproject.toml       # Package configuration
 ├── sync_version.py      # Version sync script
-└── .github/workflows/
-    └── pypi.yml         # PyPI release workflow
+├── .github/workflows/
+│   └── pypi.yml         # PyPI release workflow
+└── .trae/skills/
+    └── ssh-mcp-dev/
+        └── SKILL.md     # This skill file
+```
+
+## Git Workflow
+
+### Always create a new branch for changes
+
+```bash
+# 1. Update local master
+git checkout master
+git pull origin master
+
+# 2. Create a new branch
+git checkout -b feature/your-feature-name
+# or
+git checkout -b fix/bug-description
+
+# 3. Make your changes
+# ... edit files ...
+
+# 4. Commit your changes
+git add -A
+git commit -m "feat: add new feature"
+
+# 5. Push to remote
+git push -u origin feature/your-feature-name
+
+# 6. Create Pull Request on GitHub
+# Go to https://github.com/Echoqili/ssh-licco and create PR
+
+# 7. After PR is merged, update local master
+git checkout master
+git pull origin master
+```
+
+### Branch Naming Conventions
+
+| Type | Example | Use Case |
+|------|---------|----------|
+| `feature/` | `feature/add-server-management` | New features |
+| `fix/` | `fix/password-display-issue` | Bug fixes |
+| `docs/` | `docs/update-readme` | Documentation |
+| `refactor/` | `refactor/improve-code` | Code improvements |
+
+### Commit Message Format
+
+```
+<type>: <description>
+
+[optional body]
+```
+
+Types:
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation
+- `refactor`: Code refactoring
+- `chore`: Maintenance
+- `test`: Testing
+
+Examples:
+```
+feat: add ssh_list_hosts tool
+fix: hide password in MCP responses
+docs: update version management guide
+chore: bump version to 0.1.7
 ```
 
 ## Quick Commands
@@ -53,146 +121,6 @@ python -m twine upload dist/* -u __token__ -p <TOKEN>
 python -c "from ssh_mcp import __version__; print(__version__)"
 ```
 
-## Git Remote Management
-
-**Check Current Remote:**
-```bash
-# View all remotes
-git remote -v
-
-# Check current branch
-git branch --show-current
-
-# Verify remote URL
-git remote get-url origin
-```
-
-**Multiple Remotes Setup:**
-```bash
-# Add multiple remotes
-git remote add origin https://github.com/Echoqili/ssh-licco.git
-git remote add upstream https://github.com/organization/ssh-licco.git
-
-# View remotes
-git remote -v
-```
-
-**Push to Correct Remote (Auto-Detect):**
-```bash
-# Script to auto-detect and push to correct remote
-# Check which remote is the primary (origin)
-CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null)
-
-if [[ "$CURRENT_REMOTE" == *"Echoqili"* ]]; then
-    echo "✅ Pushing to personal repo: origin"
-    git push origin master
-elif [[ "$CURRENT_REMOTE" == *"organization"* ]]; then
-    echo "✅ Pushing to org repo: origin"
-    git push origin master
-else
-    echo "⚠️  Unknown remote, please verify:"
-    git remote -v
-fi
-```
-
-**Release Workflow with Remote Check:**
-```bash
-# 1. Check remote before release
-echo "Current remote:"
-git remote -v
-
-# 2. Confirm correct repository
-read -p "Push to this remote? (y/n): " confirm
-if [ "$confirm" != "y" ]; then
-    echo "❌ Aborted. Please check remote configuration."
-    exit 1
-fi
-
-# 3. Proceed with release
-python sync_version.py 0.1.7
-git add .
-git commit -m "release: v0.1.7"
-git push origin master
-
-# 4. Tag and push
-git tag v0.1.7
-git push origin v0.1.7 --tags
-```
-
-**Smart Release Script (with Remote Detection):**
-```bash
-#!/bin/bash
-# release.sh - Auto-detects correct remote
-
-VERSION=$1
-if [ -z "$VERSION" ]; then
-    echo "Usage: ./release.sh <version>"
-    exit 1
-fi
-
-# Check remote
-REMOTE_URL=$(git remote get-url origin)
-echo "📡 Current remote: $REMOTE_URL"
-
-# Extract repo owner
-if [[ "$REMOTE_URL" == *"Echoqili"* ]]; then
-    REPO_OWNER="Echoqili"
-elif [[ "$REMOTE_URL" == *"github.com"* ]]; then
-    REPO_OWNER=$(echo "$REMOTE_URL" | sed -n 's/.*github.com[:/]\([^/]*\).*/\1/p')
-else
-    REPO_OWNER="unknown"
-fi
-
-echo "📦 Repository owner: $REPO_OWNER"
-read -p "Continue release? (y/n): " confirm
-
-if [ "$confirm" != "y" ]; then
-    echo "❌ Release aborted."
-    exit 1
-fi
-
-# Execute release
-python sync_version.py $VERSION
-git add .
-git commit -m "release: v$VERSION"
-git push origin master
-git tag v$VERSION
-git push origin v$VERSION --tags
-python -m build
-python -m twine upload dist/*
-
-echo "✅ Release v$VERSION to $REPO_OWNER completed!"
-```
-
-**CI/CD Remote Configuration:**
-```yaml
-# .github/workflows/release.yml
-name: Release
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Verify repository owner
-        run: |
-          if [[ "${{ github.repository_owner }}" != "Echoqili" ]]; then
-            echo "⚠️  Release from fork: ${{ github.repository_owner }}"
-            exit 0  # Skip release for forks
-          fi
-          echo "✅ Official release from Echoqili"
-      
-      - name: Build and publish
-        run: |
-          python -m build
-          python -m twine upload dist/*
-```
-
 ## Version Management
 
 ### Update Version
@@ -201,7 +129,7 @@ jobs:
 # New feature (MINOR): python sync_version.py 1.1.0
 # Breaking change (MAJOR): python sync_version.py 2.0.0
 
-python sync_version.py 0.1.7
+python sync_version.py 0.1.8
 ```
 
 ### Version Files (sync automatically)
@@ -209,91 +137,11 @@ python sync_version.py 0.1.7
 - `pyproject.toml` - Auto-synced
 - `VERSION` - Backup
 
-### Release Process (Tag After Push)
-
-**Standard Workflow:**
-```bash
-# Step 1: Update version files
-python sync_version.py 0.1.7
-
-# Step 2: Commit and push code
-git add .
-git commit -m "release: v0.1.7"
-git push origin master
-
-# Step 3: Create and push tag (AFTER code is pushed)
-git tag v0.1.7
-git push origin v0.1.7 --tags
-
-# Step 4: Build and upload to PyPI
-python -m build
-python -m twine upload dist/*
-```
-
-**What `sync_version.py` does:**
-1. ✅ Updates version in `ssh_mcp/__init__.py`
-2. ✅ Updates version in `pyproject.toml`
-3. ✅ Updates `VERSION` file
-4. ℹ️ Shows next steps (manual git operations)
-
-**Why Tag After Push:**
-- ✅ Ensures code is successfully pushed first
-- ✅ Tag points to committed code on remote
-- ✅ Clear separation between code and tag
-- ✅ Easy to rollback if needed
-
-**Complete Release Checklist:**
-```bash
-# 1. Update version
-python sync_version.py 0.1.7
-
-# 2. Commit changes
-git add .
-git commit -m "release: v0.1.7"
-
-# 3. Push code to GitHub
-git push origin master
-
-# 4. Create and push tag
-git tag v0.1.7
-git push origin v0.1.7 --tags
-
-# 5. Build package
-python -m build
-
-# 6. Upload to PyPI
-python -m twine upload dist/*
-
-# 7. Create GitHub Release (optional)
-# Go to GitHub -> Releases -> Create new release from tag v0.1.7
-```
-
-**Quick Release Script:**
-```bash
-# Create release.sh
-cat > release.sh << 'EOF'
-#!/bin/bash
-VERSION=$1
-if [ -z "$VERSION" ]; then
-    echo "Usage: ./release.sh <version>"
-    exit 1
-fi
-
-python sync_version.py $VERSION
-git add .
-git commit -m "release: v$VERSION"
-git push origin master
-git tag v$VERSION
-git push origin v$VERSION --tags
-python -m build
-python -m twine upload dist/*
-echo "✅ Release v$VERSION complete!"
-EOF
-
-chmod +x release.sh
-
-# Usage: ./release.sh 0.1.7
-```
+### Release Process
+1. Update version: `python sync_version.py x.x.x`
+2. Build: `python -m build`
+3. Upload: `python -m twine upload dist/*`
+4. Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
 
 ## Docker Configuration
 
@@ -304,7 +152,7 @@ chmod +x release.sh
 docker build -t ssh-licco:latest .
 
 # Build with custom tag
-docker build -t ssh-licco:0.1.6 .
+docker build -t ssh-licco:0.1.7 .
 
 # Build with Chinese mirrors (faster in China)
 docker build --build-arg DOCKER_MIRRORS='["https://docker.mirrors.sjtug.sjtu.edu.cn","https://mirror.aliyuncs.com"]' -t ssh-licco:latest .
@@ -317,7 +165,7 @@ docker build --build-arg DOCKER_MIRRORS='["https://docker.mirrors.sjtug.sjtu.edu
 docker tag ssh-licco:latest your-registry/ssh-licco:latest
 
 # Tag for version
-docker tag ssh-licco:0.1.6 your-registry/ssh-licco:0.1.6
+docker tag ssh-licco:0.1.7 your-registry/ssh-licco:0.1.7
 ```
 
 ### Push to Registry
@@ -327,7 +175,7 @@ docker tag ssh-licco:0.1.6 your-registry/ssh-licco:0.1.6
 docker push your-username/ssh-licco:latest
 
 # Push to custom registry
-docker push your-registry/ssh-licco:0.1.6
+docker push your-registry/ssh-licco:0.1.7
 ```
 
 ### Run Docker Container
@@ -403,158 +251,6 @@ Available tools:
 2. **Local Config** (config/hosts.json)
 3. **User Parameters** - Lowest
 
-## MCP Tool Usage Priority
-
-**Golden Rule: ALWAYS prefer MCP tools over direct commands for ANY operation**
-
-### Universal Priority Order (High to Low)
-
-1. **MCP Tools (Any MCP)** - ⭐⭐⭐⭐⭐
-   - **SSH MCP**: ssh_execute, ssh_docker_build, ssh_file_transfer, etc.
-   - **GitHub MCP**: github_create_issue, github_create_pull, github_search_repos, etc.
-   - **Other MCPs**: Any available MCP server tools
-   - ✅ Use for ALL operations when available
-   - ✅ Automatically handles authentication, connection management
-   - ✅ Built-in error handling and retry logic
-   - ✅ Centralized configuration and audit logging
-
-2. **Native Commands** - ⭐⭐
-   - Docker commands (docker build, docker run)
-   - Git commands (git push, git commit)
-   - System commands
-   - ⚠️ Use ONLY when no MCP tool is available
-   - ⚠️ Requires manual configuration and error handling
-
-3. **Manual/Alternative Methods** - ⭐
-   - Direct API calls
-   - Custom scripts
-   - Web interface operations
-   - ❌ Last resort when MCP and native commands both unavailable
-
-### Why Use MCP Tools?
-
-✅ **Benefits:**
-- Automatic connection pooling and authentication
-- Built-in error handling and retry logic
-- Centralized configuration management
-- Audit logging for all operations
-- Consistent interface across operations
-- Better security (no credentials exposure in logs)
-- Type-safe with proper error messages
-- Community-maintained and tested
-
-❌ **Without MCP Tools:**
-- Manual connection and auth management
-- Inconsistent error handling
-- No audit trail
-- Security risks (credentials in scripts/logs)
-- Configuration duplication
-- Fragile custom implementations
-
-### Decision Flow
-
-```
-Start Operation
-    ↓
-Is there an MCP tool? ──YES──→ Use MCP Tool ✅
-    ↓ NO
-Can use native command? ──YES──→ Use Native Command ⚠️
-    ↓ NO
-Find alternative method ❌
-    (API call, script, manual)
-```
-
-### Example Usage
-
-**✅ Recommended (MCP Tools - Any MCP):**
-
-```python
-# SSH MCP - Remote operations
-result = await ssh_execute(
-    command="docker build -t ssh-licco:latest .",
-    host="production-server"
-)
-
-# GitHub MCP - Repository operations  
-issue = await github_create_issue(
-    owner="Echoqili",
-    repo="ssh-licco",
-    title="Release v0.1.7",
-    labels="release,enhancement"
-)
-
-# Multiple MCPs - Combined workflow
-await ssh_file_transfer(file="dist/*.whl", target="/app/")
-await github_create_release(tag="v0.1.7", notes="New release")
-```
-
-**⚠️ Acceptable (Native Commands - No MCP available):**
-
-```bash
-# Only when no MCP tool exists
-git commit -m "feat: add new feature"
-docker build -t ssh-licco:latest .
-```
-
-**❌ Avoid (Direct Methods - Last resort):**
-
-```bash
-# Don't use if MCP exists
-ssh root@server "command"                    # → Use ssh_execute
-curl -X POST api.github.com/repos/...     # → Use github_* MCP
-echo "password" | sudo -S command         # → Use MCP with stored config
-```
-
-### Integration with Development Workflow
-
-```
-Task Category              → Preferred Tool
-─────────────────────────────────────────────────────
-Remote Server Operations  → SSH MCP Tools
-   - Docker Build          → ssh_docker_build
-   - File Transfer         → ssh_file_transfer
-   - Command Execution     → ssh_execute
-   - Status Check          → ssh_docker_status
-
-GitHub Operations         → GitHub MCP Tools
-   - Create Issue          → github_create_issue
-   - Create PR             → github_create_pull
-   - Search Repos          → github_search_repos
-   - Manage Releases       → github_create_release
-
-Local Development         → Native Commands
-   - Git Operations        → git commit, git push
-   - Docker Build (local)  → docker build
-   - Testing              → pytest, python
-
-Emergency/Fallback        → Manual Methods
-   - Direct API calls      → curl, requests
-   - Web interface         → Browser operations
-   - Custom scripts        → Last resort
-```
-
-### MCP Tool Discovery
-
-When starting a new task, always check for available MCP tools:
-
-1. **Check MCP Servers**: What MCP servers are configured?
-   - SSH MCP (ssh-licco)
-   - GitHub MCP
-   - Other MCPs...
-
-2. **List Available Tools**: What tools does each MCP provide?
-   - Review tool documentation
-   - Check tool capabilities
-
-3. **Choose Best Tool**: Select the most appropriate MCP tool
-   - Prefer specialized MCP tools over generic ones
-   - Consider error handling and logging features
-
-4. **Fallback Strategy**: If no MCP tool available
-   - Try native commands
-   - Then consider custom scripts
-   - Document the gap for future MCP development
-
 ## MCP Configuration Example
 
 ```json
@@ -596,15 +292,43 @@ Passwords with special characters work fine in JSON - no escaping needed.
 - Use multi-stage build (already optimized)
 - Clean up cache: `docker builder prune`
 
-## Development Workflow
+## Development Workflow (Complete)
 
-1. **Make changes** to source code in `ssh_mcp/`
-2. **Test locally**: `pip install -e . --user`
-3. **Update version**: `python sync_version.py x.x.x`
-4. **Build package**: `python -m build`
-5. **Build Docker**: `docker build -t ssh-licco:x.x.x .`
-6. **Release**: Upload to PyPI + Docker Hub + GitHub Release
-7. **Document**: Update CHANGELOG.md
+1. **Create branch** from master
+   ```bash
+   git checkout master
+   git pull origin master
+   git checkout -b feature/your-feature
+   ```
+
+2. **Make changes** to source code in `ssh_mcp/`
+
+3. **Test locally**
+   ```bash
+   pip install -e . --user
+   # test your changes
+   ```
+
+4. **Commit and push**
+   ```bash
+   git add -A
+   git commit -m "feat: your feature"
+   git push -u origin feature/your-feature
+   ```
+
+5. **Create Pull Request** on GitHub
+
+6. **After PR merged**:
+   - Update version: `python sync_version.py x.x.x`
+   - Build: `python -m build`
+   - Upload to PyPI: `python -m twine upload dist/*`
+   - Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
+
+7. **Update local master**
+   ```bash
+   git checkout master
+   git pull origin master
+   ```
 
 ## Key Files Reference
 
@@ -615,9 +339,8 @@ Passwords with special characters work fine in JSON - no escaping needed.
 | `config/hosts.json` | Saved SSH hosts |
 | `pyproject.toml` | Package config |
 | `Dockerfile` | Docker image build |
-| `VERSION_MANAGEMENT.md` | Version guide |
-| `MCP_SETUP_GUIDE.md` | MCP setup |
-| `PASSWORD_SECURITY.md` | Security features |
+| `sync_version.py` | Version sync script |
+| `.trae/skills/ssh-mcp-dev/SKILL.md` | This skill |
 
 ## Testing MCP Tools
 

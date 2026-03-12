@@ -1,0 +1,30 @@
+name: Sync to GitHub
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Remove test files
+      run: |
+        git config --global user.name 'GitHub Action'
+        git config --global user.email 'action@github.com'
+        
+        # 删除测试文件（如果存在）
+        if [ -f test_connect.py ]; then
+          git rm test_connect.py || true
+        fi
+        if [ -f test_mcp.py ]; then
+          git rm test_mcp.py || true
+        fi
+        
+        # 提交删除
+        git commit -m "chore: remove test files" || echo "No changes to commit"
+        git push origin master --tags
