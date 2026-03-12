@@ -81,8 +81,37 @@ wait_*.py
 !LICENSE
 !CONTRIBUTING.md
 
+# Temporary documentation files (keep only essential docs)
+CLEANUP_SUMMARY.md
+CONFIG_GUIDE.md
+CONFIG_MANAGEMENT_GUIDE.md
+CONNECTION_TEST_REPORT.md
+DOCKER_MCP_TIMEOUT.md
+DOCKER_MIRROR_SETUP.md
+DOCKER_OPTIMIZATION.md
+INSTALL_SUCCESS.md
+LAUNCHGUIDE.md
+MANAGEMENT_GUIDE_SUMMARY.md
+MARKETPLACE_*.md
+MCP_*.md
+PASSWORD_SECURITY.md
+PROJECT_COMPLETE.md
+PUBLISH_*.md
+QUICK_REFERENCE_CARD.md
+RELEASE_*.md
+SECURITY_*.md
+PUSH_SUCCESS.md
+
 # Temporary config
 server.json
 
 # Workflow skill (temporary)
 git-workflow-skill.md
+
+# Cleanup scripts
+clean_history.py
+fix_git_history*.py
+rewrite_history.sh
+cleanup_github.py
+publish_now.py
+sync_version.py.backup
