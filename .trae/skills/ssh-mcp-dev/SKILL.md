@@ -23,10 +23,15 @@ ssh-mcp/
 │   ├── session_manager.py
 │   ├── connection_config.py
 │   ├── clients/         # SSH client implementations
+│   │   ├── paramiko_client.py
+│   │   ├── asyncssh_client.py
+│   │   └── fabric_client.py
 │   └── ...
 ├── config/               # Runtime configuration
 │   ├── hosts.json       # SSH host configurations
-│   └── client_config.json
+│   ├── mcp.user.config.json.example
+│   ├── mcp.presets.json
+│   └── CONFIG_GUIDE.md
 ├── Dockerfile           # Docker image build
 ├── pyproject.toml       # Package configuration
 ├── sync_version.py      # Version sync script
@@ -245,7 +250,16 @@ Available tools:
 - `ssh_docker_build` - Build Docker image remotely
 - `ssh_docker_status` - Check Docker status
 
-## Configuration Priority
+## SSH Client Types
+
+### Configuration
+
+Set `SSH_CLIENT_TYPE` environment variable:
+- `common` (default) - paramiko (stable, recommended)
+- `performance` - asyncssh (high performance)
+- `development` - fabric (simple API)
+
+### Configuration Priority
 
 1. **MCP Config** (mcp.json env) - Highest
 2. **Local Config** (config/hosts.json)
@@ -263,7 +277,8 @@ Available tools:
         "SSH_USER": "root",
         "SSH_PASSWORD": "your_password",
         "SSH_PORT": "22",
-        "SSH_TIMEOUT": "120"
+        "SSH_TIMEOUT": "120",
+        "SSH_CLIENT_TYPE": "common"
       }
     }
   }
@@ -337,10 +352,24 @@ Passwords with special characters work fine in JSON - no escaping needed.
 | `ssh_mcp/__init__.py` | Version (main) |
 | `ssh_mcp/server.py` | MCP server logic |
 | `config/hosts.json` | Saved SSH hosts |
+| `config/mcp.user.config.json` | User configuration |
+| `config/mcp.presets.json` | SSH client type presets |
+| `config/CONFIG_GUIDE.md` | Configuration guide |
 | `pyproject.toml` | Package config |
 | `Dockerfile` | Docker image build |
 | `sync_version.py` | Version sync script |
 | `.trae/skills/ssh-mcp-dev/SKILL.md` | This skill |
+
+## Documentation Reference
+
+| Document | Purpose |
+|----------|---------|
+| `README.md` | Project overview and quick start |
+| `USAGE.md` | Detailed usage guide |
+| `VERSION_MANAGEMENT.md` | Version management and release process |
+| `COMPLETE_SECURITY_FIXES.md` | Security fixes and best practices |
+| `docs/API_REFERENCE.md` | API documentation |
+| `docs/CONTRIBUTING.md` | Contribution guidelines |
 
 ## Testing MCP Tools
 

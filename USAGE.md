@@ -13,7 +13,7 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的服务器，让 AI 助
 - ✅ SFTP 文件传输（上传、下载、列表）
 - 🔥 **长连接支持** - 自动保活，避免频繁连接导致账户锁定
 - 🔥 **可配置会话超时** - 默认 2 小时，最长可配置
-- 🔥 **多客户端支持** - 可选择 Paramiko、Fabric、AsyncSSH 等
+- 🔥 **多客户端支持** - 可选择 paramiko（默认）、asyncssh、fabric
 
 ---
 
@@ -184,7 +184,14 @@ pip install -e .
 }
 ```
 
-> 💡 **提示**：`keepalive_interval` 和 `session_timeout` 用于长连接功能，避免频繁连接导致账户锁定。详见 [CONFIG_GUIDE.md](CONFIG_GUIDE.md)
+> 💡 **提示**：`keepalive_interval` 和 `session_timeout` 用于长连接功能，避免频繁连接导致账户锁定。
+> 
+> **SSH_CLIENT_TYPE**: 设置 SSH 客户端类型（可选）
+> - `common` - paramiko（默认，稳定可靠）⭐
+> - `performance` - asyncssh（高性能）🚀
+> - `development` - fabric（简化 API）👨‍💻
+> 
+> 详见 [CONFIG_GUIDE.md](config/CONFIG_GUIDE.md)
 
 ---
 

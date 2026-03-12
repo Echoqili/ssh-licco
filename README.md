@@ -90,7 +90,8 @@ pip install -e .
         "SSH_PORT": "22",
         "SSH_TIMEOUT": "60",
         "SSH_KEEPALIVE_INTERVAL": "30",
-        "SSH_SESSION_TIMEOUT": "7200"
+        "SSH_SESSION_TIMEOUT": "7200",
+        "SSH_CLIENT_TYPE": "common"
       }
     }
   }
@@ -105,6 +106,10 @@ pip install -e .
 - `SSH_TIMEOUT`: 连接超时（秒）
 - `SSH_KEEPALIVE_INTERVAL`: 保活间隔（秒）
 - `SSH_SESSION_TIMEOUT`: 会话超时（秒）
+- `SSH_CLIENT_TYPE`: SSH 客户端类型（可选，默认 `common`）
+  - `common` - paramiko（稳定可靠，推荐）⭐
+  - `performance` - asyncssh（高性能，适合高并发）🚀
+  - `development` - fabric（简化 API，适合快速开发）👨‍💻
 
 #### 方式 B：配置文件
 
@@ -298,13 +303,16 @@ ssh_mcp/
 ```
 
 **设计模式：**
+**架构设计：**
 - 工厂模式 - SSHClientFactory 动态创建客户端
 - 策略模式 - 支持多种 SSH 客户端实现
 - 单例模式 - 全局 SSHService 实例
 - 上下文管理器 - 自动连接/断开管理
 
 **客户端支持：**
-- ✅ **AsyncSSH** - 异步架构，高并发性能（默认且推荐）
+- ✅ **paramiko** - 成熟稳定，Python 社区标准（默认，推荐）⭐
+- ✅ **asyncssh** - 异步架构，高并发性能 🚀
+- ✅ **fabric** - 简化 API，运维友好 👨‍💻
 
 ---
 
@@ -324,11 +332,9 @@ ssh_mcp/
 ## 📚 文档
 
 - [📖 使用指南](USAGE.md) - 详细的工具使用说明
-- [⚙️ 配置指南](CONFIG_GUIDE.md) - 完整的配置选项
-- [🐳 Docker 超时问题](DOCKER_MCP_TIMEOUT.md) - Docker 构建问题
+- [⚙️ 配置指南](config/CONFIG_GUIDE.md) - SSH 客户端配置指南
 - [📝 API 参考](docs/API_REFERENCE.md) - API 接口文档
-- [❓ 故障排除](docs/TROUBLESHOOTING.md) - 常见问题
-- [📊 MCP Registry 状态](MCP_REGISTRY_STATUS.md) - Registry 发布说明
+- [🤝 贡献指南](docs/CONTRIBUTING.md) - 项目贡献说明
 
 ---
 
