@@ -381,8 +381,20 @@ class SystemSSHClient(SSHClientInterface):
         return ssh_cmd
     
     def execute_command(self, command: str, timeout: int = 30) -> CommandResult:
-        """执行命令"""
+        """执行命令（带安全验证）"""
         import subprocess
+        from ..security import SecurityError, command_validator
+        
+        # 🔒 安全验证 - 防止任意命令执行
+        try:
+            command_validator.validate_command(command)
+        except SecurityError as e:
+            self._logger.error(f"Command blocked: {e}")
+            return CommandResult(
+                stdout="",
+                stderr=f"安全错误：{str(e)}",
+                return_code=1
+            )
         
         ssh_cmd = self._build_ssh_command(command)
         

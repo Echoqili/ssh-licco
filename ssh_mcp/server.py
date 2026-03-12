@@ -424,6 +424,21 @@ class SSHMCPServer:
         )]
 
     async def _handle_execute(self, args: dict) -> list[TextContent]:
+        """处理命令执行（带安全验证）"""
+        from .security import SecurityError, command_validator
+        
+        command = args.get("command")
+        
+        # 🔒 安全验证 - 防止任意命令执行
+        try:
+            command_validator.validate_command(command)
+        except SecurityError as e:
+            self._logger.error(f"Command blocked: {e}")
+            return [TextContent(
+                type="text",
+                text=f"❌ 安全错误：{str(e)}"
+            )]
+        
         session = await self.session_manager.get_session(args["session_id"])
         if not session:
             return [TextContent(type="text", text=f"Session not found: {args['session_id']}")]
