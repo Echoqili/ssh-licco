@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/mcp-config",
+  "version": "1.0.0",
+  "description": "SSH 客户端技术栈说明",
+  
+  "ssh_client_types": {
+    "common": {
+      "client": "paramiko",
+      "name": "Common (通用)",
+      "description": "成熟稳定的 SSH2 实现，Python 社区标准（默认）",
+      "pros": ["稳定可靠", "文档丰富", "社区支持好"],
+      "cons": ["同步阻塞", "并发性能一般"],
+      "best_for": ["通用场景", "传统项目", "兼容性要求高"]
+    },
+    
+    "performance": {
+      "client": "asyncssh",
+      "name": "Performance (性能)",
+      "description": "异步 SSH2 实现，基于 asyncio",
+      "pros": ["异步非阻塞", "高性能", "支持高并发"],
+      "cons": ["需要异步编程知识", "学习曲线"],
+      "best_for": ["高并发场景", "大规模自动化"]
+    },
+    
+    "development": {
+      "client": "fabric",
+      "name": "Development (开发)",
+      "description": "简化的 SSH 和部署工具，基于 paramiko",
+      "pros": ["API 简洁", "快速开发", "运维友好"],
+      "cons": ["基于 paramiko", "额外依赖"],
+      "best_for": ["运维脚本", "快速部署", "简单操作"]
+    }
+  },
+  
+  "usage": "设置环境变量 SSH_CLIENT_TYPE 为 common | performance | development 之一即可"
+}

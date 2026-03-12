@@ -10,17 +10,6 @@
       "keepalive_interval": 30,
       "session_timeout": 7200,
       "client_type": "paramiko"
-    },
-    {
-      "name": "Fabric 服务器",
-      "host": "another-server-ip",
-      "port": 22,
-      "username": "admin",
-      "password": "another-password",
-      "timeout": 60,
-      "keepalive_interval": 30,
-      "session_timeout": 7200,
-      "client_type": "fabric"
     }
   ]
 }

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/mcp-config",
+  "version": "1.0.0",
+  "description": "SSH LICCO MCP 用户配置 - 复制此文件并修改",
+  
+  "_help": "只需要配置 SSH_CLIENT_TYPE，其他都使用默认值",
+  
+  "env": {
+    "_ssh_client_type_help": "可选值：common（通用）| performance（高性能）| development（开发），不填默认 common",
+    "SSH_CLIENT_TYPE": "${SSH_CLIENT_TYPE}"
+  }
+}
