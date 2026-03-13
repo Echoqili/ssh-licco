@@ -104,8 +104,6 @@ class CommandValidator:
         """
         self.security_level = security_level
         self.extra_allowed_commands = extra_allowed_commands or set()
-        self.allowed_commands = self._build_allowed_commands()
-        self._compile_patterns()
         
         # 根据安全级别设置严格程度
         if security_level == SecurityLevel.STRICT:
@@ -117,6 +115,9 @@ class CommandValidator:
         else:  # RELAXED
             self.strict_mode = False
             self.dangerous_patterns = []
+        
+        self.allowed_commands = self._build_allowed_commands()
+        self._compile_patterns()
     
     def _build_allowed_commands(self) -> Set[str]:
         """构建允许的命令集合"""
