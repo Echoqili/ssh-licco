@@ -558,9 +558,10 @@ class SSHMCPServer:
         return [TextContent(type="text", text=output)]
 
     async def _handle_background_task(self, args: dict) -> list[TextContent]:
-        """Handle background task execution for long-running commands like Docker build"""
+        """Handle background task execution for long-running commands like Docker build (带安全限制)"""
         import uuid
         import os
+        from .security import SecurityError, command_validator, path_validator
         
         session_id = args.get("session_id")
         command = args.get("command")
@@ -570,16 +571,55 @@ class SSHMCPServer:
         if not session_id or not command:
             return [TextContent(type="text", text="Error: session_id and command are required")]
         
+        # 🔒 安全验证：命令
+        try:
+            command_validator.validate_command(command.split()[0] if command.split() else "")
+        except SecurityError as e:
+            self._logger.error(f"Background task command blocked: {e}")
+            return [TextContent(
+                type="text",
+                text=f"❌ 安全错误：{str(e)}"
+            )]
+        
+        # 🔒 安全验证：工作目录
+        try:
+            safe_workdir = str(path_validator.validate_path(workdir))
+        except SecurityError as e:
+            self._logger.error(f"Background task workdir blocked: {e}")
+            return [TextContent(
+                type="text",
+                text=f"❌ 安全错误：工作目录不被允许 - {str(e)}"
+            )]
+        
+        # 🔒 安全验证：日志文件路径
+        try:
+            safe_log_file = str(path_validator.validate_path(log_file))
+        except SecurityError as e:
+            self._logger.error(f"Background task log file blocked: {e}")
+            return [TextContent(
+                type="text",
+                text=f"❌ 安全错误：日志文件路径不被允许 - {str(e)}"
+            )]
+        
+        # 🔒 限制：检查命令中是否包含危险操作
+        dangerous_patterns = ['rm -rf /', 'mkfs', 'dd if=/dev/zero', ':(){:|:&};:', 'chmod -R 777 /']
+        for pattern in dangerous_patterns:
+            if pattern in command:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ 安全错误：命令包含危险操作 '{pattern}'"
+                )]
+        
         # Create a unique task ID
         task_id = str(uuid.uuid4())[:8]
         
         # Wrap command to run in background with logging
         # Use nohup and redirect output to log file
         background_command = f"""
-cd {workdir} && nohup {command} > {log_file} 2>&1 &
+cd {safe_workdir} && nohup {command} > {safe_log_file} 2>&1 &
 echo $! > /tmp/task_{task_id}.pid
 echo "Task started with PID: $(cat /tmp/task_{task_id}.pid)"
-echo "Log file: {log_file}"
+echo "Log file: {safe_log_file}"
 """
         
         try:
@@ -589,8 +629,8 @@ echo "Log file: {log_file}"
 
 Task ID: {task_id}
 Command: {command}
-Working Directory: {workdir}
-Log File: {log_file}
+Working Directory: {safe_workdir}
+Log File: {safe_log_file}
 
 Use ssh_task_status to check progress:
 - Session ID: {session_id}
