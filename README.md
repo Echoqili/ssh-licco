@@ -111,6 +111,153 @@ pip install -e .
   - `performance` - asyncssh（高性能，适合高并发）🚀
   - `development` - fabric（简化 API，适合快速开发）👨‍💻
 
+---
+
+## 🔐 安全配置（v0.2.1+）
+
+### 多级安全策略
+
+ssh-licco 提供三种安全级别，可根据使用场景灵活配置：
+
+| 级别 | 名称 | 适用场景 | 安全评分 |
+|------|------|----------|----------|
+| **STRICT** | 严格模式 | 生产环境、公共服务器 | 最高 ⭐⭐⭐ |
+| **BALANCED** | 平衡模式 | 开发环境、个人服务器（默认） | 高 ⭐⭐ |
+| **RELAXED** | 宽松模式 | 测试环境、完全信任的服务器 | 中等 ⭐ |
+
+### 快速配置
+
+#### 方式 1：环境变量（推荐）
+
+**Windows PowerShell**:
+```powershell
+# 设置安全级别
+$env:SSH_SECURITY_LEVEL = "balanced"
+
+# 添加额外允许的命令
+$env:SSH_EXTRA_ALLOWED_COMMANDS = "git,pip,npm"
+
+# 启动服务器
+python -m ssh_mcp.server
+```
+
+**Linux/Mac**:
+```bash
+export SSH_SECURITY_LEVEL="balanced"
+export SSH_EXTRA_ALLOWED_COMMANDS="git,pip,npm"
+python -m ssh_mcp.server
+```
+
+#### 方式 2：MCP 配置文件
+
+编辑 `mcp.config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "balanced",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "git,pip,npm",
+        "SSH_BASE_DIR": "/home"
+      }
+    }
+  }
+}
+```
+
+### 环境变量详解
+
+#### SSH_SECURITY_LEVEL
+
+设置安全级别（默认：`balanced`）
+
+- `strict` - 严格模式，最严格验证
+- `balanced` - 平衡模式，适度验证（推荐）
+- `relaxed` - 宽松模式，最小验证
+
+#### SSH_EXTRA_ALLOWED_COMMANDS
+
+添加额外允许的命令，逗号分隔：
+
+```bash
+# Web 开发者
+export SSH_EXTRA_ALLOWED_COMMANDS="git,npm,docker,composer"
+
+# Python 开发者
+export SSH_EXTRA_ALLOWED_COMMANDS="pip,poetry,python3"
+
+# 系统管理员
+export SSH_EXTRA_ALLOWED_COMMANDS="sudo,apt,yum,systemctl"
+```
+
+#### SSH_BASE_DIR
+
+设置允许访问的基础目录（默认：`/home`）
+
+```bash
+export SSH_BASE_DIR="/var/www"
+```
+
+### 允许的命令
+
+#### 所有级别都允许（基础命令）
+
+```
+ls, cat, grep, find, docker, systemctl, ps, top
+cp, mv, rm, mkdir, tar, gzip
+... 等常用命令
+```
+
+#### RELAXED 级别额外允许
+
+```
+sudo, git, pip, npm, curl, wget
+python3, node, vim, ssh, scp
+... 等开发和管理命令
+```
+
+### 安全保护
+
+- ✅ **命令注入防护** - 阻止管道、重定向等危险字符
+- ✅ **路径遍历防护** - 阻止 `../../../etc/passwd` 等攻击
+- ✅ **敏感文件保护** - 禁止访问 `/etc/shadow` 等敏感文件
+- ✅ **危险操作检测** - 阻止 `rm -rf /` 等危险命令
+- ✅ **友好错误提示** - 提供解决方案和相似命令建议
+
+### 使用示例
+
+#### 生产环境（最高安全）
+
+```bash
+export SSH_SECURITY_LEVEL="strict"
+python -m ssh_mcp.server
+```
+
+#### 开发环境（推荐配置）
+
+```bash
+export SSH_SECURITY_LEVEL="balanced"
+export SSH_EXTRA_ALLOWED_COMMANDS="git,npm,docker"
+export SSH_BASE_DIR="/var/www"
+python -m ssh_mcp.server
+```
+
+#### 测试环境（完全信任）
+
+```bash
+export SSH_SECURITY_LEVEL="relaxed"
+export SSH_EXTRA_ALLOWED_COMMANDS="sudo,apt,systemctl"
+python -m ssh_mcp.server
+```
+
+### 详细文档
+
+完整的安全配置指南请参考：[`SECURITY_CONFIG_GUIDE.md`](SECURITY_CONFIG_GUIDE.md)
+
+---
+
 #### 方式 B：配置文件
 
 ```bash
