@@ -1,12 +1,21 @@
 """
 SSH LICCO Security Module
-安全验证和防护模块
+安全验证和防护模块 - 支持多级安全策略
 """
 
 import re
 import shlex
+import os
 from typing import Set, Optional
 from pathlib import Path
+from enum import Enum
+
+
+class SecurityLevel(Enum):
+    """安全级别枚举"""
+    STRICT = "strict"        # 严格模式 - 生产环境
+    BALANCED = "balanced"    # 平衡模式 - 默认
+    RELAXED = "relaxed"      # 宽松模式 - 开发/测试
 
 
 class SecurityError(Exception):
@@ -17,8 +26,8 @@ class SecurityError(Exception):
 class CommandValidator:
     """命令验证器 - 防止命令注入攻击"""
     
-    # 默认允许的命令白名单
-    DEFAULT_ALLOWED_COMMANDS: Set[str] = {
+    # 基础允许的命令白名单（所有模式都允许）
+    BASE_ALLOWED_COMMANDS: Set[str] = {
         # 基础命令
         'ls', 'dir', 'cd', 'pwd', 'cat', 'head', 'tail', 'less', 'more',
         'grep', 'find', 'which', 'whereis',
@@ -28,7 +37,7 @@ class CommandValidator:
         'top', 'htop', 'ps', 'free', 'df', 'du',
         
         # 网络
-        'ping', 'netstat', 'ss', 'curl', 'wget', 'dig', 'nslookup',
+        'ping', 'netstat', 'ss', 'dig', 'nslookup',
         
         # 文件操作
         'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod', 'chown',
@@ -44,8 +53,21 @@ class CommandValidator:
         'systemctl', 'journalctl', 'service',
     }
     
-    # 危险字符模式
-    DANGEROUS_PATTERNS = [
+    # 扩展命令（仅在 relaxed 模式允许）
+    EXTENDED_COMMANDS: Set[str] = {
+        'sudo', 'su',
+        'wget', 'curl',
+        'apt-get', 'apt', 'yum', 'dnf', 'pacman',
+        'pip', 'pip3', 'npm', 'yarn',
+        'git', 'svn',
+        'python3', 'python', 'node', 'java',
+        'vim', 'vi', 'nano', 'emacs',
+        'ssh', 'scp', 'rsync',
+        'kill', 'pkill', 'killall',
+    }
+    
+    # 危险字符模式（strict 模式检查）
+    DANGEROUS_PATTERNS_STRICT = [
         r'\|',          # 管道
         r'&',           # 后台执行
         r';',           # 命令分隔
@@ -57,22 +79,62 @@ class CommandValidator:
         r'\r',          # 回车注入
     ]
     
-    def __init__(self, allowed_commands: Optional[Set[str]] = None, strict_mode: bool = True):
+    # 危险字符模式（balanced 模式检查）
+    DANGEROUS_PATTERNS_BALANCED = [
+        r'\|',          # 管道
+        r';',           # 命令分隔
+        r'\$\(',        # 命令替换
+        r'`',           # 命令替换
+    ]
+    
+    # 危险关键字
+    DANGEROUS_KEYWORDS = ['passwd', 'shadow', '/etc/shadow', '/root/.ssh']
+    
+    def __init__(
+        self, 
+        security_level: SecurityLevel = SecurityLevel.BALANCED,
+        extra_allowed_commands: Optional[Set[str]] = None
+    ):
         """
         初始化命令验证器
         
         Args:
-            allowed_commands: 允许的命令集合
-            strict_mode: 严格模式（启用所有检查）
+            security_level: 安全级别
+            extra_allowed_commands: 额外允许的命令
         """
-        self.allowed_commands = allowed_commands or self.DEFAULT_ALLOWED_COMMANDS.copy()
-        self.strict_mode = strict_mode
+        self.security_level = security_level
+        self.extra_allowed_commands = extra_allowed_commands or set()
+        self.allowed_commands = self._build_allowed_commands()
         self._compile_patterns()
+        
+        # 根据安全级别设置严格程度
+        if security_level == SecurityLevel.STRICT:
+            self.strict_mode = True
+            self.dangerous_patterns = self.DANGEROUS_PATTERNS_STRICT
+        elif security_level == SecurityLevel.BALANCED:
+            self.strict_mode = True
+            self.dangerous_patterns = self.DANGEROUS_PATTERNS_BALANCED
+        else:  # RELAXED
+            self.strict_mode = False
+            self.dangerous_patterns = []
+    
+    def _build_allowed_commands(self) -> Set[str]:
+        """构建允许的命令集合"""
+        allowed = self.BASE_ALLOWED_COMMANDS.copy()
+        
+        # 在 relaxed 模式添加扩展命令
+        if self.security_level == SecurityLevel.RELAXED:
+            allowed.update(self.EXTENDED_COMMANDS)
+        
+        # 添加用户自定义命令
+        allowed.update(self.extra_allowed_commands)
+        
+        return allowed
     
     def _compile_patterns(self):
         """编译危险模式正则"""
         self.dangerous_regex = [
-            re.compile(pattern) for pattern in self.DANGEROUS_PATTERNS
+            re.compile(pattern) for pattern in self.dangerous_patterns
         ]
     
     def validate_command(self, command: str) -> bool:
@@ -104,9 +166,16 @@ class CommandValidator:
         
         # 1. 检查白名单
         if base_command not in self.allowed_commands:
+            # 提供友好提示
+            similar_cmds = self._find_similar_commands(base_command)
+            hint = ""
+            if similar_cmds:
+                hint = f"\n提示：您可能是想用 {' 或 '.join(similar_cmds[:3])}？"
+            
             raise SecurityError(
-                f"命令 '{base_command}' 不在允许列表中。"
-                f"允许的命令：{', '.join(sorted(list(self.allowed_commands)[:8]))}..."
+                f"命令 '{base_command}' 不在允许列表中。{hint}\n"
+                f"当前安全级别：{self.security_level.value}\n"
+                f"如需使用该命令，请设置环境变量：SSH_EXTRA_ALLOWED_COMMANDS={base_command}"
             )
         
         # 2. 严格模式下检查危险字符
@@ -114,7 +183,8 @@ class CommandValidator:
             for regex in self.dangerous_regex:
                 if regex.search(command):
                     raise SecurityError(
-                        f"命令包含危险字符，可能被用于命令注入"
+                        f"命令包含危险字符，可能被用于命令注入。\n"
+                        f"被阻止的命令：{command}"
                     )
         
         # 3. 检查命令长度
@@ -122,12 +192,25 @@ class CommandValidator:
             raise SecurityError("命令过长（最大 4096 字符）")
         
         # 4. 检查特殊关键字
-        dangerous_keywords = ['sudo', 'passwd', 'shadow', '/etc/', '/root/']
-        for keyword in dangerous_keywords:
+        for keyword in self.DANGEROUS_KEYWORDS:
             if keyword in command.lower():
-                raise SecurityError(f"命令包含受限关键字：'{keyword}'")
+                raise SecurityError(
+                    f"命令包含受限关键字：'{keyword}'\n"
+                    f"这是为了保护系统安全，防止未授权访问敏感文件。"
+                )
         
         return True
+    
+    def _find_similar_commands(self, cmd: str) -> list:
+        """查找相似的允许命令（用于友好提示）"""
+        similar = []
+        for allowed in self.allowed_commands:
+            # 简单的前缀匹配
+            if allowed.startswith(cmd[:3]) and len(allowed) < len(cmd) + 3:
+                similar.append(allowed)
+                if len(similar) >= 5:
+                    break
+        return similar
 
 
 class PathValidator:
@@ -139,16 +222,36 @@ class PathValidator:
         '/var/log', '/var/spool', '/var/cache',
     ]
     
-    def __init__(self, base_dir: str = '/home', strict_mode: bool = True):
+    # relaxed 模式允许的路径
+    RELAXED_ALLOWED_PATHS = [
+        '/tmp', '/var/tmp',
+        '/home', '/opt', '/srv',
+        '/usr/local', '/usr/share',
+    ]
+    
+    def __init__(
+        self, 
+        security_level: SecurityLevel = SecurityLevel.BALANCED,
+        base_dir: str = '/home',
+        extra_allowed_paths: Optional[list] = None
+    ):
         """
         初始化路径验证器
         
         Args:
+            security_level: 安全级别
             base_dir: 基础目录
-            strict_mode: 严格模式
+            extra_allowed_paths: 额外允许的路径
         """
+        self.security_level = security_level
         self.base_dir = Path(base_dir).resolve()
-        self.strict_mode = strict_mode
+        self.extra_allowed_paths = extra_allowed_paths or []
+        
+        # 在 relaxed 模式扩展允许的路径
+        if security_level == SecurityLevel.RELAXED:
+            self.forbidden_paths = []  # 不限制
+        else:
+            self.forbidden_paths = self.FORBIDDEN_PATHS.copy()
     
     def validate_path(self, user_path: str) -> Path:
         """
@@ -169,19 +272,63 @@ class PathValidator:
         # 转换为绝对路径
         full_path = (self.base_dir / user_path).resolve()
         
-        # 1. 检查路径遍历（确保在 base_dir 内）
-        if not str(full_path).startswith(str(self.base_dir)):
-            raise SecurityError("路径遍历攻击被阻止！")
+        # 1. 检查路径遍历（strict 和 balanced 模式）
+        if self.security_level in [SecurityLevel.STRICT, SecurityLevel.BALANCED]:
+            if not str(full_path).startswith(str(self.base_dir)):
+                raise SecurityError(
+                    "路径遍历攻击被阻止！\n"
+                    f"请求路径：{user_path}\n"
+                    f"解析路径：{full_path}\n"
+                    f"允许的基础路径：{self.base_dir}"
+                )
         
-        # 2. 检查禁止路径
-        path_str = str(full_path)
-        for forbidden in self.FORBIDDEN_PATHS:
-            if path_str.startswith(forbidden):
-                raise SecurityError(f"禁止访问敏感路径：{forbidden}")
+        # 2. 检查禁止路径（strict 和 balanced 模式）
+        if self.forbidden_paths:
+            path_str = str(full_path)
+            for forbidden in self.forbidden_paths:
+                if path_str.startswith(forbidden):
+                    raise SecurityError(
+                        f"禁止访问敏感路径：{forbidden}\n"
+                        f"这是为了保护系统关键文件。"
+                    )
         
         return full_path
 
 
-# 全局验证器实例
-command_validator = CommandValidator(strict_mode=True)
-path_validator = PathValidator(base_dir='/home', strict_mode=True)
+# 全局验证器实例（从环境变量读取配置）
+def create_validators_from_env():
+    """从环境变量创建验证器实例"""
+    
+    # 读取安全级别
+    level_str = os.getenv('SSH_SECURITY_LEVEL', 'balanced').lower()
+    try:
+        security_level = SecurityLevel(level_str)
+    except ValueError:
+        security_level = SecurityLevel.BALANCED
+        print(f"⚠️  未知的安全级别 '{level_str}'，使用默认值 'balanced'")
+    
+    # 读取额外允许的命令
+    extra_commands_str = os.getenv('SSH_EXTRA_ALLOWED_COMMANDS', '')
+    extra_commands = set()
+    if extra_commands_str:
+        extra_commands = set(cmd.strip() for cmd in extra_commands_str.split(',') if cmd.strip())
+    
+    # 读取基础目录
+    base_dir = os.getenv('SSH_BASE_DIR', '/home')
+    
+    # 创建验证器
+    command_validator = CommandValidator(
+        security_level=security_level,
+        extra_allowed_commands=extra_commands
+    )
+    
+    path_validator = PathValidator(
+        security_level=security_level,
+        base_dir=base_dir
+    )
+    
+    return command_validator, path_validator
+
+
+# 创建全局实例
+command_validator, path_validator = create_validators_from_env()
