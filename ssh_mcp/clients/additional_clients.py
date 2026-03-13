@@ -443,9 +443,20 @@ class SystemSSHClient(SSHClientInterface):
         process.wait()
     
     def upload_file(self, local_path: str, remote_path: str) -> dict:
-        """上传文件（使用 scp）"""
+        """上传文件（使用 scp，带路径验证）"""
         import subprocess
         import shlex
+        from ..security import SecurityError, path_validator
+        
+        # 🔒 验证远程路径
+        try:
+            safe_remote_path = str(path_validator.validate_path(remote_path))
+        except SecurityError as e:
+            self._logger.error(f"Path blocked: {e}")
+            return {
+                'success': False,
+                'error': f"安全错误：{str(e)}"
+            }
         
         scp_cmd = [
             "scp",
@@ -459,7 +470,7 @@ class SystemSSHClient(SSHClientInterface):
         
         scp_cmd.extend([
             shlex.quote(local_path),
-            f"{self.config.username}@{self.config.host}:{shlex.quote(remote_path)}"
+            f"{self.config.username}@{self.config.host}:{shlex.quote(safe_remote_path)}"
         ])
         
         try:
@@ -477,9 +488,20 @@ class SystemSSHClient(SSHClientInterface):
             return {"success": False, "message": f"Upload failed: {str(e)}"}
     
     def download_file(self, remote_path: str, local_path: str) -> dict:
-        """下载文件（使用 scp）"""
+        """下载文件（使用 scp，带路径验证）"""
         import subprocess
         import shlex
+        from ..security import SecurityError, path_validator
+        
+        # 🔒 验证远程路径
+        try:
+            safe_remote_path = str(path_validator.validate_path(remote_path))
+        except SecurityError as e:
+            self._logger.error(f"Path blocked: {e}")
+            return {
+                'success': False,
+                'error': f"安全错误：{str(e)}"
+            }
         
         scp_cmd = [
             "scp",
@@ -492,7 +514,7 @@ class SystemSSHClient(SSHClientInterface):
             scp_cmd.extend(["-i", str(self.config.private_key_path)])
         
         scp_cmd.extend([
-            f"{self.config.username}@{self.config.host}:{shlex.quote(remote_path)}",
+            f"{self.config.username}@{self.config.host}:{shlex.quote(safe_remote_path)}",
             shlex.quote(local_path)
         ])
         
@@ -511,11 +533,20 @@ class SystemSSHClient(SSHClientInterface):
             return {"success": False, "message": f"Download failed: {str(e)}"}
     
     def list_directory(self, remote_path: str = ".") -> FileListResult:
-        """列出目录"""
-        result = self.execute_command(f"ls -la {remote_path}")
+        """列出目录（带路径验证）"""
+        from ..security import SecurityError, path_validator
+        
+        # 🔒 验证路径
+        try:
+            safe_path = str(path_validator.validate_path(remote_path))
+        except SecurityError as e:
+            self._logger.error(f"Path blocked: {e}")
+            return FileListResult(files=[], path=remote_path, error=f"安全错误：{str(e)}")
+        
+        result = self.execute_command(f"ls -la {safe_path}")
         if result.return_code == 0:
             files = [line.split()[-1] for line in result.stdout.splitlines() if line.strip() and not line.startswith("total")]
-            return FileListResult(files=files, path=remote_path)
+            return FileListResult(files=files, path=safe_path)
         return FileListResult(files=[], path=remote_path)
     
     def close(self) -> None:
