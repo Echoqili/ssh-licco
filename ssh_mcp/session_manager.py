@@ -311,3 +311,31 @@ class SessionManager:
             session._get_session_info()
             for session in self._sessions.values()
         ]
+
+    async def execute_command(self, session_id: str, command: str, timeout: int = 30) -> dict:
+        """Execute command on specified session"""
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.execute_command(command, timeout)
+
+    async def upload_file(self, session_id: str, local_path: str, remote_path: str) -> dict:
+        """Upload file to specified session"""
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.upload_file(local_path, remote_path)
+
+    async def download_file(self, session_id: str, remote_path: str, local_path: str) -> dict:
+        """Download file from specified session"""
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.download_file(remote_path, local_path)
+
+    async def list_directory(self, session_id: str, remote_path: str = ".") -> dict:
+        """List directory on specified session"""
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.list_directory(remote_path)
