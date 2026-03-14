@@ -22,11 +22,13 @@ except Exception:
 
 class SSHMCPServer:
     def __init__(self):
+        import logging
         self.server = Server("ssh-licco", __version__)
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
         self._env_config = self._load_env_config()
+        self._logger = logging.getLogger(__name__)
         self._setup_handlers()
     
     def _load_env_config(self) -> dict:
