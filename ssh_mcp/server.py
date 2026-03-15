@@ -544,6 +544,36 @@ class SSHMCPServer:
         if any(cmd in command_lower for cmd in ['celery', 'rq worker', 'sidekiq', 'resque']):
             return True
         
+        # Java 相关命令
+        java_patterns = [
+            'java -jar', 'java -cp', 'java -class',
+            'mvn spring-boot:run', 'mvn jetty:run', 'mvn tomcat:run',
+            'gradle bootrun', 'gradle run', 'gradle apprun', 'gradle jettyrun',
+            './mvnw spring-boot:run', './gradlew bootrun', './gradlew run',
+            'java -server', 'java -x',
+        ]
+        
+        # Java 应用服务器
+        java_servers = [
+            'tomcat', 'jetty', 'jboss', 'wildfly', 'websphere', 'weblogic',
+            'glassfish', 'payara', 'liberty',
+        ]
+        
+        # 检查 Java 命令
+        for pattern in java_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # 检查 Java 服务器
+        for server in java_servers:
+            if server in command_lower and ('start' in command_lower or 'run' in command_lower):
+                return True
+        
+        # 检查是否有 java 关键字并且是启动/运行命令
+        if 'java' in command_lower:
+            if any(kw in command_lower for kw in ['start', 'run', 'launch', 'boot', 'server', 'daemon']):
+                return True
+        
         return False
 
     async def _handle_disconnect(self, args: dict) -> list[TextContent]:
