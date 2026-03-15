@@ -574,6 +574,112 @@ class SSHMCPServer:
             if any(kw in command_lower for kw in ['start', 'run', 'launch', 'boot', 'server', 'daemon']):
                 return True
         
+        # Go 语言相关
+        go_patterns = [
+            'go run', 'go build && .', 'go install && ',
+        ]
+        for pattern in go_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # Rust 相关
+        rust_patterns = [
+            'cargo run', 'cargo watch -x run', 'rustc --run',
+        ]
+        for pattern in rust_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # Ruby 相关
+        ruby_patterns = [
+            'ruby app.rb', 'ruby server.rb', 'ruby lib/server.rb',
+            'rails server', 'rails s', 'rake server',
+            'puma', 'thin start', 'unicorn', 'passenger start',
+            'rackup', 'shotgun',
+        ]
+        for pattern in ruby_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # PHP 相关（除了 artisan）
+        php_patterns = [
+            'php -S', 'php -s', 'php server', 'php -t',
+            'laravel serve', 'symfony server:start', 'symfony serve',
+        ]
+        for pattern in php_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # .NET/C# 相关
+        dotnet_patterns = [
+            'dotnet run', 'dotnet watch run', 'dotnet webserver',
+            ' kestrel', ' iisexpress',
+        ]
+        for pattern in dotnet_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # Scala 相关
+        scala_patterns = [
+            'sbt run', 'sbt ~run', 'scala -howtorun:object',
+        ]
+        for pattern in scala_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # Elixir 相关
+        elixir_patterns = [
+            'mix phx.server', 'mix phx.server',
+            'iex -s mix', 'iex --sname', 'iex -S',
+            'elixir --sname', 'elixir -e',
+        ]
+        for pattern in elixir_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # Erlang 相关
+        erlang_patterns = [
+            'erl -sname', 'erl -name', 'rebar3 shell',
+        ]
+        for pattern in erlang_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # Haskell 相关
+        haskell_patterns = [
+            'stack exec', 'cabal run', 'ghci',
+        ]
+        for pattern in haskell_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # Clojure 相关
+        clojure_patterns = [
+            'lein run', 'lein ring server', 'boot run',
+        ]
+        for pattern in clojure_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # R 语言相关
+        r_patterns = [
+            'rserve', 'rserver', 'shiny::runapp', 'shiny run',
+        ]
+        for pattern in r_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # 其他服务器/框架
+        other_servers = [
+            'nginx', 'apache', 'httpd', 'caddy',
+            'haproxy', 'traefik', 'envoy',
+            'prometheus', 'grafana-server', 'telegraf',
+            'consul', 'vault', 'nomad',
+        ]
+        for server in other_servers:
+            if server in command_lower:
+                return True
+        
         return False
 
     async def _handle_disconnect(self, args: dict) -> list[TextContent]:

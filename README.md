@@ -11,6 +11,30 @@
 
 ---
 
+## 📚 文档导航
+
+### 快速开始
+- **[⬇️ 安装指南](#-快速安装)** - 3 种安装方式
+- **[🚀 快速开始](#-快速开始)** - 5 分钟上手
+- **[📋 配置模板](#-完整配置示例)** - 开箱即用的配置
+
+### 核心功能
+- **[🔐 安全配置](#-安全配置)** - 多级安全策略
+- **[🛠️ 可用工具](#-可用工具)** - 完整功能列表
+- **[💡 使用示例](#-使用示例)** - 实际应用场景
+
+### 高级主题
+- **[📖 完整配置指南](MCP_CONFIG_GUIDE.md)** - 所有配置选项详解
+- **[🔧 故障排除](docs/API_REFERENCE.md)** - 常见问题解决
+- **[📊 API 参考](docs/API_REFERENCE.md)** - 详细 API 文档
+
+### 开发资源
+- **[🎓 Skills 文档](docs/skills/)** - 开发、运维、安装指南
+- **[📦 发布指南](docs/skills/RELEASE_SKILL.md)** - 版本发布流程
+- **[🐛 GitHub Issues](https://github.com/Echoqili/ssh-licco/issues)** - 问题反馈
+
+---
+
 ## ✨ 特性亮点
 
 - 🎯 **自然语言控制** - 用对话方式操作服务器
@@ -111,13 +135,21 @@ pip install -e .
   - `performance` - asyncssh（高性能，适合高并发）🚀
   - `development` - fabric（简化 API，适合快速开发）👨‍💻
 
+#### 方式 B：交互式配置
+
+启动后，系统会提示输入连接信息：
+
+```bash
+python -m ssh_mcp.server
+```
+
 ---
 
-## 🔐 安全配置（v0.2.1+）
+## 🔐 安全配置
+
+> **重要**：从 v0.2.1 开始，ssh-licco 提供多级安全策略，可根据使用场景灵活配置。
 
 ### 多级安全策略
-
-ssh-licco 提供三种安全级别，可根据使用场景灵活配置：
 
 | 级别 | 名称 | 适用场景 | 安全评分 |
 |------|------|----------|----------|
@@ -131,13 +163,8 @@ ssh-licco 提供三种安全级别，可根据使用场景灵活配置：
 
 **Windows PowerShell**:
 ```powershell
-# 设置安全级别
 $env:SSH_SECURITY_LEVEL = "balanced"
-
-# 添加额外允许的命令
 $env:SSH_EXTRA_ALLOWED_COMMANDS = "git,pip,npm"
-
-# 启动服务器
 python -m ssh_mcp.server
 ```
 
@@ -149,8 +176,6 @@ python -m ssh_mcp.server
 ```
 
 #### 方式 2：MCP 配置文件
-
-编辑 `mcp.config.json`:
 
 ```json
 {
@@ -167,391 +192,362 @@ python -m ssh_mcp.server
 }
 ```
 
-### 环境变量详解
+### 📖 详细文档
 
-#### SSH_SECURITY_LEVEL
-
-设置安全级别（默认：`balanced`）
-
-- `strict` - 严格模式，最严格验证
-- `balanced` - 平衡模式，适度验证（推荐）
-- `relaxed` - 宽松模式，最小验证
-
-#### SSH_EXTRA_ALLOWED_COMMANDS
-
-添加额外允许的命令，逗号分隔：
-
-```bash
-# Web 开发者
-export SSH_EXTRA_ALLOWED_COMMANDS="git,npm,docker,composer"
-
-# Python 开发者
-export SSH_EXTRA_ALLOWED_COMMANDS="pip,poetry,python3"
-
-# 系统管理员
-export SSH_EXTRA_ALLOWED_COMMANDS="sudo,apt,yum,systemctl"
-```
-
-#### SSH_BASE_DIR
-
-设置允许访问的基础目录（默认：`/home`）
-
-```bash
-export SSH_BASE_DIR="/var/www"
-```
-
-### 允许的命令
-
-#### 所有级别都允许（基础命令）
-
-```
-ls, cat, grep, find, docker, systemctl, ps, top
-cp, mv, rm, mkdir, tar, gzip
-... 等常用命令
-```
-
-#### RELAXED 级别额外允许
-
-```
-sudo, git, pip, npm, curl, wget
-python3, node, vim, ssh, scp
-... 等开发和管理命令
-```
-
-### 安全保护
-
-- ✅ **命令注入防护** - 阻止管道、重定向等危险字符
-- ✅ **路径遍历防护** - 阻止 `../../../etc/passwd` 等攻击
-- ✅ **敏感文件保护** - 禁止访问 `/etc/shadow` 等敏感文件
-- ✅ **危险操作检测** - 阻止 `rm -rf /` 等危险命令
-- ✅ **友好错误提示** - 提供解决方案和相似命令建议
-
-### 使用示例
-
-#### 生产环境（最高安全）
-
-```bash
-export SSH_SECURITY_LEVEL="strict"
-python -m ssh_mcp.server
-```
-
-#### 开发环境（推荐配置）
-
-```bash
-export SSH_SECURITY_LEVEL="balanced"
-export SSH_EXTRA_ALLOWED_COMMANDS="git,npm,docker"
-export SSH_BASE_DIR="/var/www"
-python -m ssh_mcp.server
-```
-
-#### 测试环境（完全信任）
-
-```bash
-export SSH_SECURITY_LEVEL="relaxed"
-export SSH_EXTRA_ALLOWED_COMMANDS="sudo,apt,systemctl"
-python -m ssh_mcp.server
-```
-
-### 详细文档
-
-完整的安全配置指南请参考：[`SECURITY_CONFIG_GUIDE.md`](SECURITY_CONFIG_GUIDE.md)
-
----
-
-#### 方式 B：配置文件
-
-```bash
-cp config/hosts.json.example config/hosts.json
-```
-
-编辑 `config/hosts.json`：
-
-```json
-{
-  "ssh_hosts": [
-    {
-      "name": "生产服务器",
-      "host": "192.168.1.100",
-      "port": 22,
-      "username": "root",
-      "password": "your_password",
-      "timeout": 30,
-      "keepalive_interval": 30,
-      "session_timeout": 7200,
-      "banner_timeout": 60
-    }
-  ]
-}
-```
-
-### 3️⃣ 开始使用
-
-重启 AI 应用后，直接用自然语言对话：
-
-#### 示例 1：查看服务器状态
-```
-帮我看看服务器的负载情况
-```
-
-#### 示例 2：执行命令
-```
-在服务器上执行 docker ps 查看运行中的容器
-```
-
-#### 示例 3：管理文件
-```
-列出 /var/log 目录下的所有文件
-```
-
-#### 示例 4：安装软件
-```
-在服务器上安装 nginx
-```
-
-#### 示例 5：上传文件
-```
-把本地的 config.yaml 上传到服务器的 /etc 目录
-```
-
----
-
-## 🔥 核心功能
-
-### 1. 长连接支持（避免账户锁定）
-
-频繁连接 SSH 服务器可能导致账户被锁定。SSH LICCO 默认启用长连接和自动保活：
-
-- **自动保活**：每 30 秒发送心跳包
-- **持久会话**：默认保持 2 小时
-- **可配置**：根据需求调整参数
-
-```json
-{
-  "SSH_KEEPALIVE_INTERVAL": "30",
-  "SSH_SESSION_TIMEOUT": "7200"
-}
-```
-
-### 2. 连接池（高性能）
-
-- **连接复用**：避免频繁建立连接
-- **健康检查**：自动检测并回收无效连接
-- **线程安全**：支持并发访问
-
-```python
-from ssh_mcp import ConnectionConfig, PoolConfig, ConnectionPool
-
-pool_config = PoolConfig(
-    min_size=1,
-    max_size=10,
-    max_idle_time=300
-)
-
-config = ConnectionConfig(host="192.168.1.100", username="admin")
-pool = ConnectionPool(config, pool_config)
-pool.initialize()
-
-with pool.acquire() as client:
-    result = client.execute_command("ls -la")
-```
-
-### 3. 批量执行（多主机管理）
-
-- **并行执行**：多主机同时执行命令
-- **失败隔离**：单主机异常不影响其他
-- **异步支持**：高并发批量操作
-
-```python
-from ssh_mcp import ConnectionConfig, BatchExecutor
-
-hosts = [
-    ConnectionConfig(host="192.168.1.100", username="admin"),
-    ConnectionConfig(host="192.168.1.101", username="admin"),
-    ConnectionConfig(host="192.168.1.102", username="admin"),
-]
-
-executor = BatchExecutor(hosts, max_workers=10)
-result = executor.execute("uptime")
-
-print(f"成功：{result.success_count}, 失败：{result.failed_count}")
-```
-
-### 4. 审计日志
-
-- **结构化日志**：JSON 格式便于分析
-- **操作记录**：连接、命令、文件传输
-- **认证审计**：成功/失败认证记录
-
-```python
-from ssh_mcp import get_audit_logger
-
-audit = get_audit_logger("logs/audit.log")
-audit.log_command(
-    username="admin",
-    host="192.168.1.100",
-    command="ls -la",
-    return_code=0
-)
-```
-
-### 5. Docker 支持
-
-- **Docker 构建**：支持 Docker 镜像构建
-- **状态监控**：查看 Docker 服务状态
-- **后台任务**：异步执行长时间任务
-
-### 6. 后台任务管理
-
-- **任务创建**：创建后台任务
-- **状态跟踪**：查看任务执行状态
-- **结果查询**：获取任务执行结果
+- **[MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)** - 完整配置指南，包含 5 种使用场景示例
+- **[SECURITY_CONFIG_GUIDE.md](SECURITY_CONFIG_GUIDE.md)** - 安全配置详解
 
 ---
 
 ## 🛠️ 可用工具
 
-| 工具 | 说明 | 示例 |
+### SSH 连接管理
+
+| 工具 | 描述 | 示例 |
 |------|------|------|
-| `ssh_config` | 配置 SSH 连接信息 | 配置服务器地址、用户名、密码 |
-| `ssh_login` | 使用保存的配置登录 | 登录后执行命令 |
-| `ssh_connect` | 直接连接 SSH | 支持预配置主机或即时连接 |
-| `ssh_execute` | 执行命令 | 在会话中执行任意命令 |
-| `ssh_disconnect` | 断开连接 | 关闭指定会话 |
-| `ssh_list_sessions` | 列出活跃会话 | 查看所有 SSH 会话 |
-| `ssh_generate_key` | 生成 SSH 密钥 | 创建 RSA 或 ED25519 密钥对 |
-| `ssh_file_transfer` | SFTP 文件传输 | 上传、下载、列出目录 |
-| `ssh_list_hosts` | 列出配置的主机 | 查看已配置的主机列表 |
-| `ssh_background_task` | 创建后台任务 | 执行长时间运行的任务 |
-| `ssh_task_status` | 查看任务状态 | 获取后台任务的执行状态 |
-| `ssh_docker_build` | Docker 镜像构建 | 构建 Docker 镜像 |
-| `ssh_docker_status` | Docker 状态检查 | 查看 Docker 服务状态 |
-| `ssh_add_host` | 添加主机配置 | 添加新的 SSH 主机配置 |
-| `ssh_remove_host` | 移除主机配置 | 删除已配置的 SSH 主机 |
+| `ssh_connect` | 建立 SSH 连接 | 连接服务器 |
+| `ssh_disconnect` | 断开 SSH 连接 | 释放连接资源 |
+| `ssh_list_sessions` | 查看活动会话 | 管理多个连接 |
 
-详细使用说明见 [📖 使用指南](USAGE.md)
+### 命令执行
+
+| 工具 | 描述 | 示例 |
+|------|------|------|
+| `ssh_execute` | 执行 SSH 命令 | `ls -la`, `docker ps` |
+| `ssh_background_task` | 后台任务执行 | Docker 构建、长时间运行任务 |
+| `ssh_task_status` | 查看后台任务状态 | 检查任务进度 |
+
+### 文件管理
+
+| 工具 | 描述 | 示例 |
+|------|------|------|
+| `ssh_upload_file` | 上传文件 | 部署代码 |
+| `ssh_download_file` | 下载文件 | 获取日志 |
+| `ssh_list_directory` | 列出目录内容 | 查看文件结构 |
+
+### 系统管理
+
+| 工具 | 描述 | 示例 |
+|------|------|------|
+| `ssh_get_info` | 获取系统信息 | CPU、内存、磁盘 |
+| `ssh_check_service` | 检查服务状态 | PostgreSQL、Nginx |
+| `ssh_docker_build` | Docker 构建 | 构建镜像 |
+| `ssh_docker_status` | Docker 状态 | 容器状态 |
+
+### 📖 详细文档
+
+- **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** - 完整 API 参考
+- **[docs/skills/ssh-mcp-ops/SKILL.md](docs/skills/ssh-mcp-ops/SKILL.md)** - 运维操作指南
 
 ---
 
-## 🏗️ 架构设计
+## 💡 使用示例
+
+### 示例 1：执行命令
 
 ```
-ssh_mcp/
-├── clients/              # SSH 客户端层
-│   ├── interface.py     # 抽象接口
-│   ├── asyncssh_client.py  # AsyncSSH 实现
-│   └── factory.py       # 客户端工厂
-├── service.py           # 业务服务层
-├── session_manager.py   # 会话管理
-├── connection_pool.py   # 连接池
-├── batch_executor.py    # 批量执行器
-├── audit_logger.py      # 审计日志
-├── exceptions.py        # 异常体系
-└── server.py            # MCP 服务端
+用户：帮我查看服务器上的 Docker 容器
+AI：正在执行 `docker ps` 命令...
+
+[执行结果]
+CONTAINER ID   IMAGE     COMMAND   STATUS    PORTS
+abc123         nginx     "nginx"   Up 2 days 80:80
 ```
 
-**设计模式：**
-**架构设计：**
-- 工厂模式 - SSHClientFactory 动态创建客户端
-- 策略模式 - 支持多种 SSH 客户端实现
-- 单例模式 - 全局 SSHService 实例
-- 上下文管理器 - 自动连接/断开管理
+### 示例 2：文件上传
 
-**客户端支持：**
-- ✅ **paramiko** - 成熟稳定，Python 社区标准（默认，推荐）⭐
-- ✅ **asyncssh** - 异步架构，高并发性能 🚀
-- ✅ **fabric** - 简化 API，运维友好 👨‍💻
+```
+用户：把这个文件上传到 /var/www/html
+AI：正在上传文件到 /var/www/html...
+
+[上传成功]
+本地：./index.html
+远程：/var/www/html/index.html
+大小：2.3 KB
+```
+
+### 示例 3：后台任务
+
+```
+用户：帮我构建 Docker 镜像
+AI：正在启动后台任务执行 `docker build -t myapp .`...
+
+[任务启动]
+Task ID: a1b2c3d4
+命令：docker build -t myapp .
+日志：/tmp/background_task.log
+
+使用 ssh_task_status 查看进度
+```
+
+### 示例 4：数据库检查
+
+```
+用户：检查 PostgreSQL 是否正常运行
+AI：正在执行 `pg_isready -h localhost -p 5432`...
+
+[检查结果]
+localhost:5432 - accepting connections
+✅ PostgreSQL 运行正常
+```
+
+### 📖 更多示例
+
+- **[docs/skills/ssh-mcp-ops/SKILL.md](docs/skills/ssh-mcp-ops/SKILL.md)** - 运维操作示例
+- **[docs/skills/ssh-mcp-dev/SKILL.md](docs/skills/ssh-mcp-dev/SKILL.md)** - 开发场景示例
 
 ---
 
-## 🔒 安全注意事项
+## 📋 完整配置示例
 
-⚠️ **重要提示：**
+### 场景 1：Web 开发者
 
-1. **密码安全** - 密码仅本地存储，建议使用后清除
-2. **不要分享** - 不要在公开场合分享服务器密码
-3. **密钥认证** - 优先使用 SSH 密钥认证
-4. **普通用户** - 尽量使用普通用户而非 root
-5. **文件权限** - 确保配置文件权限为 600
-6. **环境变量** - 使用环境变量存储敏感信息
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "balanced",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "git,npm,docker,composer,pm2",
+        "SSH_BASE_DIR": "/var/www",
+        "SSH_HOST": "192.168.1.100",
+        "SSH_USER": "deploy",
+        "SSH_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+### 场景 2：Python 开发者
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "balanced",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "pip,poetry,python3,pytest,black",
+        "SSH_HOST": "192.168.1.100",
+        "SSH_USER": "developer",
+        "SSH_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+### 场景 3：数据库管理员
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "balanced",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "psql,mysql,mongosh,pg_isready",
+        "SSH_HOST": "192.168.1.100",
+        "SSH_USER": "dbadmin",
+        "SSH_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+### 场景 4：系统管理员
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "relaxed",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "sudo,apt,yum,systemctl,journalctl,docker,kubectl",
+        "SSH_HOST": "192.168.1.100",
+        "SSH_USER": "root",
+        "SSH_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+### 场景 5：生产环境（最高安全）
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "strict",
+        "SSH_HOST": "192.168.1.100",
+        "SSH_USER": "app-user",
+        "SSH_PASSWORD": "your-password",
+        "SSH_BASE_DIR": "/home/app-user"
+      }
+    }
+  }
+}
+```
+
+### 📖 更多配置
+
+- **[MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)** - 包含所有配置选项的详细说明
 
 ---
 
-## 📚 文档
+## 🔧 故障排查
 
-- [📖 使用指南](USAGE.md) - 详细的工具使用说明
-- [⚙️ 配置指南](config/CONFIG_GUIDE.md) - SSH 客户端配置指南
-- [📝 API 参考](docs/API_REFERENCE.md) - API 接口文档
-- [🤝 贡献指南](docs/CONTRIBUTING.md) - 项目贡献说明
+### 常见问题
 
----
+#### 1. 连接失败
 
-## 💻 开发
+**错误**: `Connection refused`
 
-### 运行测试
+**解决**:
+- 检查 SSH 服务是否运行：`systemctl status sshd`
+- 检查防火墙设置：`ufw status`
+- 确认端口正确：默认 22
 
+#### 2. 认证失败
+
+**错误**: `Authentication failed`
+
+**解决**:
+- 检查用户名和密码
+- 尝试使用密钥认证
+- 查看 SSH 日志：`/var/log/auth.log`
+
+#### 3. 命令被阻止
+
+**错误**: `命令 'xxx' 不在允许列表中`
+
+**解决**:
+```json
+{
+  "SSH_SECURITY_LEVEL": "balanced",
+  "SSH_EXTRA_ALLOWED_COMMANDS": "被阻止的命令"
+}
+```
+
+#### 4. 后台任务失败
+
+**错误**: `'SSHMCPServer' object has no attribute '_logger'`
+
+**解决**: 升级到最新版本 v0.2.3+
 ```bash
-pytest
+pip install --upgrade ssh-licco
 ```
 
-### 代码检查
+### 📖 详细文档
 
-```bash
-# 代码格式化
-ruff check ssh_mcp
-
-# 类型检查
-mypy ssh_mcp
-```
-
-### 构建文档
-
-```bash
-cd docs
-mkdocs build
-```
+- **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** - API 参考和错误处理
+- **[docs/skills/ssh-mcp-troubleshoot/SKILL.md](docs/skills/ssh-mcp-troubleshoot/SKILL.md)** - 故障排除指南
+- **[MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)** - 配置故障排查
 
 ---
 
-## 🤝 贡献
+## 🎓 学习资源
 
-欢迎贡献代码、报告问题或提出建议！
+### Skills 文档
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+- **[📦 发布指南](docs/skills/RELEASE_SKILL.md)** - 完整的版本发布流程
+- **[🔧 开发指南](docs/skills/ssh-mcp-dev/SKILL.md)** - 开发环境和流程
+- **[🛠️ 运维指南](docs/skills/ssh-mcp-ops/SKILL.md)** - 运维操作最佳实践
+- **[⚙️ 安装指南](docs/skills/ssh-mcp-setup/SKILL.md)** - 安装和配置步骤
+- **[🔍 故障排除](docs/skills/ssh-mcp-troubleshoot/SKILL.md)** - 常见问题解决
 
-详见 [CONTRIBUTING.md](docs/CONTRIBUTING.md)
+### 配置文档
+
+- **[MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)** - 完整配置指南
+- **[SECURITY_CONFIG_GUIDE.md](SECURITY_CONFIG_GUIDE.md)** - 安全配置详解
+
+### API 文档
+
+- **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** - API 参考文档
+
+---
+
+## 🔗 相关链接
+
+### 项目资源
+
+- **GitHub**: https://github.com/Echoqili/ssh-licco
+- **PyPI**: https://pypi.org/project/ssh-licco/
+- **MCP Registry**: https://registry.modelcontextprotocol.io/servers/io.github.Echoqili/ssh-licco
+- **Issues**: https://github.com/Echoqili/ssh-licco/issues
+
+### 文档索引
+
+| 文档 | 描述 | 位置 |
+|------|------|------|
+| 📖 配置指南 | 完整配置选项和场景 | [MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md) |
+| 🔐 安全指南 | 安全配置详解 | [SECURITY_CONFIG_GUIDE.md](SECURITY_CONFIG_GUIDE.md) |
+| 📊 API 参考 | 完整 API 文档 | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) |
+| 🎓 Skills | 开发、运维、安装指南 | [docs/skills/](docs/skills/) |
+| 📦 发布指南 | 版本发布流程 | [docs/skills/RELEASE_SKILL.md](docs/skills/RELEASE_SKILL.md) |
+
+---
+
+## 📊 版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|----------|
+| v0.2.3 | 2026-03-14 | 修复 `_logger` 初始化 bug |
+| v0.2.2 | 2026-03-14 | 安全配置增强（有 bug） |
+| v0.2.1 | 2026-03-13 | 多级安全策略、环境变量配置 |
+| v0.2.0 | 2026-03-12 | 安全验证模块、命令白名单 |
+| v0.1.7 | 2026-03-11 | 基础功能、后台任务 |
+
+---
+
+## 🤝 贡献指南
+
+欢迎贡献代码、文档和建议！
+
+### 开发流程
+
+1. Fork 项目
+2. 创建特性分支
+3. 提交变更
+4. 推送到分支
+5. 创建 Pull Request
+
+### 开发资源
+
+- **[docs/skills/ssh-mcp-dev/SKILL.md](docs/skills/ssh-mcp-dev/SKILL.md)** - 开发指南
+- **[docs/skills/RELEASE_SKILL.md](docs/skills/RELEASE_SKILL.md)** - 发布流程
 
 ---
 
 ## 📄 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+MIT License - 详见 [LICENSE](LICENSE)
 
 ---
 
-## 🙏 致谢
+## 💬 获取帮助
 
-- [MCP SDK](https://github.com/modelcontextprotocol/python-sdk) - Model Context Protocol
-- [AsyncSSH](https://github.com/ronf/asyncssh) - 异步 SSH 库
+### 遇到问题？
+
+1. **查看文档**: [MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)
+2. **故障排除**: [docs/skills/ssh-mcp-troubleshoot/SKILL.md](docs/skills/ssh-mcp-troubleshoot/SKILL.md)
+3. **提交 Issue**: [GitHub Issues](https://github.com/Echoqili/ssh-licco/issues)
+
+### 社区支持
+
+- GitHub Discussions
+- MCP Community
+- Stack Overflow (tag: `ssh-licco`)
 
 ---
 
-## 📬 联系方式
+**Made with ❤️ by Echoqili**
 
-- **项目地址**: https://github.com/Echoqili/ssh-licco
-- **问题反馈**: https://github.com/Echoqili/ssh-licco/issues
-- **PyPI**: https://pypi.org/project/ssh-licco/
-- **MCP Registry**: https://registry.modelcontextprotocol.io/servers/io.github.Echoqili/ssh-licco
-
----
-
-<div align="center">
-
-**Made with ❤️ by SSH LICCO Team**
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Echoqili/ssh-licco&type=Date)](https://star-history.com/#Echoqili/ssh-licco&Date)
-
-</div>
+*Last updated: 2026-03-14*
