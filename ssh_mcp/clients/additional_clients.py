@@ -60,12 +60,28 @@ class FabricClient(SSHClientInterface):
         except ImportError:
             raise ImportError("Fabric is not installed. Install with: pip install fabric")
     
-    def execute_command(self, command: str, timeout: int = 30) -> CommandResult:
-        """执行命令并返回结果"""
+    def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> CommandResult:
+        """执行命令并返回结果
+        
+        Args:
+            command: 要执行的命令
+            timeout: 命令执行超时时间（秒）
+            background: 是否后台执行（不等待命令完成）
+        """
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
         try:
+            if background:
+                # Fabric doesn't have native background execution, use nohup
+                nohup_command = f"nohup {command} > /dev/null 2>&1 &"
+                self._connection.run(nohup_command, timeout=timeout, hide=True)
+                return CommandResult(
+                    stdout="Command started in background",
+                    stderr="",
+                    return_code=0
+                )
+            
             result = self._connection.run(command, timeout=timeout, hide=True)
             return CommandResult(
                 stdout=result.stdout,
@@ -212,12 +228,34 @@ class AsyncSSHClient(SSHClientInterface):
         except ImportError:
             raise ImportError("AsyncSSH is not installed. Install with: pip install asyncssh")
     
-    def execute_command(self, command: str, timeout: int = 30) -> CommandResult:
-        """执行命令"""
+    def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> CommandResult:
+        """执行命令
+        
+        Args:
+            command: 要执行的命令
+            timeout: 命令执行超时时间（秒）
+            background: 是否后台执行（不等待命令完成）
+        """
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
         import sys
+        if background:
+            # AsyncSSH: run in background
+            bg_command = f"nohup {command} > /dev/null 2>&1 &"
+            if sys.platform == 'win32':
+                import asyncio
+                loop = asyncio.ProactorEventLoop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self._connection.run(bg_command, timeout=timeout))
+            else:
+                _run_async(self._connection.run(bg_command, timeout=timeout))
+            return CommandResult(
+                stdout="Command started in background",
+                stderr="",
+                return_code=0
+            )
+        
         if sys.platform == 'win32':
             import asyncio
             loop = asyncio.ProactorEventLoop()

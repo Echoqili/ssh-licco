@@ -105,13 +105,14 @@ class SSHMCPServer:
                 ),
                 Tool(
                     name="ssh_execute",
-                    description="Execute a command on an active SSH session",
+                    description="Execute a command on an active SSH session. Use background=True for long-running services (web servers, etc.)",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
                             "command": {"type": "string", "description": "Command to execute"},
-                            "timeout": {"type": "integer", "description": "Command timeout in seconds", "default": 30}
+                            "timeout": {"type": "integer", "description": "Command timeout in seconds", "default": 30},
+                            "background": {"type": "boolean", "description": "Run in background (don't wait for completion, useful for services)", "default": False}
                         },
                         "required": ["session_id", "command"]
                     }
@@ -448,15 +449,102 @@ class SSHMCPServer:
             return [TextContent(type="text", text=f"Session not found: {args['session_id']}")]
         
         timeout = args.get("timeout", 30)
-        result = await session.execute_command(args["command"], timeout=timeout)
+        background = args.get("background", None)
         
-        output = f"Exit Code: {result['exit_code']}\n"
-        if result["stdout"]:
-            output += f"\n--- STDOUT ---\n{result['stdout']}"
-        if result["stderr"]:
-            output += f"\n--- STDERR ---\n{result['stderr']}"
+        # 🤖 自动判断是否需要后台执行
+        if background is None:
+            background = self._should_run_background(command)
+            self._logger.info(f"Auto-detected background={background} for command: {command[:50]}...")
+        
+        result = await session.execute_command(args["command"], timeout=timeout, background=background)
+        
+        if background:
+            output = f"✅ Command started in background\n\n{result['stdout']}"
+        else:
+            output = f"Exit Code: {result['exit_code']}\n"
+            if result["stdout"]:
+                output += f"\n--- STDOUT ---\n{result['stdout']}"
+            if result["stderr"]:
+                output += f"\n--- STDERR ---\n{result['stderr']}"
         
         return [TextContent(type="text", text=output)]
+    
+    def _should_run_background(self, command: str) -> bool:
+        """自动判断命令是否应该后台执行
+        
+        检测可能导致阻塞的命令类型：
+        1. Web 服务器启动命令
+        2. 数据库服务启动命令
+        3. 长时间运行的服务
+        4. 监听端口的命令
+        
+        Args:
+            command: 要执行的命令
+            
+        Returns:
+            bool: True 表示需要后台执行
+        """
+        command_lower = command.lower()
+        
+        # Web 服务器
+        web_servers = [
+            'python app.py', 'python main.py', 'python manage.py runserver',
+            'npm start', 'npm run serve', 'npm run dev',
+            'yarn start', 'yarn serve', 'yarn dev',
+            'node app.js', 'node server.js', 'node index.js',
+            'flask run', 'django-admin runserver',
+            'uvicorn', 'gunicorn', 'waitress-serve',
+            'php artisan serve', 'php -S',
+            'rails server', 'rails s',
+            'go run', 'go build && ./',
+        ]
+        
+        # 数据库服务
+        database_servers = [
+            'mongod', 'mysql', 'mysqld', 'postgres', 'postgresql',
+            'redis-server', 'redis-server',
+            'elasticsearch', 'kibana',
+            'docker-compose up', 'docker run -d',
+        ]
+        
+        # 开发服务器
+        dev_servers = [
+            'webpack-dev-server', 'webpack serve',
+            'vite', 'vite dev', 'vite preview',
+            'ng serve', 'angular serve',
+            'next dev', 'nuxt dev',
+            'svelte-kit dev',
+        ]
+        
+        # 监听端口的命令模式
+        listen_patterns = [
+            '--host', '--port', '0.0.0.0', 'localhost:',
+            '-p ', '--listen', '--bind',
+        ]
+        
+        # 检查是否匹配已知的服务器命令
+        for server_cmd in web_servers + database_servers + dev_servers:
+            if server_cmd in command_lower:
+                return True
+        
+        # 检查是否有监听端口的模式
+        for pattern in listen_patterns:
+            if pattern in command_lower:
+                return True
+        
+        # 检查是否包含常见的服务器启动标志
+        if any(flag in command for flag in ['--reload', '--debug', '--no-reload']):
+            return True
+        
+        # 检查是否是守护进程或服务
+        if 'systemctl start' in command or 'service start' in command:
+            return True
+        
+        # 检查是否是后台任务队列
+        if any(cmd in command_lower for cmd in ['celery', 'rq worker', 'sidekiq', 'resque']):
+            return True
+        
+        return False
 
     async def _handle_disconnect(self, args: dict) -> list[TextContent]:
         session_id = args["session_id"]

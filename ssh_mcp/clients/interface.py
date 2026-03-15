@@ -84,12 +84,13 @@ class SSHClientInterface(ABC):
         pass
     
     @abstractmethod
-    def execute_command(self, command: str, timeout: int = 30) -> CommandResult:
+    def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> CommandResult:
         """执行命令并返回结果
         
         Args:
             command: 要执行的命令
             timeout: 命令执行超时时间（秒）
+            background: 是否后台执行（不等待命令完成）
             
         Returns:
             CommandResult: 命令执行结果

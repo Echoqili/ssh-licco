@@ -133,12 +133,13 @@ class ParamikoClient(SSHClientInterface):
         """断开 SSH 连接"""
         self.close()
     
-    def execute_command(self, command: str, timeout: int = 30) -> CommandResult:
+    def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> CommandResult:
         """执行命令并返回结果
         
         Args:
             command: 要执行的命令
             timeout: 命令执行超时时间（秒）
+            background: 是否后台执行（不等待命令完成）
             
         Returns:
             CommandResult: 命令执行结果
@@ -158,6 +159,16 @@ class ParamikoClient(SSHClientInterface):
                 timeout=timeout
             )
             
+            if background:
+                # 后台执行：不等待命令完成，立即返回
+                self._logger.info(f"Command started in background: {command}")
+                return CommandResult(
+                    stdout=f"Command started in background (PID: {stdout.channel.pid})",
+                    stderr="",
+                    return_code=0
+                )
+            
+            # 前台执行：等待命令完成
             return_code = stdout.channel.recv_exit_status()
             stdout_data = stdout.read().decode('utf-8', errors='replace')
             stderr_data = stderr.read().decode('utf-8', errors='replace')
