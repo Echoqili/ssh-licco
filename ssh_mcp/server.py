@@ -86,7 +86,7 @@ class SSHMCPServer:
                             "host": {"type": "string", "description": "SSH server hostname or IP (or use name to connect via server.json config)"},
                             "port": {"type": "integer", "description": "SSH server port (default: 22)", "default": 22},
                             "username": {"type": "string", "description": "SSH username"},
-                            "password": {"type": "string", "description": "SSH password (optional if using key auth)"},
+                            "password": {"type": "string", "description": "SSH password (optional if using key auth). ⚠️ Do NOT use the default value, enter your actual password!"},
                             "private_key_path": {"type": "string", "description": "Path to private key file"},
                             "passphrase": {"type": "string", "description": "Passphrase for private key"},
                             "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key"},
