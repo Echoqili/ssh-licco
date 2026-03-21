@@ -31,25 +31,42 @@ class ServerConfig(BaseModel):
 
 
 class ConfigManager:
-    DEFAULT_CONFIG_PATH = Path.home() / ".ssh" / "mcp_config.json"
+    # 项目根目录配置（优先）
+    PROJECT_CONFIG_PATH = Path.cwd() / "config" / "ssh-hosts.json"
+    # 用户主目录配置（后备）
+    USER_CONFIG_PATH = Path.home() / ".ssh" / "mcp_config.json"
+    # 服务器配置
     DEFAULT_SERVER_CONFIG_PATH = Path(__file__).parent / "server.json"
     DEFAULT_HOSTS_CONFIG_PATH = Path(__file__).parent.parent / "config" / "hosts.json"
     
     def __init__(self, config_path: Optional[Path] = None, server_config_path: Optional[Path] = None):
-        self.config_path = config_path or self.DEFAULT_CONFIG_PATH
+        # 优先使用项目根目录配置
+        self.config_path = config_path or self.PROJECT_CONFIG_PATH
         self.server_config_path = server_config_path or self.DEFAULT_SERVER_CONFIG_PATH
     
     def load(self) -> Optional[SSHConfig]:
-        if not self.config_path.exists():
-            return None
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return SSHConfig(**data)
-        except Exception:
-            return None
+        # 优先加载项目根目录配置
+        if self.config_path.exists():
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                return SSHConfig(**data)
+            except Exception:
+                pass
+        
+        # 后备：加载用户主目录配置
+        if self.USER_CONFIG_PATH.exists():
+            try:
+                with open(self.USER_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                return SSHConfig(**data)
+            except Exception:
+                pass
+        
+        return None
     
     def save(self, config: SSHConfig) -> None:
+        # 保存到项目根目录配置
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_path, 'w', encoding='utf-8') as f:
             json.dump(config.model_dump(), f, indent=2)

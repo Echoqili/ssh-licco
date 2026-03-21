@@ -1,0 +1,24 @@
+{
+  "ssh_hosts": [
+    {
+      "name": "development",
+      "host": "192.168.1.100",
+      "port": 22,
+      "username": "developer",
+      "password": "",
+      "timeout": 60,
+      "keepalive_interval": 30,
+      "session_timeout": 7200
+    },
+    {
+      "name": "production",
+      "host": "43.143.207.242",
+      "port": 22,
+      "username": "root",
+      "password": "",
+      "timeout": 30,
+      "keepalive_interval": 60,
+      "session_timeout": 3600
+    }
+  ]
+}
