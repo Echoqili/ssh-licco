@@ -166,14 +166,16 @@ class SSHMCPServer:
                 ),
                 Tool(
                     name="ssh_background_task",
-                    description="Execute long-running commands (like Docker build) in background with status polling. Returns task ID for polling.",
+                    description="Execute long-running commands (like Docker build) in background with optional status polling. Use wait=True to wait for completion.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
                             "command": {"type": "string", "description": "Command to execute in background (e.g., docker build)"},
                             "workdir": {"type": "string", "description": "Working directory for the command", "default": "/tmp"},
-                            "log_file": {"type": "string", "description": "Log file path", "default": "/tmp/background_task.log"}
+                            "log_file": {"type": "string", "description": "Log file path", "default": "/tmp/background_task.log"},
+                            "wait": {"type": "boolean", "description": "Wait for task completion and return output (default: False)", "default": False},
+                            "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True (default: 60)", "default": 60}
                         },
                         "required": ["session_id", "command"]
                     }
@@ -214,6 +216,33 @@ class SSHMCPServer:
                             "image_name": {"type": "string", "description": "Docker image name to check (optional)"}
                         },
                         "required": ["session_id"]
+                    }
+                ),
+                Tool(
+                    name="ssh_execute_wait",
+                    description="Execute a command and wait for completion with timeout. Better than ssh_execute for medium-length tasks (5-60 seconds).",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "command": {"type": "string", "description": "Command to execute"},
+                            "timeout": {"type": "integer", "description": "Max wait time in seconds (default: 60)", "default": 60}
+                        },
+                        "required": ["session_id", "command"]
+                    }
+                ),
+                Tool(
+                    name="ssh_container_logs",
+                    description="Get Docker container logs with automatic tail. Returns formatted logs for analysis.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
+                            "container_name": {"type": "string", "description": "Container name or ID"},
+                            "tail": {"type": "integer", "description": "Number of lines to show from the end (default: 100)", "default": 100},
+                            "since": {"type": "integer", "description": "Show logs since timestamp in seconds (optional)"}
+                        },
+                        "required": ["session_id", "container_name"]
                     }
                 ),
                 Tool(
@@ -274,6 +303,10 @@ class SSHMCPServer:
                     return await self._handle_docker_build(arguments)
                 elif name == "ssh_docker_status":
                     return await self._handle_docker_status(arguments)
+                elif name == "ssh_execute_wait":
+                    return await self._handle_execute_wait(arguments)
+                elif name == "ssh_container_logs":
+                    return await self._handle_container_logs(arguments)
                 elif name == "ssh_add_host":
                     return await self._handle_add_host(arguments)
                 elif name == "ssh_remove_host":
@@ -909,6 +942,7 @@ class SSHMCPServer:
     async def _handle_background_task(self, args: dict) -> list[TextContent]:
         """Handle background task execution for long-running commands like Docker build (带安全限制)"""
         import uuid
+        import asyncio
         import os
         from .security import SecurityError, command_validator, path_validator
         
@@ -916,6 +950,8 @@ class SSHMCPServer:
         command = args.get("command")
         workdir = args.get("workdir", "/tmp")
         log_file = args.get("log_file", "/tmp/background_task.log")
+        wait = args.get("wait", False)  # ← 新增：等待任务完成
+        wait_timeout = args.get("wait_timeout", 60)  # ← 新增：等待超时（秒）
         
         if not session_id or not command:
             return [TextContent(type="text", text="Error: session_id and command are required")]
@@ -1012,7 +1048,16 @@ echo "Log file: {safe_log_file}"
         try:
             result = self.session_manager.execute_command(session_id, background_command, timeout=30)
             
-            output = f"""🚀 Background Task Started!
+            # 🤖 如果设置了 wait 参数，等待任务完成
+            if wait:
+                output = await self._wait_for_task_completion(
+                    session_id=session_id,
+                    task_id=task_id,
+                    log_file=safe_log_file,
+                    timeout=wait_timeout
+                )
+            else:
+                output = f"""🚀 Background Task Started!
 
 ✅ Task ID: {task_id}
 📝 Command: {command}
@@ -1046,10 +1091,65 @@ ssh_execute(session_id="{session_id}", command="ps -p $(cat /tmp/task_{task_id}.
 - 请避免频繁调用检查工具，建议等待 30-60 秒后再查看日志
 - **不要使用 ssh_background_task 查看日志**，该工具仅用于启动后台任务
 """
+            
             return [TextContent(type="text", text=output)]
             
         except Exception as e:
             return [TextContent(type="text", text=f"Error starting background task: {str(e)}")]
+    
+    async def _wait_for_task_completion(self, session_id: str, task_id: str, log_file: str, timeout: int) -> str:
+        """等待后台任务完成并返回结果"""
+        import asyncio
+        
+        pid_file = f"/tmp/task_{task_id}.pid"
+        elapsed = 0
+        interval = 2  # 每 2 秒检查一次
+        
+        while elapsed < timeout:
+            await asyncio.sleep(interval)
+            elapsed += interval
+            
+            # 检查进程是否还在运行
+            check_cmd = f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
+            result = await self.session_manager.execute_command(session_id, check_cmd, timeout=10)
+            status = result.get("stdout", "").strip()
+            
+            if status == "COMPLETED" or status == "NOT_FOUND":
+                # 任务完成，读取日志
+                log_cmd = f"if [ -f {log_file} ]; then cat {log_file}; else echo 'No log file found'; fi"
+                log_result = await self.session_manager.execute_command(session_id, log_cmd, timeout=10)
+                log_content = log_result.get("stdout", "")
+                
+                return f"""✅ Task Completed!
+
+📊 Task ID: {task_id}
+⏱️  Execution Time: ~{elapsed} seconds
+📄 Log File: {log_file}
+
+---
+
+📝 **Command Output**:
+{log_content}
+
+---
+
+💡 **提示**: 任务已完成，可以继续下一步操作
+"""
+        
+        # 超时，返回当前状态
+        return f"""⏱️ Task Still Running (Timeout)
+
+📊 Task ID: {task_id}
+⏱️  Waited: {elapsed} seconds (timeout: {timeout}s)
+📄 Log File: {log_file}
+
+---
+
+💡 **提示**: 任务仍在运行中，请使用 ssh_execute 查看日志：
+```bash
+ssh_execute(session_id="{session_id}", command="cat {log_file}")
+```
+"""
 
     async def _handle_task_status(self, args: dict) -> list[TextContent]:
         """Check status of background task"""
@@ -1160,6 +1260,92 @@ Use this command to check again:
             
         except Exception as e:
             return [TextContent(type="text", text=f"Error checking Docker status: {str(e)}")]
+    
+    async def _handle_execute_wait(self, args: dict) -> list[TextContent]:
+        """Execute a command and wait for completion with timeout"""
+        
+        session_id = args.get("session_id")
+        command = args.get("command")
+        timeout = args.get("timeout", 60)
+        
+        if not session_id or not command:
+            return [TextContent(type="text", text="Error: session_id and command are required")]
+        
+        try:
+            result = await self.session_manager.execute_command(session_id, command, timeout=timeout)
+            
+            output = f"""✅ Command Completed!
+
+📝 Command: {command}
+⏱️ Timeout: {timeout}s
+📤 Exit Code: {result.get('exit_code', 'N/A')}
+
+"""
+            
+            if result.get("stdout"):
+                output += f"""--- STDOUT ---
+{result['stdout']}
+"""
+            
+            if result.get("stderr"):
+                output += f"""--- STDERR ---
+{result['stderr']}
+"""
+            
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error executing command: {str(e)}")]
+    
+    async def _handle_container_logs(self, args: dict) -> list[TextContent]:
+        """Get Docker container logs with automatic tail"""
+        
+        session_id = args.get("session_id")
+        container_name = args.get("container_name")
+        tail = args.get("tail", 100)
+        since = args.get("since")
+        
+        if not session_id or not container_name:
+            return [TextContent(type="text", text="Error: session_id and container_name are required")]
+        
+        try:
+            # Build the logs command
+            logs_cmd = f"docker logs {container_name} --tail {tail}"
+            if since:
+                logs_cmd += f" --since {since}s"
+            logs_cmd += " 2>&1"
+            
+            result = await self.session_manager.execute_command(session_id, logs_cmd, timeout=30)
+            
+            output = f"""📋 Container Logs: {container_name}
+
+🐳 Tail: {tail} lines
+⏱️ Time range: Last {tail} lines
+
+--- Logs ---
+{result.get('stdout', 'No logs available')}
+
+"""
+            
+            if result.get('stderr'):
+                output += f"""--- Errors/Warnings ---
+{result['stderr']}
+"""
+            
+            # Also get container status
+            status_cmd = f"docker ps -a --filter \"name={container_name}\" --format '{{{{.Status}}}}'"
+            status_result = await self.session_manager.execute_command(session_id, status_cmd, timeout=10)
+            status = status_result.get('stdout', '').strip()
+            
+            if status:
+                output += f"""--- Container Status ---
+{status}
+"""
+            
+            return [TextContent(type="text", text=output)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error getting container logs: {str(e)}")]
 
     async def _handle_add_host(self, args: dict) -> list[TextContent]:
         """Add a new SSH server to config/hosts.json"""
