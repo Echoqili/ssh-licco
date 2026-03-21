@@ -130,7 +130,7 @@ class SSHSession:
         
         self._keepalive_task = asyncio.create_task(keepalive_loop())
 
-    async def execute_command(self, command: str, timeout: int = 30) -> dict:
+    async def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
@@ -139,17 +139,28 @@ class SSHSession:
             self._last_activity = datetime.now()
             try:
                 result = await asyncio.get_event_loop().run_in_executor(
-                    None, self._execute_command_sync, command, timeout
+                    None, self._execute_command_sync, command, timeout, background
                 )
                 return result
             finally:
                 self._state = SessionState.CONNECTED
 
-    def _execute_command_sync(self, command: str, timeout: int) -> dict:
+    def _execute_command_sync(self, command: str, timeout: int, background: bool = False) -> dict:
         assert self.client is not None
         
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
         
+        if background:
+            # 后台执行：不等待命令完成，立即返回
+            pid = stdout.channel.pid
+            return {
+                "exit_code": 0,
+                "stdout": f"Command started in background (PID: {pid})",
+                "stderr": "",
+                "session_id": self.session_id
+            }
+        
+        # 前台执行：等待命令完成
         exit_code = stdout.channel.recv_exit_status()
         stdout_data = stdout.read().decode('utf-8', errors='replace')
         stderr_data = stderr.read().decode('utf-8', errors='replace')
