@@ -945,19 +945,19 @@ Example command:
         try:
             # Check if process is still running
             check_pid_cmd = f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
-            result = self.session_manager.execute_command(session_id, check_pid_cmd, timeout=10)
+            result = await self.session_manager.execute_command(session_id, check_pid_cmd, timeout=10)
             status = result.get("stdout", "").strip()
             
             # Get recent log output
             log_cmd = f"if [ -f {log_file} ]; then tail -20 {log_file}; else echo 'No log file yet'; fi"
-            log_result = self.session_manager.execute_command(session_id, log_cmd, timeout=10)
+            log_result = await self.session_manager.execute_command(session_id, log_cmd, timeout=10)
             log_output = log_result.get("stdout", "")
             
             # Get exit code if completed
             exit_code = None
             if status == "COMPLETED":
                 exit_cmd = f"if [ -f {log_file} ]; then echo 'Exit code: 0 (check log for actual)'; else echo 'N/A'; fi"
-                exit_result = self.session_manager.execute_command(session_id, exit_cmd, timeout=10)
+                exit_result = await self.session_manager.execute_command(session_id, exit_cmd, timeout=10)
                 exit_code = exit_result.get("stdout", "")
             
             output = f"""📊 Task Status: {task_id}
@@ -1028,7 +1028,7 @@ Use ssh_docker_status to check progress:
         try:
             # Check running containers
             containers_cmd = "docker ps --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'"
-            containers_result = self.session_manager.execute_command(session_id, containers_cmd, timeout=10)
+            containers_result = await self.session_manager.execute_command(session_id, containers_cmd, timeout=10)
             
             output = "🐳 Docker Status\n\n"
             output += "--- Running Containers ---\n"
@@ -1037,13 +1037,13 @@ Use ssh_docker_status to check progress:
             # Check images if requested
             if image_name:
                 images_cmd = f"docker images {image_name} --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
-                images_result = self.session_manager.execute_command(session_id, images_cmd, timeout=10)
+                images_result = await self.session_manager.execute_command(session_id, images_cmd, timeout=10)
                 output += "\n--- Docker Images ---\n"
                 output += images_result.get("stdout", f"No images found matching {image_name}\n")
             
             # Check Docker build logs if exists
             log_files_cmd = "ls -la /tmp/docker_build_*.log 2>/dev/null | tail -5 || echo 'No build logs found'"
-            log_result = self.session_manager.execute_command(session_id, log_files_cmd, timeout=10)
+            log_result = await self.session_manager.execute_command(session_id, log_files_cmd, timeout=10)
             output += "\n--- Recent Build Logs ---\n"
             output += log_result.get("stdout", "")
             
