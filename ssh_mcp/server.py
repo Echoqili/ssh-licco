@@ -913,16 +913,35 @@ echo "Log file: {safe_log_file}"
             
             output = f"""🚀 Background Task Started!
 
-Task ID: {task_id}
-Command: {command}
-Working Directory: {safe_workdir}
-Log File: {safe_log_file}
+✅ Task ID: {task_id}
+📝 Command: {command}
+📂 Working Directory: {safe_workdir}
+📄 Log File: {safe_log_file}
 
-Use ssh_task_status to check progress:
-- Session ID: {session_id}
-- Task ID: {task_id}
+---
 
-Example command:
+💡 **重要提示**:
+- 任务已在后台运行，**无需持续检查状态**
+- 如需查看进度，可**手动**使用以下命令：
+
+**查看实时日志** (推荐):
+```bash
+tail -f {safe_log_file}
+```
+
+**查看完整日志**:
+```bash
+cat {safe_log_file}
+```
+
+**检查进程状态** (可选):
+```bash
+ps -p $(cat /tmp/task_{task_id}.pid) -o pid,stat,time,command
+```
+
+---
+
+⚠️ **注意**: 请避免频繁调用检查工具，建议等待 30-60 秒后再查看日志
   查看任务状态，session_id={session_id}，task_id={task_id}
 """
             return [TextContent(type="text", text=output)]
@@ -1002,15 +1021,37 @@ echo "Docker build started"
             
             output = f"""🐳 Docker Build Started!
 
-Task ID: {task_id}
-Image: {image_name}
-Dockerfile: {dockerfile_path}
-Context: {context}
-Log File: {log_file}
+✅ Task ID: {task_id}
+🎯 Image: {image_name}
+📄 Dockerfile: {dockerfile_path}
+📂 Context: {context}
+📝 Log File: {log_file}
 
-Use ssh_docker_status to check progress:
-  查看 Docker 状态，session_id={session_id}，image_name={image_name}
-"""
+---
+
+💡 **重要提示**:
+- Docker 构建已在后台运行，**无需持续检查状态**
+- 构建通常需要几分钟时间，请耐心等待
+- 如需查看进度，可**手动**使用以下命令：
+
+**查看实时日志** (推荐):
+```bash
+tail -f {log_file}
+```
+
+**查看完整日志**:
+```bash
+cat {log_file}
+```
+
+**检查构建进程**:
+```bash
+ps -p $(cat /tmp/docker_task_{task_id}.pid) -o pid,stat,time,command
+```
+
+---
+
+⚠️ **注意**: 请避免频繁调用检查工具，建议等待 1-2 分钟后再查看日志
             return [TextContent(type="text", text=output)]
             
         except Exception as e:
