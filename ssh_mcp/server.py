@@ -1098,8 +1098,7 @@ Use this command to check again:
             return [TextContent(type="text", text=f"Error checking task status: {str(e)}")]
 
     async def _handle_docker_build(self, args: dict) -> list[TextContent]:
-        """Handle Docker build on remote server"""
-        import uuid
+        """Handle Docker build on remote server using background task"""
         
         session_id = args.get("session_id")
         dockerfile_path = args.get("dockerfile_path", "./Dockerfile")
@@ -1112,52 +1111,19 @@ Use this command to check again:
         task_id = str(uuid.uuid4())[:8]
         log_file = f"/tmp/docker_build_{task_id}.log"
         
-        docker_build_cmd = f"""
-cd {context} && nohup docker build -t {image_name} -f {dockerfile_path} . > {log_file} 2>&1 &
-echo $! > /tmp/docker_task_{task_id}.pid
-echo "Docker build started"
-"""
+        # 构建 Docker 命令
+        docker_build_cmd = f"cd {context} && docker build -t {image_name} -f {dockerfile_path} ."
         
-        try:
-            result = self.session_manager.execute_command(session_id, docker_build_cmd, timeout=30)
-            
-            output = f"""🐳 Docker Build Started!
-
-✅ Task ID: {task_id}
-🎯 Image: {image_name}
-📄 Dockerfile: {dockerfile_path}
-📂 Context: {context}
-📝 Log File: {log_file}
-
----
-
-💡 **重要提示**:
-- Docker 构建已在后台运行，**无需持续检查状态**
-- 构建通常需要几分钟时间，请耐心等待
-- 如需查看进度，可**手动**使用以下命令：
-
-**查看实时日志** (推荐):
-```bash
-tail -f {log_file}
-```
-
-**查看完整日志**:
-```bash
-cat {log_file}
-```
-
-**检查构建进程**:
-```bash
-ps -p $(cat /tmp/docker_task_{task_id}.pid) -o pid,stat,time,command
-```
-
----
-
-⚠️ **注意**: 请避免频繁调用检查工具，建议等待 1-2 分钟后再查看日志
-            return [TextContent(type="text", text=output)]
-            
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error starting Docker build: {str(e)}")]
+        # 使用后台任务执行 Docker 构建
+        background_args = {
+            "session_id": session_id,
+            "command": docker_build_cmd,
+            "workdir": context,
+            "log_file": log_file
+        }
+        
+        # 调用后台任务处理
+        return await self._handle_background_task(background_args)
 
     async def _handle_docker_status(self, args: dict) -> list[TextContent]:
         """Check Docker build and container status"""
