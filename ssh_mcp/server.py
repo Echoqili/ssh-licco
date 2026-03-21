@@ -590,6 +590,23 @@ class SSHMCPServer:
         """
         command_lower = command.lower()
         
+        # ❌ Docker 即时操作命令（不后台）
+        docker_instant_commands = [
+            'docker start ', 'docker stop ', 'docker restart ', 'docker rm ',
+            'docker rmi ', 'docker pause ', 'docker unpause ', 'docker kill ',
+            'docker commit ', 'docker export ', 'docker import ',
+            'docker ps', 'docker images', 'docker logs', 'docker inspect',
+            'docker stats', 'docker top', 'docker port', 'docker history',
+            'docker pull', 'docker push', 'docker save', 'docker load',
+            'docker network ls', 'docker volume ls', 'docker system',
+            'docker exec', 'docker attach', 'docker cp',
+        ]
+        
+        # 检查是否是 Docker 即时操作命令
+        for cmd in docker_instant_commands:
+            if cmd in command_lower:
+                return False
+        
         # Web 服务器
         web_servers = [
             'python app.py', 'python main.py', 'python manage.py runserver',
