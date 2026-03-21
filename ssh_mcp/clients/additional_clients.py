@@ -418,7 +418,7 @@ class SystemSSHClient(SSHClientInterface):
         
         return ssh_cmd
     
-    def execute_command(self, command: str, timeout: int = 30) -> CommandResult:
+    def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> CommandResult:
         """执行命令（带安全验证）"""
         import subprocess
         from ..security import SecurityError, command_validator
@@ -437,6 +437,22 @@ class SystemSSHClient(SSHClientInterface):
         ssh_cmd = self._build_ssh_command(command)
         
         try:
+            if background:
+                # 后台执行：不等待命令完成
+                import os
+                process = subprocess.Popen(
+                    ssh_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                return CommandResult(
+                    stdout=f"Command started in background (PID: {process.pid})",
+                    stderr="",
+                    return_code=0
+                )
+            
+            # 前台执行：等待命令完成
             result = subprocess.run(
                 ssh_cmd,
                 capture_output=True,
@@ -630,13 +646,22 @@ class SSH2Client(SSHClientInterface):
         except ImportError:
             raise ImportError("SSH2 is not installed. Install with: pip install ssh2-python")
     
-    def execute_command(self, command: str, timeout: int = 30) -> CommandResult:
+    def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> CommandResult:
         """执行命令"""
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
         try:
             stdin, stdout, stderr = self._session.command(command)
+            
+            if background:
+                # 后台执行：不等待命令完成，立即返回
+                return CommandResult(
+                    stdout="Command started in background",
+                    stderr="",
+                    return_code=0
+                )
+            
             stdout_data = stdout.read().decode('utf-8', errors='replace')
             stderr_data = stderr.read().decode('utf-8', errors='replace')
             return_code = stdout.channel.get_exit_status()
