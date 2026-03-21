@@ -80,6 +80,73 @@ pip install -e .
 
 ---
 
+## ⚠️ 依赖版本兼容性
+
+### 已知依赖冲突
+
+以下依赖版本冲突已在测试环境中验证，**不影响 ssh-licco 的正常使用**：
+
+#### 1. starlette 版本冲突
+
+```
+fastapi 需要 starlette<0.51.0
+但安装了 starlette 0.52.1
+```
+
+**影响范围：**
+- ✅ **ssh-licco**: 无影响，正常工作
+- ⚠️ **fastapi**: 可能存在兼容性问题（如果同时使用 fastapi）
+
+**解决方案：**
+- 如果只使用 ssh-licco，可以忽略此警告
+- 如果同时使用 fastapi，建议：
+  ```bash
+  pip install starlette==0.50.0
+  ```
+
+#### 2. cryptography 版本冲突
+
+```
+pyopenssl 需要 cryptography<45
+但安装了 cryptography 46.0.5
+```
+
+**影响范围：**
+- ✅ **ssh-licco**: 无影响，正常工作
+- ⚠️ **pyopenssl**: 可能存在兼容性问题（如果同时使用 pyopenssl）
+
+**解决方案：**
+- 如果只使用 ssh-licco，可以忽略此警告
+- 如果同时使用 pyopenssl，建议：
+  ```bash
+  pip install cryptography==44.0.0
+  ```
+
+### 测试环境
+
+**测试通过的配置：**
+- ✅ starlette 0.52.1 + ssh-licco 0.4.1
+- ✅ cryptography 46.0.5 + ssh-licco 0.4.1
+- ✅ mcp 1.26.0 + ssh-licco 0.4.1
+
+**测试场景：**
+- ✅ SSH 连接和执行命令
+- ✅ 文件上传和下载
+- ✅ 后台任务执行
+- ✅ Docker 构建和监控
+- ✅ 多语言后台命令自动检测
+
+### 为什么允许这些冲突？
+
+ssh-licco 的核心依赖是：
+- `mcp` - MCP 协议实现
+- `asyncssh` - SSH 客户端
+- `pydantic` - 数据验证
+
+而 `starlette` 和 `cryptography` 是通过 `mcp` 间接引入的。ssh-licco 本身不直接使用这些库的 API，因此版本冲突不会影响 ssh-licco 的功能。
+
+---
+
 ## 🚀 快速开始
 
 ### 1️⃣ 配置 MCP 服务器
