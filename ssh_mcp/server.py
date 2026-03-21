@@ -1046,7 +1046,8 @@ echo "Log file: {safe_log_file}"
 """
         
         try:
-            result = self.session_manager.execute_command(session_id, background_command, timeout=30)
+            # 启动后台任务（使用后台模式）
+            result = await self.session_manager.execute_command(session_id, background_command, timeout=30, background=True)
             
             # 🤖 如果设置了 wait 参数，等待任务完成
             if wait:
