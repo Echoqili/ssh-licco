@@ -46,6 +46,7 @@ class SSHMCPServer:
             config["keepalive_interval"] = int(os.getenv("SSH_KEEPALIVE_INTERVAL", "30"))
             config["session_timeout"] = int(os.getenv("SSH_SESSION_TIMEOUT", "7200"))
             config["client_type"] = os.getenv("SSH_CLIENT_TYPE", "paramiko")
+            config["force_env_config"] = os.getenv("SSH_FORCE_ENV_CONFIG", "false").lower() == "true"
         return config
 
     def _setup_handlers(self):
@@ -350,37 +351,82 @@ class SSHMCPServer:
     async def _handle_connect(self, args: dict) -> list[TextContent]:
         host_config = None
         
-        # Priority 1: Use parameters from args (highest priority - user provided)
-        if args.get("host"):
-            host_config = SSHHost(
-                name="args-server",
-                host=args["host"],
-                port=args.get("port", 22),
-                username=args.get("username", "root"),
-                password=args.get("password", ""),
-                timeout=args.get("timeout", 30),
-                keepalive_interval=args.get("keepalive_interval", 30),
-                session_timeout=args.get("session_timeout", 7200)
-            )
+        # 检查是否启用了强制环境变量模式
+        force_env = self._env_config.get("force_env_config", False)
         
-        # Priority 2: Try to get host from config/hosts.json by name
-        if not host_config and args.get("name"):
-            host_config = self.config_manager.get_host_by_name(args["name"])
-            if not host_config:
-                return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
+        if force_env:
+            # 🔒 强制模式：环境变量优先级最高
+            self._logger.info("🔒 Using FORCE ENV CONFIG mode")
+            if self._env_config and self._env_config.get("host"):
+                host_config = SSHHost(
+                    name="env-server-forced",
+                    host=self._env_config.get("host", "127.0.0.1"),
+                    port=self._env_config.get("port", 22),
+                    username=self._env_config.get("username", "root"),
+                    password=self._env_config.get("password", ""),
+                    timeout=self._env_config.get("timeout", 30),
+                    keepalive_interval=self._env_config.get("keepalive_interval", 30),
+                    session_timeout=self._env_config.get("session_timeout", 7200)
+                )
+                self._logger.info(f"🔒 Forced environment host: {host_config.host}")
+            else:
+                # 环境变量未配置，回退到用户参数
+                if args.get("host"):
+                    host_config = SSHHost(
+                        name="args-server",
+                        host=args["host"],
+                        port=args.get("port", 22),
+                        username=args.get("username", "root"),
+                        password=args.get("password", ""),
+                        timeout=args.get("timeout", 30),
+                        keepalive_interval=args.get("keepalive_interval", 30),
+                        session_timeout=args.get("session_timeout", 7200)
+                    )
+                    self._logger.info(f"Using user-provided host (env not configured): {args['host']}")
+        else:
+            # ✅ 灵活模式：用户参数优先级最高（默认）
+            # Priority 1: Use parameters from args (highest priority - user provided)
+            if args.get("host"):
+                host_config = SSHHost(
+                    name="args-server",
+                    host=args["host"],
+                    port=args.get("port", 22),
+                    username=args.get("username", "root"),
+                    password=args.get("password", ""),
+                    timeout=args.get("timeout", 30),
+                    keepalive_interval=args.get("keepalive_interval", 30),
+                    session_timeout=args.get("session_timeout", 7200)
+                )
+                self._logger.info(f"✅ Using user-provided host: {args['host']}")
+            
+            # Priority 2: Try to get host from config/hosts.json by name
+            if not host_config and args.get("name"):
+                host_config = self.config_manager.get_host_by_name(args["name"])
+                if not host_config:
+                    return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
+                self._logger.info(f"Using config file host: {host_config.host}")
+            
+            # Priority 3: Use environment variable config from MCP server.json (lowest priority - fallback)
+            if not host_config and self._env_config and self._env_config.get("host"):
+                host_config = SSHHost(
+                    name="env-server",
+                    host=self._env_config.get("host", "127.0.0.1"),
+                    port=self._env_config.get("port", 22),
+                    username=self._env_config.get("username", "root"),
+                    password=self._env_config.get("password", ""),
+                    timeout=self._env_config.get("timeout", 30),
+                    keepalive_interval=self._env_config.get("keepalive_interval", 30),
+                    session_timeout=self._env_config.get("session_timeout", 7200)
+                )
+                self._logger.info(f"Using environment variable host (fallback): {host_config.host}")
         
-        # Priority 3: Use environment variable config from MCP server.json (lowest priority - fallback)
-        if not host_config and self._env_config and self._env_config.get("host"):
-            host_config = SSHHost(
-                name="env-server",
-                host=self._env_config.get("host", "127.0.0.1"),
-                port=self._env_config.get("port", 22),
-                username=self._env_config.get("username", "root"),
-                password=self._env_config.get("password", ""),
-                timeout=self._env_config.get("timeout", 30),
-                keepalive_interval=self._env_config.get("keepalive_interval", 30),
-                session_timeout=self._env_config.get("session_timeout", 7200)
-            )
+        # Debug log
+        if host_config:
+            self._logger.info(f"🎯 Final connection target: {host_config.host}:{host_config.port}")
+            if force_env:
+                self._logger.warning("🔒 FORCE MODE: Environment config overrides user parameters")
+        else:
+            self._logger.warning("No host configuration found!")
         
         # Get client type from args, env config, or default to paramiko
         client_type = args.get("client_type") or self._env_config.get("client_type", "paramiko")
