@@ -28,6 +28,9 @@ class CommandValidator:
     
     # 基础允许的命令白名单（所有模式都允许）
     BASE_ALLOWED_COMMANDS: Set[str] = {
+        # Shell
+        'bash', 'sh', 'zsh', 'csh', 'tcsh', 'ksh',
+        
         # 基础命令
         'ls', 'dir', 'cd', 'pwd', 'cat', 'head', 'tail', 'less', 'more',
         'grep', 'find', 'which', 'whereis',
