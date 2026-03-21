@@ -430,7 +430,7 @@ class SSHMCPServer:
 
     async def _handle_execute(self, args: dict) -> list[TextContent]:
         """处理命令执行（带安全验证）"""
-        from .security import SecurityError, command_validator
+        from .security import SecurityError, command_validator, SecurityLevel
         
         command = args.get("command")
         
@@ -439,9 +439,67 @@ class SSHMCPServer:
             command_validator.validate_command(command)
         except SecurityError as e:
             self._logger.error(f"Command blocked: {e}")
+            
+            # 🛑 暂停执行，提供交互式解决方案
             return [TextContent(
                 type="text",
-                text=f"❌ 安全错误：{str(e)}"
+                text=f"""🛑 **命令被安全策略阻止**
+
+**被阻止的命令**: `{command}`
+
+**原因**: {str(e)}
+
+---
+
+## 🔧 解决方案
+
+### 方式 1: 临时调整安全策略（推荐）
+
+在下次请求前，通过环境变量调整安全策略：
+
+```json
+{{
+  "mcpServers": {{
+    "ssh": {{
+      "command": "ssh-licco",
+      "env": {{
+        "SSH_SECURITY_LEVEL": "relaxed",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "被阻止的命令或字符"
+      }}
+    }}
+  }}
+}}
+```
+
+**可选安全级别**:
+- `strict` - 严格模式（生产环境）
+- `balanced` - 平衡模式（默认）
+- `relaxed` - 宽松模式（开发/测试）
+
+### 方式 2: 添加额外允许的字符
+
+如果只是因为特殊字符（如 `|`, `&`, `;` 等）被阻止，可以添加：
+
+```json
+{{
+  "SSH_EXTRA_ALLOWED_PATTERNS": "|,>,<,&,;"
+}}
+```
+
+### 方式 3: 确认并继续（⚠️ 谨慎使用）
+
+如果你确认该命令是安全的，可以：
+1. 在 MCP 配置中设置 `SSH_SECURITY_LEVEL="relaxed"`
+2. 重新执行该命令
+
+---
+
+**当前配置**:
+- 安全级别：`{os.getenv('SSH_SECURITY_LEVEL', 'balanced')}`
+- 额外允许命令：`{os.getenv('SSH_EXTRA_ALLOWED_COMMANDS', '无')}`
+
+💡 **提示**: 修改配置后需要重启 MCP 服务器
+"""
             )]
         
         session = await self.session_manager.get_session(args["session_id"])
