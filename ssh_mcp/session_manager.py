@@ -323,12 +323,19 @@ class SessionManager:
             for session in self._sessions.values()
         ]
 
-    async def execute_command(self, session_id: str, command: str, timeout: int = 30) -> dict:
-        """Execute command on specified session"""
+    async def execute_command(self, session_id: str, command: str, timeout: int = 30, background: bool = False) -> dict:
+        """Execute command on specified session
+        
+        Args:
+            session_id: Session ID
+            command: Command to execute
+            timeout: Timeout in seconds
+            background: Whether to run in background mode (default: False)
+        """
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
-        return await session.execute_command(command, timeout)
+        return await session.execute_command(command, timeout, background)
 
     async def upload_file(self, session_id: str, local_path: str, remote_path: str) -> dict:
         """Upload file to specified session"""
