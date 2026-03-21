@@ -968,27 +968,28 @@ echo "Log file: {safe_log_file}"
 
 💡 **重要提示**:
 - 任务已在后台运行，**无需持续检查状态**
-- 如需查看进度，可**手动**使用以下命令：
+- 如需查看进度，请**直接使用 ssh_execute 工具**执行以下命令：
 
 **查看实时日志** (推荐):
 ```bash
-tail -f {safe_log_file}
+ssh_execute(session_id="{session_id}", command="tail -f {safe_log_file}")
 ```
 
 **查看完整日志**:
 ```bash
-cat {safe_log_file}
+ssh_execute(session_id="{session_id}", command="cat {safe_log_file}")
 ```
 
 **检查进程状态** (可选):
 ```bash
-ps -p $(cat /tmp/task_{task_id}.pid) -o pid,stat,time,command
+ssh_execute(session_id="{session_id}", command="ps -p $(cat /tmp/task_{task_id}.pid) -o pid,stat,time,command")
 ```
 
 ---
 
-⚠️ **注意**: 请避免频繁调用检查工具，建议等待 30-60 秒后再查看日志
-  查看任务状态，session_id={session_id}，task_id={task_id}
+⚠️ **注意**: 
+- 请避免频繁调用检查工具，建议等待 30-60 秒后再查看日志
+- **不要使用 ssh_background_task 查看日志**，该工具仅用于启动后台任务
 """
             return [TextContent(type="text", text=output)]
             
