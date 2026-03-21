@@ -350,27 +350,8 @@ class SSHMCPServer:
     async def _handle_connect(self, args: dict) -> list[TextContent]:
         host_config = None
         
-        # Priority 1: Use environment variable config from MCP server.json if configured
-        if self._env_config and self._env_config.get("host"):
-            host_config = SSHHost(
-                name="env-server",
-                host=self._env_config.get("host", "127.0.0.1"),
-                port=self._env_config.get("port", 22),
-                username=self._env_config.get("username", "root"),
-                password=self._env_config.get("password", ""),
-                timeout=self._env_config.get("timeout", 30),
-                keepalive_interval=self._env_config.get("keepalive_interval", 30),
-                session_timeout=self._env_config.get("session_timeout", 7200)
-            )
-        
-        # Priority 2: Try to get host from config/hosts.json by name
-        if not host_config and args.get("name"):
-            host_config = self.config_manager.get_host_by_name(args["name"])
-            if not host_config:
-                return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
-        
-        # Priority 3: Use parameters from args if no env config or name provided
-        if not host_config and args.get("host"):
+        # Priority 1: Use parameters from args (highest priority - user provided)
+        if args.get("host"):
             host_config = SSHHost(
                 name="args-server",
                 host=args["host"],
@@ -380,6 +361,25 @@ class SSHMCPServer:
                 timeout=args.get("timeout", 30),
                 keepalive_interval=args.get("keepalive_interval", 30),
                 session_timeout=args.get("session_timeout", 7200)
+            )
+        
+        # Priority 2: Try to get host from config/hosts.json by name
+        if not host_config and args.get("name"):
+            host_config = self.config_manager.get_host_by_name(args["name"])
+            if not host_config:
+                return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
+        
+        # Priority 3: Use environment variable config from MCP server.json (lowest priority - fallback)
+        if not host_config and self._env_config and self._env_config.get("host"):
+            host_config = SSHHost(
+                name="env-server",
+                host=self._env_config.get("host", "127.0.0.1"),
+                port=self._env_config.get("port", 22),
+                username=self._env_config.get("username", "root"),
+                password=self._env_config.get("password", ""),
+                timeout=self._env_config.get("timeout", 30),
+                keepalive_interval=self._env_config.get("keepalive_interval", 30),
+                session_timeout=self._env_config.get("session_timeout", 7200)
             )
         
         # Get client type from args, env config, or default to paramiko
