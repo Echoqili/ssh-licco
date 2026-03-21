@@ -920,6 +920,44 @@ class SSHMCPServer:
         if not session_id or not command:
             return [TextContent(type="text", text="Error: session_id and command are required")]
         
+        # ❌ 检查是否是不适合后台执行的命令
+        instant_commands = [
+            'docker start ', 'docker stop ', 'docker restart ', 'docker rm ',
+            'docker rmi ', 'docker pause ', 'docker unpause ', 'docker kill ',
+            'docker ps', 'docker images', 'docker logs', 'docker inspect',
+            'docker exec', 'docker attach', 'docker cp',
+            'git status', 'git log', 'git diff',
+            'ls ', 'cat ', 'tail ', 'head ', 'grep ',
+            'pwd', 'whoami', 'date', 'echo ',
+        ]
+        
+        for cmd in instant_commands:
+            if cmd in command.lower():
+                return [TextContent(
+                    type="text",
+                    text=f"""❌ **命令不适合后台执行**
+
+**被阻止的命令**: `{command}`
+
+**原因**: 该命令是即时操作，不需要后台执行
+
+**建议**: 请使用 `ssh_execute` 工具执行此命令
+
+**示例**:
+```python
+ssh_execute({{
+  "session_id": "{session_id}",
+  "command": "{command}"
+}})
+```
+
+**适合后台执行的命令**:
+- ✅ Docker 构建：`docker build -t image .`
+- ✅ 启动服务：`python app.py`, `npm start`
+- ✅ 长时间运行的任务：`docker-compose up`
+"""
+                )]
+        
         # 🔒 安全验证：命令
         try:
             command_validator.validate_command(command.split()[0] if command.split() else "")
