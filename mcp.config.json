@@ -25,17 +25,18 @@
       },
       "fromGalleryId": "oschina.mcp-gitee"
     },
-    "ssh": {
+    "ssh-licco": {
       "command": "ssh-licco",
       "env": {
-        "SSH_HOST": "${SSH_HOST}",
-        "SSH_USER": "${SSH_USER}",
-        "SSH_PASSWORD": "${SSH_PASSWORD}",
+        "SSH_HOST": "192.168.58.130",
+        "SSH_USER": "licco",
+        "SSH_PASSWORD": "licco123",
         "SSH_PORT": "22",
-        "SSH_TIMEOUT": "120",
+        "SSH_TIMEOUT": "60",
         "SSH_KEEPALIVE_INTERVAL": "30",
         "SSH_SESSION_TIMEOUT": "7200",
-        "SSH_CLIENT_TYPE": "${SSH_CLIENT_TYPE}"
+        "SSH_SECURITY_LEVEL": "relaxed",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "git,pip,npm,docker,pg_isready,psql,sh"
       }
     }
   }
