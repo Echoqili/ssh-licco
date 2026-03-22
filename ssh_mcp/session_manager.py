@@ -152,10 +152,16 @@ class SSHSession:
         
         if background:
             # 后台执行：不等待命令完成，立即返回
-            pid = stdout.channel.pid
+            # 注意：不是所有 paramiko 版本都支持 channel.pid
+            try:
+                pid = stdout.channel.pid
+                pid_msg = f"PID: {pid}"
+            except AttributeError:
+                pid_msg = "background mode"
+            
             return {
                 "exit_code": 0,
-                "stdout": f"Command started in background (PID: {pid})",
+                "stdout": f"Command started in {pid_msg}",
                 "stderr": "",
                 "session_id": self.session_id
             }

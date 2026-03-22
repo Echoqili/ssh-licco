@@ -545,17 +545,29 @@ class SSHMCPServer:
                 client_type=client_type
             )
         
-        session_info = await self.session_manager.create_session(config)
-        
-        return [TextContent(
-            type="text",
-            text=f"Successfully connected to {session_info.host}:{session_info.port}\n"
-                 f"Session ID: {session_info.session_id}\n"
-                 f"Username: {session_info.username}\n"
-                 f"Keepalive Interval: {config.keepalive_interval}s\n"
-                 f"Session Timeout: {config.session_timeout}s\n"
-                 f"Connected at: {session_info.connected_at.isoformat()}"
-        )]
+        try:
+            session_info = await self.session_manager.create_session(config)
+            
+            return [TextContent(
+                type="text",
+                text=f"Successfully connected to {session_info.host}:{session_info.port}\n"
+                     f"Session ID: {session_info.session_id}\n"
+                     f"Username: {session_info.username}\n"
+                     f"Keepalive Interval: {config.keepalive_interval}s\n"
+                     f"Session Timeout: {config.session_timeout}s\n"
+                     f"Connected at: {session_info.connected_at.isoformat()}"
+            )]
+        except Exception as e:
+            self._logger.error(f"Connection failed: {e}")
+            return [TextContent(
+                type="text",
+                text=f"❌ 连接失败：{str(e)}\n\n"
+                     f"请检查:\n"
+                     f"1. 服务器地址和端口是否正确\n"
+                     f"2. 用户名和密码/私钥是否正确\n"
+                     f"3. 网络连接是否正常\n"
+                     f"4. SSH 服务是否正在运行"
+            )]
 
     async def _handle_execute(self, args: dict) -> list[TextContent]:
         """处理命令执行（带安全验证）"""
@@ -1323,7 +1335,13 @@ Use this command to check again:
             return [TextContent(type="text", text="Error: session_id and command are required")]
         
         try:
+            self._logger.info(f"Executing command: {command} (timeout: {timeout}s)")
             result = await self.session_manager.execute_command(session_id, command, timeout=timeout)
+            
+            # 检查 result 是否为 None
+            if result is None:
+                self._logger.error("execute_command returned None")
+                return [TextContent(type="text", text="❌ Error: Command execution returned no result")]
             
             output = f"""✅ Command Completed!
 
@@ -1346,7 +1364,8 @@ Use this command to check again:
             return [TextContent(type="text", text=output)]
             
         except Exception as e:
-            return [TextContent(type="text", text=f"Error executing command: {str(e)}")]
+            self._logger.error(f"Error executing command: {str(e)}")
+            return [TextContent(type="text", text=f"❌ Error executing command: {str(e)}")]
     
     async def _handle_container_logs(self, args: dict) -> list[TextContent]:
         """Get Docker container logs with automatic tail"""
