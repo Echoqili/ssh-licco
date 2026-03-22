@@ -341,21 +341,71 @@ class SSHMCPServer:
         )]
 
     async def _handle_login(self, args: dict) -> list[TextContent]:
+        import os
+        
+        # 优先使用环境变量配置（如果设置了 SSH_HOST）
+        if os.getenv("SSH_HOST"):
+            self._logger.info("🔒 使用环境变量配置进行登录")
+            config = ConnectionConfig(
+                host=os.getenv("SSH_HOST", "127.0.0.1"),
+                port=int(os.getenv("SSH_PORT", "22")),
+                username=os.getenv("SSH_USER", "root"),
+                password=os.getenv("SSH_PASSWORD", ""),
+                auth_method="password" if os.getenv("SSH_PASSWORD") else "private_key",
+                timeout=int(os.getenv("SSH_TIMEOUT", "60")),
+                keepalive_interval=int(os.getenv("SSH_KEEPALIVE_INTERVAL", "30")),
+                session_timeout=int(os.getenv("SSH_SESSION_TIMEOUT", "7200")),
+                client_type=os.getenv("SSH_CLIENT_TYPE", "paramiko")
+            )
+            
+            if not config.password:
+                return [TextContent(type="text", text="❌ 错误：SSH_PASSWORD 环境变量未设置")]
+            
+            try:
+                session_info = await self.session_manager.create_session(config)
+                
+                output = f"SSH 登录成功!\n"
+                output += f"主机：{session_info.host}:{session_info.port}\n"
+                output += f"Session ID: {session_info.session_id}\n"
+                output += f"用户名：{session_info.username}\n"
+                output += f"连接时间：{session_info.connected_at.isoformat()}"
+                
+                command = args.get("command")
+                if command:
+                    session = await self.session_manager.get_session(session_info.session_id)
+                    result = await session.execute_command(command)
+                    output += f"\n\n--- 命令输出 ---\n"
+                    output += f"Exit Code: {result['exit_code']}\n"
+                    if result["stdout"]:
+                        output += f"\n{result['stdout']}"
+                    if result["stderr"]:
+                        output += f"\n--- 错误 ---\n{result['stderr']}"
+                
+                return [TextContent(type="text", text=output)]
+            except Exception as e:
+                return [TextContent(type="text", text=f"登录失败：{str(e)}")]
+        
+        # 环境变量未配置，使用保存的配置
         config_data = self.config_manager.load()
         if not config_data:
             return [TextContent(
                 type="text",
-                text="请先使用 ssh_config 工具配置 SSH 连接信息"
+                text="请先使用 ssh_config 工具配置 SSH 连接信息，或在 MCP 配置中设置环境变量"
             )]
         
-        if not config_data.password:
-            return [TextContent(type="text", text="密码未配置，请先使用 ssh_config 设置密码")]
+        # 如果保存的密码为空，尝试使用环境变量
+        password = config_data.password
+        if not password:
+            password = os.getenv("SSH_PASSWORD", "")
+        
+        if not password:
+            return [TextContent(type="text", text="密码未配置，请先使用 ssh_config 设置密码或在 MCP 配置中设置 SSH_PASSWORD 环境变量")]
         
         config = ConnectionConfig(
             host=config_data.host,
             port=config_data.port,
             username=config_data.username,
-            password=config_data.password,
+            password=password,
             auth_method="password",
             timeout=config_data.timeout
         )
@@ -488,7 +538,7 @@ class SSHMCPServer:
                 password=args.get("password"),
                 private_key_path=Path(args["private_key_path"]) if args.get("private_key_path") else None,
                 passphrase=args.get("passphrase"),
-                auth_method=args.get("auth_method", "private_key"),
+                auth_method=args.get("auth_method"),  # Auto-detect if not provided
                 timeout=args.get("timeout", 30),
                 keepalive_interval=args.get("keepalive_interval", 30),
                 session_timeout=args.get("session_timeout", 7200),

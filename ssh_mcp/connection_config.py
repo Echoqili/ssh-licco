@@ -22,7 +22,7 @@ class ConnectionConfig(BaseModel):
     host: str = Field(..., description="SSH server hostname or IP address")
     port: int = Field(default=22, description="SSH server port")
     username: str = Field(..., description="SSH username")
-    auth_method: AuthMethod = Field(default="private_key", description="Authentication method")
+    auth_method: Optional[AuthMethod] = Field(default=None, description="Authentication method (auto-detected if not provided)")
     password: Optional[str] = Field(default=None, description="SSH password (if using password auth)")
     private_key_path: Optional[Path] = Field(default=None, description="Path to private key file")
     passphrase: Optional[str] = Field(default=None, description="Passphrase for private key")
@@ -68,20 +68,32 @@ class ConnectionConfig(BaseModel):
     
     @model_validator(mode='after')
     def validate_auth_priority(self) -> 'ConnectionConfig':
-        """验证认证优先级 - 密钥优先"""
-        if self.prefer_key_auth:
-            if self.private_key_path:
-                self.auth_method = "private_key"
-                self.password = None
-            elif not self.password:
-                raise ValueError(
-                    "Private key authentication is preferred but no key path provided"
-                )
+        """验证认证配置"""
+        # 检查密码是否有效（非空字符串）
+        has_valid_password = bool(self.password and self.password.strip())
+        has_private_key = bool(self.private_key_path)
         
-        if self.auth_method == "private_key" and not self.private_key_path and not self.password:
-            raise ValueError(
-                "Private key authentication requires either private_key_path or password as fallback"
-            )
+        # 如果明确指定 auth_method，使用指定的方法
+        if self.auth_method == "private_key":
+            if not has_private_key and not has_valid_password:
+                raise ValueError(
+                    "Private key authentication requires either private_key_path or password as fallback"
+                )
+        elif self.auth_method == "password":
+            if not has_valid_password:
+                raise ValueError(
+                    "Password authentication requires a valid password (non-empty string)"
+                )
+        # 如果未指定 auth_method，根据提供的凭证自动选择
+        elif not self.auth_method:
+            if has_private_key:
+                self.auth_method = "private_key"
+            elif has_valid_password:
+                self.auth_method = "password"
+            else:
+                raise ValueError(
+                    "Must provide either private_key_path or password for authentication"
+                )
         
         return self
     

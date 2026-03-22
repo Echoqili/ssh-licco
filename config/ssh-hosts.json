@@ -1,0 +1,7 @@
+{
+  "host": "192.168.58.130",
+  "port": 22,
+  "username": "licco",
+  "password": "licco123",
+  "timeout": 60
+}
