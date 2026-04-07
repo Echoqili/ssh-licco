@@ -985,6 +985,29 @@ class SSHMCPServer:
             output += f"  用户：{self._env_config.get('username')}\n"
             output += f"  密码：{'***' if self._env_config.get('password') else '未设置'}\n"
             output += f"  超时：{self._env_config.get('timeout', 30)}s\n\n"
+            
+            # 🔍 检测密码冲突
+            output += "🔍 配置冲突检测:\n"
+            env_host = self._env_config.get('host')
+            env_user = self._env_config.get('username')
+            env_password = self._env_config.get('password')
+            
+            conflict_found = False
+            if hosts:
+                for host in hosts:
+                    if host.host == env_host and host.username == env_user:
+                        if host.password and env_password and host.password != env_password:
+                            output += f"  ❌ 发现密码冲突!\n"
+                            output += f"     主机：{host.host}\n"
+                            output += f"     MCP 配置密码：{'***'} ({len(env_password)} 字符)\n"
+                            output += f"     hosts.json 密码：{'***'} ({len(host.password)} 字符)\n"
+                            output += f"  💡 建议：统一两个配置文件中的密码，或使用 SSH_FORCE_ENV_CONFIG=true 强制使用环境变量\n"
+                            conflict_found = True
+                            break
+            
+            if not conflict_found:
+                output += "  ✅ 未检测到密码冲突\n"
+            output += "\n"
         
         # Priority 2: Hosts from config/hosts.json
         output += "🔹 [优先级 2] 本地配置文件 (config/hosts.json)\n"
