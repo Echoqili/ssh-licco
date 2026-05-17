@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Optional, AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 import uuid
 
@@ -11,6 +12,7 @@ import paramiko
 from paramiko import SSHClient, AutoAddPolicy, SFTPClient
 
 from .connection_config import ConnectionConfig
+from .executor import get_executor
 
 
 class SessionState(Enum):
@@ -47,7 +49,9 @@ class SSHSession:
         self._last_activity: datetime = datetime.now()
         self._last_keepalive: datetime = datetime.now()
         self._keepalive_task: Optional[asyncio.Task] = None
-        self._lock = asyncio.Lock()
+        self._executor = get_executor()
+        self._connect_lock = asyncio.Lock()
+        self._shutdown_event = asyncio.Event()
 
     @property
     def state(self) -> SessionState:
@@ -58,19 +62,17 @@ class SSHSession:
         return self._state == SessionState.CONNECTED and self.client is not None
 
     async def connect(self) -> SessionInfo:
-        async with self._lock:
+        async with self._connect_lock:
             if self.is_connected:
                 return self._get_session_info()
             
             self._state = SessionState.CONNECTING
             
             try:
-                await asyncio.get_event_loop().run_in_executor(
-                    None, self._connect_sync
-                )
+                await self._executor.submit(self._connect_sync, timeout=self.config.timeout + 10)
                 self._connected_at = datetime.now()
                 self._state = SessionState.CONNECTED
-                self._start_keepalive()
+                await self._start_keepalive()
                 return self._get_session_info()
             except Exception as e:
                 self._state = SessionState.ERROR
@@ -99,30 +101,27 @@ class SSHSession:
         
         self.client.connect(**connect_kwargs)
         
-        # Enable keepalive
         transport = self.client.get_transport()
         if transport:
             transport.set_keepalive(self.config.keepalive_interval)
 
-    def _start_keepalive(self):
-        """Start background keepalive task."""
+    async def _start_keepalive(self):
         if self._keepalive_task:
             self._keepalive_task.cancel()
         
         async def keepalive_loop():
-            while self.is_connected:
+            while self.is_connected and not self._shutdown_event.is_set():
                 try:
-                    # Sleep for the keepalive interval
                     await asyncio.sleep(self.config.keepalive_interval)
                     
-                    # Check if we should still be connected
-                    if not self.is_connected:
+                    if not self.is_connected or self._shutdown_event.is_set():
                         break
                     
-                    # Send keepalive
-                    transport = await asyncio.get_event_loop().run_in_executor(None, lambda: self.client.get_transport() if self.client else None)
+                    transport = await self._executor.submit(
+                        lambda: self.client.get_transport() if self.client else None
+                    )
                     if transport:
-                        transport.send_ignore()
+                        await self._executor.submit(transport.send_ignore)
                         self._last_keepalive = datetime.now()
                 except Exception as e:
                     print(f"Keepalive failed for session {self.session_id}: {e}")
@@ -134,12 +133,13 @@ class SSHSession:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
-        async with self._lock:
+        async with self._connect_lock:
             self._state = SessionState.EXECUTING
             self._last_activity = datetime.now()
             try:
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None, self._execute_command_sync, command, timeout, background
+                result = await self._executor.submit(
+                    self._execute_command_sync, command, timeout, background,
+                    timeout=timeout + 5
                 )
                 return result
             finally:
@@ -151,8 +151,6 @@ class SSHSession:
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
         
         if background:
-            # 后台执行：不等待命令完成，立即返回
-            # 注意：不是所有 paramiko 版本都支持 channel.pid
             try:
                 pid = stdout.channel.pid
                 pid_msg = f"PID: {pid}"
@@ -166,7 +164,6 @@ class SSHSession:
                 "session_id": self.session_id
             }
         
-        # 前台执行：等待命令完成
         exit_code = stdout.channel.recv_exit_status()
         stdout_data = stdout.read().decode('utf-8', errors='replace')
         stderr_data = stderr.read().decode('utf-8', errors='replace')
@@ -184,13 +181,15 @@ class SSHSession:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
-        async with self._lock:
+        async with self._connect_lock:
             self._state = SessionState.EXECUTING
             self._last_activity = datetime.now()
             try:
-                async for line in asyncio.get_event_loop().run_in_executor(
-                    None, self._execute_command_stream_sync, command
-                ):
+                loop = asyncio.get_event_loop()
+                stream = await loop.run_in_executor(
+                    self._executor.executor, self._execute_command_stream_sync, command
+                )
+                async for line in self._async_stream_wrapper(stream):
                     yield line
             finally:
                 self._state = SessionState.CONNECTED
@@ -203,13 +202,28 @@ class SSHSession:
         for line in stdout:
             yield line.decode('utf-8', errors='replace')
 
+    async def _async_stream_wrapper(self, sync_iterator):
+        loop = asyncio.get_event_loop()
+        while True:
+            try:
+                item = await loop.run_in_executor(
+                    self._executor.executor,
+                    lambda: next(sync_iterator, None)
+                )
+                if item is None:
+                    break
+                yield item
+            except StopIteration:
+                break
+
     async def open_shell(self, term: str = "xterm", width: int = 80, height: int = 24) -> paramiko.Channel:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         
         self._last_activity = datetime.now()
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._open_shell_sync, term, width, height
+        return await self._executor.submit(
+            self._open_shell_sync, term, width, height,
+            timeout=self.config.timeout
         )
 
     def _open_shell_sync(self, term: str, width: int, height: int) -> paramiko.Channel:
@@ -219,10 +233,11 @@ class SSHSession:
     async def upload_file(self, local_path: str, remote_path: str) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        async with self._lock:
+        async with self._connect_lock:
             self._last_activity = datetime.now()
-            return await asyncio.get_event_loop().run_in_executor(
-                None, self._upload_file_sync, local_path, remote_path
+            return await self._executor.submit(
+                self._upload_file_sync, local_path, remote_path,
+                timeout=60
             )
 
     def _upload_file_sync(self, local_path: str, remote_path: str) -> dict:
@@ -238,10 +253,11 @@ class SSHSession:
     async def download_file(self, remote_path: str, local_path: str) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        async with self._lock:
+        async with self._connect_lock:
             self._last_activity = datetime.now()
-            return await asyncio.get_event_loop().run_in_executor(
-                None, self._download_file_sync, remote_path, local_path
+            return await self._executor.submit(
+                self._download_file_sync, remote_path, local_path,
+                timeout=60
             )
 
     def _download_file_sync(self, remote_path: str, local_path: str) -> dict:
@@ -257,10 +273,11 @@ class SSHSession:
     async def list_directory(self, remote_path: str = ".") -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        async with self._lock:
+        async with self._connect_lock:
             self._last_activity = datetime.now()
-            return await asyncio.get_event_loop().run_in_executor(
-                None, self._list_directory_sync, remote_path
+            return await self._executor.submit(
+                self._list_directory_sync, remote_path,
+                timeout=30
             )
 
     def _list_directory_sync(self, remote_path: str) -> dict:
@@ -274,12 +291,13 @@ class SSHSession:
             return {"success": False, "message": f"List failed: {str(e)}", "session_id": self.session_id}
 
     async def disconnect(self) -> None:
-        async with self._lock:
+        async with self._connect_lock:
+            self._shutdown_event.set()
             if self._keepalive_task:
                 self._keepalive_task.cancel()
                 self._keepalive_task = None
             if self.client:
-                self.client.close()
+                await self._executor.submit(self.client.close)
                 self.client = None
             self._state = SessionState.DISCONNECTED
 
@@ -300,6 +318,42 @@ class SessionManager:
     def __init__(self):
         self._sessions: dict[str, SSHSession] = {}
         self._lock = asyncio.Lock()
+        self._shutdown_event = asyncio.Event()
+        self._timeout_cleanup_task: Optional[asyncio.Task] = None
+        self._start_timeout_cleanup()
+
+    def _start_timeout_cleanup(self):
+        async def cleanup_loop():
+            while not self._shutdown_event.is_set():
+                try:
+                    await asyncio.sleep(60)
+                    await self._cleanup_timeout_sessions()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"Session cleanup error: {e}")
+        
+        self._timeout_cleanup_task = asyncio.create_task(cleanup_loop())
+
+    async def _cleanup_timeout_sessions(self):
+        async with self._lock:
+            now = datetime.now()
+            timeout_sessions = []
+            
+            for session_id, session in self._sessions.items():
+                if session.is_connected:
+                    idle_time = now - session._last_activity
+                    if idle_time > timedelta(seconds=session.config.session_timeout):
+                        timeout_sessions.append(session_id)
+            
+            for session_id in timeout_sessions:
+                try:
+                    session = self._sessions[session_id]
+                    await session.disconnect()
+                    del self._sessions[session_id]
+                    print(f"Cleaned up timeout session: {session_id}")
+                except Exception as e:
+                    print(f"Error cleaning up session {session_id}: {e}")
 
     async def create_session(self, config: ConnectionConfig) -> SessionInfo:
         async with self._lock:
@@ -309,7 +363,8 @@ class SessionManager:
             return session_info
 
     async def get_session(self, session_id: str) -> Optional[SSHSession]:
-        return self._sessions.get(session_id)
+        async with self._lock:
+            return self._sessions.get(session_id)
 
     async def close_session(self, session_id: str) -> None:
         async with self._lock:
@@ -329,36 +384,31 @@ class SessionManager:
             for session in self._sessions.values()
         ]
 
+    async def shutdown(self):
+        self._shutdown_event.set()
+        if self._timeout_cleanup_task:
+            self._timeout_cleanup_task.cancel()
+        await self.close_all_sessions()
+
     async def execute_command(self, session_id: str, command: str, timeout: int = 30, background: bool = False) -> dict:
-        """Execute command on specified session
-        
-        Args:
-            session_id: Session ID
-            command: Command to execute
-            timeout: Timeout in seconds
-            background: Whether to run in background mode (default: False)
-        """
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
         return await session.execute_command(command, timeout, background)
 
     async def upload_file(self, session_id: str, local_path: str, remote_path: str) -> dict:
-        """Upload file to specified session"""
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
         return await session.upload_file(local_path, remote_path)
 
     async def download_file(self, session_id: str, remote_path: str, local_path: str) -> dict:
-        """Download file from specified session"""
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
         return await session.download_file(remote_path, local_path)
 
     async def list_directory(self, session_id: str, remote_path: str = ".") -> dict:
-        """List directory on specified session"""
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import time
-from typing import AsyncIterator
+import socket
+from typing import AsyncIterator, Optional
 from pathlib import Path
 
 import paramiko
-from paramiko import SSHClient, AutoAddPolicy
+from paramiko import SSHClient, AutoAddPolicy, SSHException, AuthenticationException
 
 from ..connection_config import ConnectionConfig
 from ..exceptions import ConnectionException, CommandExecutionException, FileTransferException
@@ -28,13 +29,15 @@ class ParamikoClient(SSHClientInterface):
     - 支持密码和密钥认证
     - 支持 SFTP 文件传输
     - 内置 keepalive 保活机制
-    - 完整的错误处理
+    - 完整的错误处理和超时控制
+    - 线程安全的操作
     """
     
     def __init__(self, config: ConnectionConfig):
         self.config = config
         self.client: SSHClient | None = None
         self._logger = get_logger(f"ParamikoClient.{config.host}")
+        self._connect_lock = paramiko.util.ThreadedIterator()
     
     @property
     def client_type(self) -> ClientType:
@@ -44,8 +47,11 @@ class ParamikoClient(SSHClientInterface):
     def is_connected(self) -> bool:
         if self.client is None:
             return False
-        transport = self.client.get_transport()
-        return transport is not None and transport.is_active()
+        try:
+            transport = self.client.get_transport()
+            return transport is not None and transport.is_active()
+        except Exception:
+            return False
     
     def connect(self, timeout: int = 30) -> ConnectionResult:
         """建立 SSH 连接
@@ -87,7 +93,6 @@ class ParamikoClient(SSHClientInterface):
                 if self.config.passphrase:
                     connect_kwargs['passphrase'] = self.config.passphrase
             else:
-                # Default to password authentication if password is provided
                 if self.config.password:
                     connect_kwargs['password'] = self.config.password
             
@@ -96,6 +101,7 @@ class ParamikoClient(SSHClientInterface):
             transport = self.client.get_transport()
             if transport:
                 transport.set_keepalive(self.config.keepalive_interval)
+                transport.set_hearbeat(self.config.keepalive_interval)
             
             latency_ms = (time.time() - start_time) * 1000
             
@@ -110,17 +116,29 @@ class ParamikoClient(SSHClientInterface):
                 latency_ms=latency_ms
             )
             
-        except paramiko.AuthenticationException as e:
+        except AuthenticationException as e:
             self._logger.error(f"Authentication failed: {str(e)}")
             return ConnectionResult(
                 success=False,
                 message=f"Authentication failed: {str(e)}"
             )
-        except paramiko.SSHException as e:
+        except SSHException as e:
             self._logger.error(f"SSH error: {str(e)}")
             return ConnectionResult(
                 success=False,
                 message=f"SSH error: {str(e)}"
+            )
+        except socket.timeout as e:
+            self._logger.error(f"Connection timeout after {timeout}s")
+            return ConnectionResult(
+                success=False,
+                message=f"Connection timeout after {timeout}s"
+            )
+        except socket.error as e:
+            self._logger.error(f"Network error: {str(e)}")
+            return ConnectionResult(
+                success=False,
+                message=f"Network error: {str(e)}"
             )
         except Exception as e:
             self._logger.error(f"Connection failed: {str(e)}")
@@ -160,15 +178,13 @@ class ParamikoClient(SSHClientInterface):
             )
             
             if background:
-                # 后台执行：不等待命令完成，立即返回
                 self._logger.info(f"Command started in background: {command}")
                 return CommandResult(
-                    stdout=f"Command started in background (PID: {stdout.channel.pid})",
+                    stdout=f"Command started in background",
                     stderr="",
                     return_code=0
                 )
             
-            # 前台执行：等待命令完成
             return_code = stdout.channel.recv_exit_status()
             stdout_data = stdout.read().decode('utf-8', errors='replace')
             stderr_data = stderr.read().decode('utf-8', errors='replace')
@@ -179,6 +195,20 @@ class ParamikoClient(SSHClientInterface):
                 return_code=return_code
             )
             
+        except SSHException as e:
+            self._logger.error(f"SSH error during command execution: {str(e)}")
+            raise CommandExecutionException(
+                f"SSH error: {str(e)}",
+                command=command,
+                original_error=e
+            )
+        except socket.timeout as e:
+            self._logger.error(f"Command execution timeout after {timeout}s")
+            raise CommandExecutionException(
+                f"Command execution timeout after {timeout}s",
+                command=command,
+                original_error=e
+            )
         except Exception as e:
             self._logger.error(f"Command execution failed: {str(e)}")
             raise CommandExecutionException(
@@ -202,10 +232,18 @@ class ParamikoClient(SSHClientInterface):
                 command=command
             )
         
-        stdin, stdout, stderr = self.client.exec_command(command)
-        
-        for line in stdout:
-            yield line.decode('utf-8', errors='replace')
+        try:
+            stdin, stdout, stderr = self.client.exec_command(command)
+            
+            for line in stdout:
+                yield line.decode('utf-8', errors='replace')
+        except Exception as e:
+            self._logger.error(f"Stream command execution failed: {str(e)}")
+            raise CommandExecutionException(
+                f"Failed to execute streaming command: {str(e)}",
+                command=command,
+                original_error=e
+            )
     
     def upload_file(self, local_path: str, remote_path: str) -> FileTransferResult:
         """上传文件
