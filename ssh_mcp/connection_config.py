@@ -45,6 +45,22 @@ class ConnectionConfig(BaseModel):
         description="优先使用密钥认证（忽略密码）"
     )
     
+    # 🔒 Host Key 安全配置
+    known_hosts_path: Optional[Path] = Field(
+        default=None,
+        description="已知主机密钥文件路径 (默认: ~/.ssh/known_hosts)"
+    )
+    strict_host_key_checking: bool = Field(
+        default=True,
+        description="是否启用严格主机密钥验证 (生产环境必须开启)"
+    )
+    # ⚠️ 仅在测试环境使用：跳过主机密钥验证（等同于 MITM 攻击）
+    # 设置为 True 时会接受任意主机密钥，请仅在可控环境中使用
+    accept_new_host_key: bool = Field(
+        default=False,
+        description="⚠️ 危险：是否自动接受新主机密钥 (默认 False). 仅测试环境使用"
+    )
+    
     @field_validator("port")
     @classmethod
     def validate_port(cls, v: int) -> int:

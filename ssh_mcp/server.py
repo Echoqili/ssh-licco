@@ -14,6 +14,7 @@ from .connection_config import ConnectionConfig
 from .session_manager import SessionManager, SessionInfo
 from .key_manager import KeyManager
 from .config_manager import ConfigManager, SSHConfig, SSHHost
+from .audit_logger import get_audit_logger
 
 try:
     __version__ = get_version("ssh-licco")
@@ -31,6 +32,17 @@ class SSHMCPServer:
         self.config_manager = ConfigManager()
         self._env_config = self._load_env_config()
         self._logger = logger
+        # 🔒 审计日志：初始化
+        import os
+        audit_path = os.getenv("SSH_AUDIT_LOG_PATH")
+        self._audit = get_audit_logger(audit_path) if audit_path else None
+        
+        # 🔒 频率限制：防止 DoS 攻击（环境变量配置）
+        self._rate_limit_enabled = os.getenv("SSH_RATE_LIMIT", "true").lower() == "true"
+        self._rate_limit_max = int(os.getenv("SSH_RATE_LIMIT_MAX", "30"))  # 每时间窗口最大请求数
+        self._rate_limit_window = int(os.getenv("SSH_RATE_LIMIT_WINDOW", "60"))  # 时间窗口（秒）
+        self._command_timestamps: list[float] = []  # 命令执行时间戳记录
+        
         self._setup_handlers()
     
     def _load_env_config(self) -> dict:
@@ -49,6 +61,28 @@ class SSHMCPServer:
             config["force_env_config"] = os.getenv("SSH_FORCE_ENV_CONFIG", "false").lower() == "true"
         return config
 
+    def _check_rate_limit(self) -> tuple[bool, str]:
+        """🔒 频率限制检查（滑动窗口算法）"""
+        if not self._rate_limit_enabled:
+            return True, ""
+        
+        import time
+        now = time.time()
+        window_start = now - self._rate_limit_window
+        
+        # 清理过期的请求记录
+        self._command_timestamps = [ts for ts in self._command_timestamps if ts > window_start]
+        
+        if len(self._command_timestamps) >= self._rate_limit_max:
+            return False, (
+                f"⚠️ 频率限制触发：超过 {self._rate_limit_max} 次请求/{self._rate_limit_window}秒\n"
+                f"请降低请求频率后重试。\n"
+                f"可通过环境变量 SSH_RATE_LIMIT=false 临时禁用限制。"
+            )
+        
+        self._command_timestamps.append(now)
+        return True, ""
+    
     def _setup_handlers(self):
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
@@ -92,7 +126,10 @@ class SSHMCPServer:
                             "passphrase": {"type": "string", "description": "Passphrase for private key"},
                             "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key"},
                             "name": {"type": "string", "description": "Connect using host from server.json by name"},
-                            "client_type": {"type": "string", "enum": ["asyncssh"], "default": "asyncssh", "description": "SSH client implementation to use (only asyncssh supported)"}
+                            "client_type": {"type": "string", "enum": ["asyncssh"], "default": "asyncssh", "description": "SSH client implementation to use (only asyncssh supported)"},
+                            "strict_host_key_checking": {"type": "boolean", "default": True, "description": "🔒 Enable strict host key verification (recommended for production). If False, accepts any host key (MITM risk!)."},
+                            "known_hosts_path": {"type": "string", "description": "Path to known_hosts file (default: ~/.ssh/known_hosts)"},
+                            "accept_new_host_key": {"type": "boolean", "default": False, "description": "⚠️ DANGER: Auto-accept new host keys (testing only). Enables MITM attacks if set to true."}
                         }
                     }
                 ),
@@ -276,6 +313,11 @@ class SSHMCPServer:
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: Any) -> list[TextContent]:
+            # 🔒 频率限制检查
+            allowed, msg = self._check_rate_limit()
+            if not allowed:
+                return [TextContent(type="text", text=msg)]
+            
             try:
                 if name == "ssh_config":
                     return await self._handle_config(arguments)
@@ -527,7 +569,10 @@ class SSHMCPServer:
                 timeout=host_config.timeout,
                 keepalive_interval=getattr(host_config, 'keepalive_interval', 30),
                 session_timeout=getattr(host_config, 'session_timeout', 7200),
-                client_type=client_type
+                client_type=client_type,
+                strict_host_key_checking=args.get("strict_host_key_checking", True),
+                known_hosts_path=args.get("known_hosts_path"),
+                accept_new_host_key=args.get("accept_new_host_key", False),
             )
         else:
             # Use direct parameters from args
@@ -542,11 +587,25 @@ class SSHMCPServer:
                 timeout=args.get("timeout", 30),
                 keepalive_interval=args.get("keepalive_interval", 30),
                 session_timeout=args.get("session_timeout", 7200),
-                client_type=client_type
+                client_type=client_type,
+                strict_host_key_checking=args.get("strict_host_key_checking", True),
+                known_hosts_path=args.get("known_hosts_path"),
+                accept_new_host_key=args.get("accept_new_host_key", False),
             )
         
         try:
             session_info = await self.session_manager.create_session(config)
+            
+            # 🔒 审计日志：记录连接成功
+            if self._audit:
+                self._audit.log_connect(
+                    username=config.username,
+                    host=config.host,
+                    port=config.port,
+                    client_type=config.client_type,
+                    session_id=session_info.session_id,
+                    success=True
+                )
             
             return [TextContent(
                 type="text",
@@ -559,6 +618,18 @@ class SSHMCPServer:
             )]
         except Exception as e:
             self._logger.error(f"Connection failed: {e}")
+            
+            # 🔒 审计日志：记录连接失败
+            if self._audit:
+                self._audit.log_connect(
+                    username=config.username,
+                    host=config.host,
+                    port=config.port,
+                    client_type=config.client_type,
+                    success=False,
+                    error_message=str(e)
+                )
+            
             return [TextContent(
                 type="text",
                 text=f"❌ 连接失败：{str(e)}\n\n"
@@ -656,6 +727,22 @@ class SSHMCPServer:
             self._logger.info(f"Auto-detected background={background} for command: {command[:50]}...")
         
         result = await session.execute_command(args["command"], timeout=timeout, background=background)
+        
+        # 🔒 审计日志：记录命令执行
+        if self._audit:
+            import time
+            exec_time = (time.time() - (args.get('_start_time') or time.time())) * 1000
+            session_info = await self.session_manager.get_session(args["session_id"])
+            self._audit.log_command(
+                username=session_info.username if session_info else "unknown",
+                host=session_info.host if session_info else "unknown",
+                command=args["command"],
+                return_code=result.get('exit_code', -1),
+                stdout_length=len(result.get('stdout', '')),
+                stderr_length=len(result.get('stderr', '')),
+                session_id=args["session_id"],
+                execution_time_ms=exec_time
+            )
         
         if background:
             output = f"✅ Command started in background\n\n{result['stdout']}"
@@ -999,8 +1086,8 @@ class SSHMCPServer:
                         if host.password and env_password and host.password != env_password:
                             output += f"  ❌ 发现密码冲突!\n"
                             output += f"     主机：{host.host}\n"
-                            output += f"     MCP 配置密码：{'***'} ({len(env_password)} 字符)\n"
-                            output += f"     hosts.json 密码：{'***'} ({len(host.password)} 字符)\n"
+                            output += f"     MCP 配置密码：{'已设置'} (已脱敏)\n"
+                            output += f"     hosts.json 密码：{'已设置'} (已脱敏)\n"
                             output += f"  💡 建议：统一两个配置文件中的密码，或使用 SSH_FORCE_ENV_CONFIG=true 强制使用环境变量\n"
                             conflict_found = True
                             break
@@ -1313,6 +1400,7 @@ Use this command to check again:
 
     async def _handle_docker_status(self, args: dict) -> list[TextContent]:
         """Check Docker build and container status"""
+        from .security import SecurityError, command_validator
         
         session_id = args.get("session_id")
         image_name = args.get("image_name")
@@ -1331,6 +1419,11 @@ Use this command to check again:
             
             # Check images if requested
             if image_name:
+                # 🔒 安全验证：镜像名称格式检查
+                import re
+                if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_./:-]*$', image_name):
+                    return [TextContent(type="text", text=f"❌ 无效的镜像名称：{image_name}")]
+                
                 images_cmd = f"docker images {image_name} --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
                 images_result = await self.session_manager.execute_command(session_id, images_cmd, timeout=10)
                 output += "\n--- Docker Images ---\n"
@@ -1349,6 +1442,7 @@ Use this command to check again:
     
     async def _handle_execute_wait(self, args: dict) -> list[TextContent]:
         """Execute a command and wait for completion with timeout"""
+        from .security import SecurityError, command_validator
         
         session_id = args.get("session_id")
         command = args.get("command")
@@ -1356,6 +1450,16 @@ Use this command to check again:
         
         if not session_id or not command:
             return [TextContent(type="text", text="Error: session_id and command are required")]
+        
+        # 🔒 安全验证 - 防止命令注入
+        try:
+            command_validator.validate_command(command)
+        except SecurityError as e:
+            self._logger.error(f"Command blocked in execute_wait: {e}")
+            return [TextContent(
+                type="text",
+                text=f"🛑 **命令被安全策略阻止**\n\n**被阻止的命令**: `{command}`\n**原因**: {str(e)}\n\n当前安全级别：`{os.getenv('SSH_SECURITY_LEVEL', 'balanced')}`"
+            )]
         
         try:
             self._logger.info(f"Executing command: {command} (timeout: {timeout}s)")
@@ -1392,6 +1496,7 @@ Use this command to check again:
     
     async def _handle_container_logs(self, args: dict) -> list[TextContent]:
         """Get Docker container logs with automatic tail"""
+        from .security import SecurityError, command_validator
         
         session_id = args.get("session_id")
         container_name = args.get("container_name")
@@ -1400,6 +1505,11 @@ Use this command to check again:
         
         if not session_id or not container_name:
             return [TextContent(type="text", text="Error: session_id and container_name are required")]
+        
+        # 🔒 安全验证：容器名称白名单检查
+        import re
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', container_name):
+            return [TextContent(type="text", text=f"❌ 无效的容器名称：{container_name}")]
         
         try:
             # Build the logs command

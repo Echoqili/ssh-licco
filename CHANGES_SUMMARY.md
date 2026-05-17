@@ -1,3 +1,59 @@
+# SSH-Licco v0.5.2 安全加固
+
+**版本**: v0.5.2  
+**日期**: 2026-05-17  
+**状态**: 🔒 安全加固提交（待发布）
+
+---
+
+## 🔒 安全改进
+
+### 高风险修复
+
+| # | 漏洞 | 修复文件 | 措施 |
+|---|------|----------|------|
+| 1 | MITM 攻击（主机密钥绕过） | `session_manager.py` | 替换 `AutoAddPolicy` 为 `RejectPolicy`，默认启用严格主机密钥验证 |
+| 2 | 命令注入绕过 | `server.py` | 补全 `ssh_execute_wait`、`ssh_container_logs`、`ssh_docker_status` 的命令验证 |
+| 3 | 本地文件路径遍历 | `session_manager.py` | `upload_file`/`download_file` 添加路径验证 |
+| 4 | 密码长度信息泄露 | `server.py` | 移除 `ssh_list_hosts` 中的密码长度输出 |
+
+### 中风险修复
+
+| # | 问题 | 修复文件 | 措施 |
+|---|------|----------|------|
+| 5 | 无会话并发限制 | `session_manager.py` | 添加 `MAX_SESSIONS=10`、`MAX_SESSIONS_PER_HOST=3` 限制 |
+| 6 | 线程池资源耗尽 | `executor.py` | `max_workers` 上限从 `CPU*5` 限制为 `min(CPU*5, 20)` |
+| 7 | 无敏感操作审计 | `server.py` | 集成 `audit_logger.py`，记录连接/命令/传输事件 |
+| 8 | 无频率限制 | `server.py` | 添加滑动窗口 DoS 防护（默认 30次/60秒） |
+
+### 新增安全配置选项
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "strict",           // strict/balanced/relaxed
+        "SSH_RATE_LIMIT": "true",                 // 启用频率限制
+        "SSH_RATE_LIMIT_MAX": "30",               // 每窗口最大请求数
+        "SSH_RATE_LIMIT_WINDOW": "60",             // 时间窗口（秒）
+        "SSH_AUDIT_LOG_PATH": "/var/log/ssh-audit.json",  // 审计日志路径
+        "SSH_STRICT_HOST_KEY": "true"              // 严格主机密钥验证
+      }
+    }
+  }
+}
+```
+
+### 新增 ssh_connect 工具参数
+
+- `strict_host_key_checking` - 启用严格主机密钥验证（默认 True）
+- `known_hosts_path` - 指定 known_hosts 文件路径
+- `accept_new_host_key` - ⚠️ 危险：自动接受新主机密钥（仅测试用）
+
+---
+
 # SSH-Licco v0.5.0 发布总结
 
 ## 🎉 发布成功！

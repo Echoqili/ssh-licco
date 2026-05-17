@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import os
 from typing import Optional, AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -9,7 +10,8 @@ from enum import Enum
 import uuid
 
 import paramiko
-from paramiko import SSHClient, AutoAddPolicy, SFTPClient
+from paramiko import SSHClient, AutoAddPolicy, SFTPClient, HostKeys, RejectPolicy, WarningPolicy
+from pathlib import Path
 
 from .connection_config import ConnectionConfig
 from .executor import get_executor
@@ -80,7 +82,30 @@ class SSHSession:
 
     def _connect_sync(self) -> None:
         self.client = SSHClient()
-        self.client.set_missing_host_key_policy(AutoAddPolicy())
+        
+        # 🔒 主机密钥验证策略（修复 MITM 漏洞）
+        if self.config.accept_new_host_key:
+            # ⚠️ 测试模式：自动接受新主机密钥（仅用于开发/测试）
+            self.client.set_missing_host_key_policy(AutoAddPolicy())
+        elif self.config.strict_host_key_checking:
+            # 🔒 严格模式：使用已知主机密钥文件验证
+            host_keys = HostKeys()
+            
+            # 优先使用配置的 known_hosts 路径
+            if self.config.known_hosts_path:
+                known_hosts_file = Path(os.path.expanduser(str(self.config.known_hosts_path)))
+            else:
+                # 默认使用 ~/.ssh/known_hosts
+                known_hosts_file = Path.home() / ".ssh" / "known_hosts"
+            
+            if known_hosts_file.exists():
+                host_keys.load(str(known_hosts_file))
+            
+            self.client.get_host_keys().update(host_keys)
+            self.client.set_missing_host_key_policy(RejectPolicy())
+        else:
+            # 宽松模式：使用警告策略
+            self.client.set_missing_host_key_policy(WarningPolicy())
         
         connect_kwargs = {
             'hostname': self.config.host,
@@ -233,6 +258,17 @@ class SSHSession:
     async def upload_file(self, local_path: str, remote_path: str) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
+        
+        # 🔒 安全验证：本地路径验证（防止路径遍历）
+        try:
+            from .security import path_validator, SecurityError
+            safe_local = path_validator.validate_path(local_path)
+        except (ImportError, SecurityError):
+            # 如果 security 模块不可用或路径验证失败，使用基础安全检查
+            import re
+            if '..' in local_path or local_path.startswith('~'):
+                return {"success": False, "message": "Invalid local path: path traversal detected", "session_id": self.session_id}
+        
         async with self._connect_lock:
             self._last_activity = datetime.now()
             return await self._executor.submit(
@@ -253,6 +289,16 @@ class SSHSession:
     async def download_file(self, remote_path: str, local_path: str) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
+        
+        # 🔒 安全验证：下载目标路径验证（防止写入到禁止目录）
+        try:
+            from .security import path_validator, SecurityError
+            safe_local = path_validator.validate_path(local_path)
+        except (ImportError, SecurityError):
+            import re
+            if '..' in local_path or local_path.startswith('~'):
+                return {"success": False, "message": "Invalid local path: path traversal detected", "session_id": self.session_id}
+        
         async with self._connect_lock:
             self._last_activity = datetime.now()
             return await self._executor.submit(
@@ -315,12 +361,17 @@ class SSHSession:
 
 
 class SessionManager:
+    # 🔒 安全限制：最大并发会话数（防止资源耗尽 DoS）
+    MAX_SESSIONS = 10
+    MAX_SESSIONS_PER_HOST = 3  # 每个主机最多 3 个并发会话
+    
     def __init__(self):
         self._sessions: dict[str, SSHSession] = {}
         self._lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
         self._timeout_cleanup_task: Optional[asyncio.Task] = None
         self._start_timeout_cleanup()
+        self._session_counter = 0  # 用于统计和限制
 
     def _start_timeout_cleanup(self):
         async def cleanup_loop():
@@ -357,9 +408,26 @@ class SessionManager:
 
     async def create_session(self, config: ConnectionConfig) -> SessionInfo:
         async with self._lock:
+            # 🔒 安全检查：会话并发数限制
+            if len(self._sessions) >= self.MAX_SESSIONS:
+                raise ConnectionException(
+                    f"达到最大会话数限制 ({self.MAX_SESSIONS})，请先关闭一些会话"
+                )
+            
+            # 🔒 安全检查：每个主机会话数限制
+            host_sessions = sum(
+                1 for s in self._sessions.values()
+                if s.config.host == config.host
+            )
+            if host_sessions >= self.MAX_SESSIONS_PER_HOST:
+                raise ConnectionException(
+                    f"主机 {config.host} 已达到最大会话数限制 ({self.MAX_SESSIONS_PER_HOST})"
+                )
+            
             session = SSHSession(config)
             session_info = await session.connect()
             self._sessions[session.session_id] = session
+            self._session_counter += 1
             return session_info
 
     async def get_session(self, session_id: str) -> Optional[SSHSession]:

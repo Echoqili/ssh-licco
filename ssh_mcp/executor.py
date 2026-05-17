@@ -8,8 +8,11 @@ from typing import Any, Callable, Optional, TypeVar
 from functools import wraps
 
 def _default_max_workers() -> int:
-    """获取默认最大工作线程数"""
-    return (os.cpu_count() or 4) * 5
+    """获取默认最大工作线程数（限制上限防止资源耗尽）"""
+    import os
+    cpu_count = os.cpu_count() or 4
+    # 限制最大线程数：CPU * 5，上限 20
+    return min(cpu_count * 5, 20)
 
 T = TypeVar('T')
 
