@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "ssh-licco": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "your-server-ip",
+        "SSH_PORT": "22",
+        "SSH_USER": "your-username",
+        "SSH_PASSWORD": "your-password",
+        "SSH_SECURITY_LEVEL": "balanced",
+        "SSH_EXTRA_ALLOWED_COMMANDS": "git,docker,npm,pip",
+        "SSH_BASE_DIR": "/home",
+        "SSH_STRICT_HOST_KEY_CHECKING": "true",
+        "SSH_RATE_LIMIT": "30",
+        "SSH_RATE_LIMIT_WINDOW": "60"
+      }
+    }
+  }
+}
