@@ -1,0 +1,7 @@
+{
+  "host": "your-server-ip",
+  "port": 22,
+  "username": "your-username",
+  "password": "your-password",
+  "timeout": 30
+}

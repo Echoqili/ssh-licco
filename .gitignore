@@ -104,6 +104,7 @@ PUSH_SUCCESS.md
 
 # Temporary config
 server.json
+config/ssh-hosts.json
 
 # Workflow skill (temporary)
 git-workflow-skill.md
