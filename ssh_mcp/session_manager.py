@@ -384,7 +384,11 @@ class SessionManager:
                 except Exception as e:
                     print(f"Session cleanup error: {e}")
         
-        self._timeout_cleanup_task = asyncio.create_task(cleanup_loop())
+        try:
+            loop = asyncio.get_running_loop()
+            self._timeout_cleanup_task = loop.create_task(cleanup_loop())
+        except RuntimeError:
+            self._timeout_cleanup_task = None
 
     async def _cleanup_timeout_sessions(self):
         async with self._lock:
