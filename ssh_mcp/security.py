@@ -29,44 +29,79 @@ class CommandValidator:
     # 基础允许的命令白名单（所有模式都允许）
     BASE_ALLOWED_COMMANDS: Set[str] = {
         # Shell
-        'bash', 'sh', 'zsh', 'csh', 'tcsh', 'ksh',
+        'bash', 'sh', 'zsh', 'csh', 'tcsh', 'ksh', 'dash',
         
         # 基础命令
         'ls', 'dir', 'cd', 'pwd', 'cat', 'head', 'tail', 'less', 'more',
-        'grep', 'find', 'which', 'whereis',
+        'grep', 'egrep', 'fgrep', 'find', 'which', 'whereis', 'type',
         
         # 系统信息
-        'uname', 'hostname', 'whoami', 'uptime', 'date', 'cal',
-        'top', 'htop', 'ps', 'free', 'df', 'du',
+        'uname', 'hostname', 'whoami', 'id', 'uptime', 'date', 'cal',
+        'top', 'htop', 'ps', 'free', 'df', 'du', 'vmstat', 'iostat', 'mpstat',
         
         # 网络
-        'ping', 'netstat', 'ss', 'dig', 'nslookup',
+        'ping', 'ping6', 'netstat', 'ss', 'dig', 'nslookup', 'host',
+        'nc', 'telnet', 'traceroute', 'mtr',
         
         # 文件操作
-        'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod', 'chown',
-        'ln', 'tar', 'gzip', 'zip', 'unzip',
+        'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod', 'chown', 'chgrp',
+        'ln', 'tar', 'gzip', 'gunzip', 'bzip2', 'bzcat', 'zip', 'unzip',
+        'rsync', 'scp', 'sftp', 'rsync',
         
         # 文本处理
         'echo', 'printf', 'sed', 'awk', 'cut', 'sort', 'uniq', 'wc',
+        'tr', 'nl', 'fmt', 'fold', 'paste', 'join',
         
-        # Docker
-        'docker', 'docker-compose',
+        # Docker & Container
+        'docker', 'docker-compose', 'docker-compose-v2', 'podman', 'containerd', 'runc',
         
         # 系统管理
-        'systemctl', 'journalctl', 'service',
+        'systemctl', 'journalctl', 'service', 'init', 'reboot', 'shutdown', 'poweroff',
+        
+        # 开发工具
+        'git', 'git-lfs', 'svn', 'hg', 'make', 'cmake', 'autoconf', 'automake',
+        'gcc', 'g++', 'clang', 'rustc', 'cargo', 'go', 'npm', 'yarn', 'npx',
+        'python', 'python3', 'pip', 'pip3', 'node', 'nodejs', 'java', 'javac',
+        'mvn', 'gradle', 'dotnet', 'csharp', 'ruby', 'rails', 'bundle',
+        
+        # 包管理
+        'apt-get', 'apt', 'apt-cache', 'apt-key', 'dpkg', 'dpkg-deb',
+        'yum', 'dnf', 'rpm', 'dnf-yum',
+        'pacman', 'makepkg',
+        'brew', 'port',
+        
+        # 文本编辑器
+        'vim', 'vi', 'nano', 'emacs', 'nedit', 'pico', 'joe',
+        
+        # 进程管理
+        'kill', 'pkill', 'killall', 'nice', 'renice', 'bg', 'fg', 'jobs',
+        
+        # 安全工具
+        'chpasswd', 'passwd', 'openssl', 'gpg', 'ssh-keygen', 'ssh-agent',
+        
+        # 实用工具
+        'wget', 'curl', 'httpie', 'jq', 'curlftpfs', 'ncftp',
+        
+        # 数据库
+        'mysql', 'mysqladmin', 'mysqldump', 'psql', 'pg_dump', 'pg_restore',
+        'mongosh', 'mongodump', 'mongorestore', 'redis-cli', 'redis-server',
+        
+        # 监控工具
+        'prometheus', 'grafana-server', 'telegraf', 'influxd', 'zabbix', 'nagios',
     }
     
     # 扩展命令（仅在 relaxed 模式允许）
     EXTENDED_COMMANDS: Set[str] = {
-        'sudo', 'su',
-        'wget', 'curl',
-        'apt-get', 'apt', 'yum', 'dnf', 'pacman',
-        'pip', 'pip3', 'npm', 'yarn',
-        'git', 'svn',
-        'python3', 'python', 'node', 'java',
-        'vim', 'vi', 'nano', 'emacs',
-        'ssh', 'scp', 'rsync',
-        'kill', 'pkill', 'killall',
+        'sudo', 'su', 'doas',
+        'rm', 'rmdir',
+        'shutdown', 'reboot', 'poweroff', 'halt',
+        'chmod', 'chown', 'chgrp',
+        'mount', 'umount', 'fsck', 'mkfs',
+        'dd', 'fdisk', 'parted', 'lvcreate', 'vgcreate',
+        'useradd', 'userdel', 'groupadd', 'groupdel',
+        'setfacl', 'getfacl', 'chcon', 'restorecon',
+        'iptables', 'ip6tables', 'firewalld', 'ufw',
+        'systemctl', 'service',
     }
     
     # 危险字符模式（strict 模式检查）

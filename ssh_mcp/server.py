@@ -89,53 +89,53 @@ class SSHMCPServer:
             return [
                 Tool(
                     name="ssh_config",
-                    description="Configure SSH connection (host, port, username, password). Save to config file for easy login.",
+                    description="Configure and save SSH connection settings (host, port, username, password) to local config file. Use this when you need to set up default SSH credentials for quick login without repeatedly entering connection details.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "host": {"type": "string", "description": "SSH server IP or hostname", "default": "127.0.0.1"},
-                            "port": {"type": "integer", "description": "SSH server port", "default": 22},
-                            "username": {"type": "string", "description": "SSH username", "default": "root"},
-                            "password": {"type": "string", "description": "SSH password"},
-                            "timeout": {"type": "integer", "description": "Connection timeout (seconds)", "default": 30}
+                            "host": {"type": "string", "description": "SSH server IP address or hostname", "default": "127.0.0.1"},
+                            "port": {"type": "integer", "description": "SSH server port number", "default": 22},
+                            "username": {"type": "string", "description": "SSH login username", "default": "root"},
+                            "password": {"type": "string", "description": "SSH login password (required)"},
+                            "timeout": {"type": "integer", "description": "Connection timeout in seconds", "default": 30}
                         },
                         "required": ["password"]
                     }
                 ),
                 Tool(
                     name="ssh_login",
-                    description="Login to SSH server using saved configuration (no parameters needed if config exists)",
+                    description="Quick login to SSH server using pre-saved configuration from ssh_config or MCP environment variables. Use this for simple, one-step login without specifying connection details. Optionally execute a command after login.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "command": {"type": "string", "description": "Command to execute after login (optional)"}
+                            "command": {"type": "string", "description": "Optional command to execute immediately after successful login"}
                         }
                     }
                 ),
                 Tool(
                     name="ssh_connect",
-                    description="Establish an SSH connection to a remote server",
+                    description="Establish a new SSH connection to a remote server with explicit parameters. Use this when you need full control over connection settings (password/private key authentication, host key verification, etc.). Returns a session_id for subsequent commands.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "host": {"type": "string", "description": "SSH server hostname or IP (or use name to connect via server.json config)"},
-                            "port": {"type": "integer", "description": "SSH server port (default: 22)", "default": 22},
-                            "username": {"type": "string", "description": "SSH username"},
-                            "password": {"type": "string", "description": "SSH password (optional if using key auth). ⚠️ Do NOT use the default value, enter your actual password!"},
-                            "private_key_path": {"type": "string", "description": "Path to private key file"},
-                            "passphrase": {"type": "string", "description": "Passphrase for private key"},
-                            "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key"},
-                            "name": {"type": "string", "description": "Connect using host from server.json by name"},
-                            "client_type": {"type": "string", "enum": ["asyncssh"], "default": "asyncssh", "description": "SSH client implementation to use (only asyncssh supported)"},
-                            "strict_host_key_checking": {"type": "boolean", "default": True, "description": "🔒 Enable strict host key verification (recommended for production). If False, accepts any host key (MITM risk!)."},
-                            "known_hosts_path": {"type": "string", "description": "Path to known_hosts file (default: ~/.ssh/known_hosts)"},
-                            "accept_new_host_key": {"type": "boolean", "default": False, "description": "⚠️ DANGER: Auto-accept new host keys (testing only). Enables MITM attacks if set to true."}
+                            "host": {"type": "string", "description": "SSH server hostname or IP address (required unless 'name' is provided)"},
+                            "port": {"type": "integer", "description": "SSH server port", "default": 22},
+                            "username": {"type": "string", "description": "SSH username for authentication"},
+                            "password": {"type": "string", "description": "SSH password for password-based authentication"},
+                            "private_key_path": {"type": "string", "description": "Path to private key file for key-based authentication"},
+                            "passphrase": {"type": "string", "description": "Passphrase for encrypted private key"},
+                            "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key", "description": "Authentication method to use"},
+                            "name": {"type": "string", "description": "Use pre-configured host from hosts.json by name"},
+                            "client_type": {"type": "string", "enum": ["asyncssh"], "default": "asyncssh", "description": "SSH client implementation"},
+                            "strict_host_key_checking": {"type": "boolean", "default": True, "description": "Enable strict host key verification (recommended for security)"},
+                            "known_hosts_path": {"type": "string", "description": "Path to known_hosts file"},
+                            "accept_new_host_key": {"type": "boolean", "default": False, "description": "Auto-accept new host keys (for testing only)"}
                         }
                     }
                 ),
                 Tool(
                     name="ssh_list_hosts",
-                    description="List all configured SSH hosts from server.json",
+                    description="List all configured SSH hosts from hosts.json and MCP environment variables. Also shows password conflict detection results between different config sources.",
                     inputSchema={
                         "type": "object",
                         "properties": {}
@@ -143,32 +143,32 @@ class SSHMCPServer:
                 ),
                 Tool(
                     name="ssh_execute",
-                    description="Execute a command on an active SSH session. Use background=True for long-running services (web servers, etc.)",
+                    description="Execute a command on an active SSH session. Requires session_id from ssh_connect. Use background=True for long-running services like web servers that don't terminate immediately.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
-                            "command": {"type": "string", "description": "Command to execute"},
+                            "session_id": {"type": "string", "description": "Session ID obtained from ssh_connect or ssh_login (required)"},
+                            "command": {"type": "string", "description": "Shell command to execute on remote server (required)"},
                             "timeout": {"type": "integer", "description": "Command timeout in seconds", "default": 30},
-                            "background": {"type": "boolean", "description": "Run in background (don't wait for completion, useful for services)", "default": False}
+                            "background": {"type": "boolean", "description": "Run command in background without waiting for completion", "default": False}
                         },
                         "required": ["session_id", "command"]
                     }
                 ),
                 Tool(
                     name="ssh_disconnect",
-                    description="Close an SSH session",
+                    description="Close an active SSH session and release resources. Use this when finished working with a remote server to clean up connections.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID to close"}
+                            "session_id": {"type": "string", "description": "Session ID to disconnect (required)"}
                         },
                         "required": ["session_id"]
                     }
                 ),
                 Tool(
                     name="ssh_list_sessions",
-                    description="List all active SSH sessions",
+                    description="List all currently active SSH sessions with connection details including host, username, connection time, and activity status.",
                     inputSchema={
                         "type": "object",
                         "properties": {}
@@ -176,135 +176,135 @@ class SSHMCPServer:
                 ),
                 Tool(
                     name="ssh_generate_key",
-                    description="Generate a new SSH key pair",
+                    description="Generate a new SSH key pair (RSA or Ed25519) for secure key-based authentication. Optionally save to a file path.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "key_type": {"type": "string", "enum": ["rsa", "ed25519"], "default": "ed25519"},
+                            "key_type": {"type": "string", "enum": ["rsa", "ed25519"], "default": "ed25519", "description": "Key algorithm type"},
                             "key_size": {"type": "integer", "description": "Key size for RSA (default: 4096)", "default": 4096},
-                            "comment": {"type": "string", "description": "Comment for the key"},
-                            "save_path": {"type": "string", "description": "Path to save the key"}
+                            "comment": {"type": "string", "description": "Optional comment to identify the key"},
+                            "save_path": {"type": "string", "description": "Optional path to save the generated key files"}
                         }
                     }
                 ),
                 Tool(
                     name="ssh_file_transfer",
-                    description="Transfer files via SFTP",
+                    description="Transfer files between local and remote server via SFTP. Supports upload (local to remote) and download (remote to local) operations.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID"},
-                            "local_path": {"type": "string", "description": "Local file path"},
-                            "remote_path": {"type": "string", "description": "Remote file path"},
-                            "direction": {"type": "string", "enum": ["upload", "download"], "description": "Transfer direction"}
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)"},
+                            "local_path": {"type": "string", "description": "Local file path (required)"},
+                            "remote_path": {"type": "string", "description": "Remote file path (required)"},
+                            "direction": {"type": "string", "enum": ["upload", "download"], "description": "Transfer direction (required)"}
                         },
                         "required": ["session_id", "local_path", "remote_path", "direction"]
                     }
                 ),
                 Tool(
                     name="ssh_background_task",
-                    description="Execute long-running commands (like Docker build) in background with optional status polling. Use wait=True to wait for completion.",
+                    description="Execute long-running commands (like Docker build, compilation, or deployment) in background with status polling. Returns a task_id for monitoring progress. Use wait=True to block and wait for completion.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
-                            "command": {"type": "string", "description": "Command to execute in background (e.g., docker build)"},
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)"},
+                            "command": {"type": "string", "description": "Command to execute in background (required)"},
                             "workdir": {"type": "string", "description": "Working directory for the command", "default": "/tmp"},
-                            "log_file": {"type": "string", "description": "Log file path", "default": "/tmp/background_task.log"},
-                            "wait": {"type": "boolean", "description": "Wait for task completion and return output (default: False)", "default": False},
-                            "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True (default: 60)", "default": 60}
+                            "log_file": {"type": "string", "description": "Path to log file for capturing output", "default": "/tmp/background_task.log"},
+                            "wait": {"type": "boolean", "description": "Wait for task completion and return full output", "default": False},
+                            "wait_timeout": {"type": "integer", "description": "Maximum wait time in seconds when wait=True", "default": 60}
                         },
                         "required": ["session_id", "command"]
                     }
                 ),
                 Tool(
                     name="ssh_task_status",
-                    description="Check status of background task (like Docker build progress)",
+                    description="Check the status and progress of a background task. Returns task state (running/completed/failed) and log output.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
-                            "task_id": {"type": "string", "description": "Task ID returned from ssh_background_task"}
+                            "session_id": {"type": "string", "description": "SSH session ID (required)"},
+                            "task_id": {"type": "string", "description": "Task ID from ssh_background_task (required)"}
                         },
                         "required": ["session_id", "task_id"]
                     }
                 ),
                 Tool(
                     name="ssh_docker_build",
-                    description="Build Docker image on remote server in background (solves timeout issues)",
+                    description="Build Docker image on remote server in background mode to avoid timeout issues. Returns a task_id for monitoring build progress.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
-                            "dockerfile_path": {"type": "string", "description": "Path to Dockerfile (default: ./Dockerfile)", "default": "./Dockerfile"},
-                            "image_name": {"type": "string", "description": "Docker image name and tag (e.g., myapp:latest)"},
-                            "context": {"type": "string", "description": "Build context path (default: .)", "default": "."}
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)"},
+                            "dockerfile_path": {"type": "string", "description": "Path to Dockerfile", "default": "./Dockerfile"},
+                            "image_name": {"type": "string", "description": "Docker image name and tag (e.g., myapp:latest) (required)"},
+                            "context": {"type": "string", "description": "Build context directory", "default": "."}
                         },
                         "required": ["session_id", "image_name"]
                     }
                 ),
                 Tool(
                     name="ssh_docker_status",
-                    description="Check Docker build or container status on remote server",
+                    description="Check Docker image build status or list Docker containers and images on remote server.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
-                            "image_name": {"type": "string", "description": "Docker image name to check (optional)"}
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)"},
+                            "image_name": {"type": "string", "description": "Optional Docker image name to check"}
                         },
                         "required": ["session_id"]
                     }
                 ),
                 Tool(
                     name="ssh_execute_wait",
-                    description="Execute a command and wait for completion with timeout. Better than ssh_execute for medium-length tasks (5-60 seconds).",
+                    description="Execute a command and wait for completion with configurable timeout. Ideal for medium-length tasks (5-60 seconds) that need to complete before proceeding.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
-                            "command": {"type": "string", "description": "Command to execute"},
-                            "timeout": {"type": "integer", "description": "Max wait time in seconds (default: 60)", "default": 60}
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)"},
+                            "command": {"type": "string", "description": "Command to execute (required)"},
+                            "timeout": {"type": "integer", "description": "Maximum wait time in seconds", "default": 60}
                         },
                         "required": ["session_id", "command"]
                     }
                 ),
                 Tool(
                     name="ssh_container_logs",
-                    description="Get Docker container logs with automatic tail. Returns formatted logs for analysis.",
+                    description="Retrieve Docker container logs with automatic tailing. Returns formatted logs for debugging and analysis.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect"},
-                            "container_name": {"type": "string", "description": "Container name or ID"},
-                            "tail": {"type": "integer", "description": "Number of lines to show from the end (default: 100)", "default": 100},
-                            "since": {"type": "integer", "description": "Show logs since timestamp in seconds (optional)"}
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)"},
+                            "container_name": {"type": "string", "description": "Container name or ID (required)"},
+                            "tail": {"type": "integer", "description": "Number of lines to retrieve from the end", "default": 100},
+                            "since": {"type": "integer", "description": "Optional timestamp filter (show logs since this time)"}
                         },
                         "required": ["session_id", "container_name"]
                     }
                 ),
                 Tool(
                     name="ssh_add_host",
-                    description="Add a new SSH server to config/hosts.json (for managing multiple servers)",
+                    description="Add a new SSH server configuration to hosts.json file for easy management of multiple servers. Use ssh_connect with 'name' parameter to connect using this configuration.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "name": {"type": "string", "description": "Server name (e.g., 'production', 'dev-server')"},
-                            "host": {"type": "string", "description": "Server hostname or IP"},
-                            "port": {"type": "integer", "description": "SSH port", "default": 22},
-                            "username": {"type": "string", "description": "SSH username", "default": "root"},
-                            "password": {"type": "string", "description": "SSH password (optional)"},
-                            "timeout": {"type": "integer", "description": "Connection timeout", "default": 60}
+                            "name": {"type": "string", "description": "Friendly name for the server (e.g., 'production', 'dev-server') (required)"},
+                            "host": {"type": "string", "description": "Server hostname or IP address (required)"},
+                            "port": {"type": "integer", "description": "SSH port number", "default": 22},
+                            "username": {"type": "string", "description": "SSH login username", "default": "root"},
+                            "password": {"type": "string", "description": "SSH password (optional for key auth)"},
+                            "timeout": {"type": "integer", "description": "Connection timeout in seconds", "default": 60}
                         },
                         "required": ["name", "host"]
                     }
                 ),
                 Tool(
                     name="ssh_remove_host",
-                    description="Remove an SSH server from config/hosts.json by name",
+                    description="Remove an existing SSH server configuration from hosts.json by its friendly name.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "name": {"type": "string", "description": "Server name to remove"}
+                            "name": {"type": "string", "description": "Server name to remove (required)"}
                         },
                         "required": ["name"]
                     }
