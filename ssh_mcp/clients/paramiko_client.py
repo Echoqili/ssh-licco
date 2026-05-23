@@ -37,7 +37,6 @@ class ParamikoClient(SSHClientInterface):
         self.config = config
         self.client: SSHClient | None = None
         self._logger = get_logger(f"ParamikoClient.{config.host}")
-        self._connect_lock = paramiko.util.ThreadedIterator()
     
     @property
     def client_type(self) -> ClientType:
@@ -101,7 +100,6 @@ class ParamikoClient(SSHClientInterface):
             transport = self.client.get_transport()
             if transport:
                 transport.set_keepalive(self.config.keepalive_interval)
-                transport.set_hearbeat(self.config.keepalive_interval)
             
             latency_ms = (time.time() - start_time) * 1000
             
