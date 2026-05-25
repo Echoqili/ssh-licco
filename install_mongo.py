@@ -87,4 +87,7 @@ def install_mongodb():
     if result['stdout']:
         print(f"stdout:\n{result['stdout']}")
     if result['stderr']:
-        print(f
+        print(f"stderr:\n{result['stderr']}")
+
+if __name__ == "__main__":
+    install_mongodb()
