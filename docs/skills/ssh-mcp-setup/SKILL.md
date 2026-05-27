@@ -14,11 +14,8 @@ pip install ssh-licco
 
 ### From Source
 ```bash
-# Clone repository
 git clone https://github.com/Echoqili/ssh-licco.git
 cd ssh-licco
-
-# Install in development mode
 pip install -e . --user
 ```
 
@@ -26,6 +23,13 @@ pip install -e . --user
 ```bash
 pip install --upgrade ssh-licco
 ```
+
+## Requirements
+
+- **Python**: >=3.10, <3.14
+- **Core dependencies**: mcp>=1.0.0, asyncssh>=2.17.0, pydantic>=2.0.0, pydantic-settings>=2.0.0
+- **Key management**: cryptography (for SSH key generation)
+- **Optional**: paramiko (alternative SSH client)
 
 ## Trae IDE MCP Configuration
 
@@ -52,16 +56,21 @@ Add configuration:
         "SSH_USER": "root",
         "SSH_PASSWORD": "your_password",
         "SSH_PORT": "22",
-        "SSH_TIMEOUT": "120",
+        "SSH_TIMEOUT": "60",
         "SSH_KEEPALIVE_INTERVAL": "30",
-        "SSH_SESSION_TIMEOUT": "7200"
+        "SSH_SESSION_TIMEOUT": "7200",
+        "SSH_CLIENT_TYPE": "asyncssh",
+        "SSH_SECURITY_LEVEL": "balanced",
+        "SSH_RATE_LIMIT": "true"
       }
     }
   }
 }
 ```
 
-### Environment Variables
+## Environment Variables
+
+### Connection Settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -69,10 +78,23 @@ Add configuration:
 | SSH_PORT | 22 | SSH server port |
 | SSH_USER | root | SSH username |
 | SSH_PASSWORD | - | SSH password |
-| SSH_TIMEOUT | 30 | Connection timeout (seconds) |
+| SSH_TIMEOUT | 60 | Connection timeout (seconds) |
 | SSH_KEEPALIVE_INTERVAL | 30 | Keepalive interval (seconds) |
 | SSH_SESSION_TIMEOUT | 7200 | Session timeout (seconds) |
-| SSH_CLIENT_TYPE | paramiko | SSH client (paramiko/asyncssh) |
+| SSH_CLIENT_TYPE | asyncssh | SSH client (paramiko/asyncssh) |
+| SSH_FORCE_ENV_CONFIG | false | Force env vars as highest priority |
+
+### Security Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| SSH_SECURITY_LEVEL | balanced | Security level (strict/balanced/relaxed) |
+| SSH_EXTRA_ALLOWED_COMMANDS | - | Additional allowed commands (comma-separated) |
+| SSH_EXTRA_ALLOWED_PATTERNS | - | Additional allowed patterns (e.g. `\|,>,<,&,;`) |
+| SSH_RATE_LIMIT | true | Enable rate limiting |
+| SSH_RATE_LIMIT_MAX | 30 | Max requests per window |
+| SSH_RATE_LIMIT_WINDOW | 60 | Time window in seconds |
+| SSH_AUDIT_LOG_PATH | - | Audit log file path |
 
 ## Local Configuration Files
 
@@ -104,33 +126,26 @@ Location: `config/hosts.json`
 }
 ```
 
-### client_config.json
-Location: `config/client_config.json`
-
-```json
-{
-  "default_timeout": 30,
-  "max_retries": 3,
-  "keepalive_interval": 30,
-  "session_timeout": 7200,
-  "client_type": "paramiko"
-}
-```
-
 ## Configuration Priority
 
-The system reads config in this order (later overrides earlier):
+### Default Mode (user params highest)
 
-1. **MCP Config** (mcp.json env) - Highest priority
-2. **hosts.json** (config/hosts.json)
-3. **Tool parameters** (when calling tools)
+1. **User parameters** (when calling tools) - Highest
+2. **hosts.json** (config/hosts.json by name) - Medium
+3. **MCP Config** (mcp.json env) - Lowest (fallback)
+
+### Force Env Mode (`SSH_FORCE_ENV_CONFIG=true`)
+
+1. **MCP Config** (mcp.json env) - Highest
+2. **User parameters** - Fallback
 
 Example:
-```json
-// MCP config has SSH_HOST=192.168.1.100
-// But tool call specifies host=10.0.0.1
+```
+MCP config has SSH_HOST=192.168.1.100
+But tool call specifies host=10.0.0.1
 
-// Result: Uses 10.0.0.1 (tool parameter)
+Default mode: Uses 10.0.0.1 (user parameter)
+Force env mode: Uses 192.168.1.100 (env config)
 ```
 
 ## Password Security
@@ -159,11 +174,7 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 
 ### Add to Server
 ```bash
-# Method 1: ssh-copy-id
 ssh-copy-id user@server
-
-# Method 2: Manual
-cat ~/.ssh/id_ed25519.pub | ssh user@server "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ```
 
 ### Configure MCP to Use Key
@@ -183,32 +194,79 @@ cat ~/.ssh/id_ed25519.pub | ssh user@server "mkdir -p ~/.ssh && cat >> ~/.ssh/au
 }
 ```
 
+### Connect with Key via Tool
+```
+连接 SSH，host=xxx, username=ubuntu, private_key_path=/path/to/key, auth_method=private_key
+```
+
+## Security Configuration
+
+### Security Levels
+
+| Level | Use Case | Description |
+|-------|----------|-------------|
+| strict | Production | Only whitelisted commands, strict path validation |
+| balanced | Default | Most commands allowed, dangerous patterns blocked |
+| relaxed | Development | Permissive, minimal restrictions |
+
+### Example: Strict Mode for Production
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "prod-server",
+        "SSH_SECURITY_LEVEL": "strict",
+        "SSH_RATE_LIMIT": "true",
+        "SSH_RATE_LIMIT_MAX": "10",
+        "SSH_AUDIT_LOG_PATH": "/var/log/ssh-mcp-audit.json"
+      }
+    }
+  }
+}
+```
+
+### Example: Relaxed Mode for Development
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_HOST": "dev-server",
+        "SSH_SECURITY_LEVEL": "relaxed",
+        "SSH_RATE_LIMIT": "false",
+        "SSH_EXTRA_ALLOWED_PATTERNS": "|,>,<,&,;"
+      }
+    }
+  }
+}
+```
+
 ## Development Setup
 
 ### Local Development
 ```bash
-# Install in editable mode
 pip install -e . --user
-
-# Test installation
 ssh-licco --help
-
-# Or run directly
 python -m ssh_mcp.server
 ```
 
 ### Run Tests
 ```bash
-# Install test dependencies
-pip install pytest pytest-asyncio
-
-# Run tests
+pip install pytest pytest-asyncio pytest-cov
 pytest
+```
+
+### Lint & Type Check
+```bash
+ruff check ssh_mcp/
+mypy ssh_mcp/
 ```
 
 ### Debug Mode
 ```bash
-# Enable verbose logging
 export DEBUG=1
 ssh-licco
 ```
@@ -222,7 +280,7 @@ ssh-licco
 
 ### Command Not Found
 1. Check pip installation: `pip show ssh-licco`
-2. Check PATH: `which ssh-licco`
+2. Check PATH: `where ssh-licco` (Windows) or `which ssh-licco` (Linux)
 3. Reinstall: `pip install --upgrade ssh-licco`
 
 ### Version Not Updating
@@ -230,19 +288,35 @@ ssh-licco
 2. Kill old MCP process: `Get-Process | Where-Object {$_.Name -like "*ssh-licco*"}`
 3. Reinstall: `pip install --force-reinstall --no-deps ssh-licco`
 
+### Commands Blocked by Security
+1. Check `SSH_SECURITY_LEVEL` setting
+2. Add specific allowed commands: `SSH_EXTRA_ALLOWED_COMMANDS`
+3. Add allowed patterns: `SSH_EXTRA_ALLOWED_PATTERNS`
+4. Temporarily use relaxed mode for testing
+
 ## Project Structure
 
 ```
 ssh-mcp/
 ├── ssh_mcp/           # Source code
 │   ├── __init__.py   # Version info
-│   ├── server.py     # MCP server
-│   ├── config_manager.py
-│   ├── session_manager.py
-│   └── clients/      # SSH clients
+│   ├── server.py     # MCP server (17 tools)
+│   ├── security.py   # Multi-level security
+│   ├── audit_logger.py # Audit logging
+│   ├── connection_config.py # Pydantic config model
+│   ├── session_manager.py  # Session management
+│   ├── service.py    # Service protocol
+│   ├── connection_pool.py  # Connection pooling
+│   ├── executor.py   # Thread pool executor
+│   ├── batch_executor.py   # Batch execution
+│   ├── key_manager.py # SSH key management
+│   ├── watchdog.py   # Health monitoring
+│   ├── logging_config.py # Centralized logging
+│   ├── exceptions.py # Exception hierarchy
+│   └── clients/      # SSH clients (paramiko/asyncssh/fabric/ssh2)
 ├── config/           # Runtime config
 │   ├── hosts.json
-│   └── client_config.json
+│   └── mcp.presets.json
 ├── pyproject.toml    # Package config
 └── README.md         # Documentation
 ```
@@ -256,19 +330,6 @@ pip uninstall ssh-licco
 ## Get Version
 
 ```bash
-# Via pip
 pip show ssh-licco
-
-# Via Python
 python -c "from ssh_mcp import __version__; print(__version__)"
-```
-
-## Quick Test
-
-```python
-# Test connection
-from ssh_mcp import SSHMCPServer
-
-server = SSHMCPServer()
-print(f"Version: {server.server.name}")
 ```
