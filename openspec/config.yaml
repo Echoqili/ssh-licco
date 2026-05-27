@@ -1,0 +1,26 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Python 3.10+, asyncssh, mcp SDK, pydantic
+  Project: ssh-licco - SSH MCP Server for AI models
+  Repository: https://github.com/Echoqili/ssh-licco
+  We use conventional commits (feat/fix/docs/refactor/chore)
+  Package manager: pip/setuptools, published to PyPI
+  Linting: ruff, type checking: mypy
+  Testing: pytest with pytest-asyncio
+  Domain: SSH remote server management via MCP protocol
+  Architecture: MCP Server exposing SSH tools (connect, execute, file transfer, Docker management)
+  Security: command validation, rate limiting, audit logging, path validation
+
+rules:
+  proposal:
+    - Keep proposals under 800 words
+    - Always include a "Security Impact" section
+    - Consider backward compatibility with existing MCP tool names
+  design:
+    - Reference existing patterns in ssh_mcp/server.py
+    - All new MCP tools must follow the Tool(name, description, inputSchema) pattern
+    - Security validation is mandatory for any command execution tool
+  tasks:
+    - Break tasks into chunks that can be completed in a single session
+    - Each task should include verification steps

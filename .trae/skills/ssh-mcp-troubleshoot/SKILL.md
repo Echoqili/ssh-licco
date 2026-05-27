@@ -9,27 +9,16 @@ description: "SSH MCP troubleshooting guide. Invoke when user encounters connect
 
 ### Check SSH Connection
 ```bash
-# Test network connectivity
 ping -c 4 43.143.207.242
-
-# Test SSH port
 nc -zv 43.143.207.242 22
 telnet 43.143.207.242 22
-
-# Check SSH banner
-openssl s_client -connect 43.143.207.242:22
 ```
 
 ### Check Server Status
 ```bash
-# Server SSH service
 systemctl status sshd
-
-# Server firewall
 systemctl status firewalld
 iptables -L -n
-
-# Server resources
 df -h
 free -m
 uptime
@@ -70,7 +59,6 @@ uptime
 
 **Server Commands**:
 ```bash
-# On server
 sudo grep "PasswordAuthentication" /etc/ssh/sshd_config
 sudo systemctl restart sshd
 ```
@@ -86,19 +74,16 @@ sudo systemctl restart sshd
    ```bash
    sudo systemctl restart sshd
    ```
-
 2. Check SSH service status:
    ```bash
    sudo systemctl status sshd
    sudo journalctl -u sshd -n 50
    ```
-
-3. Check server load - may be too high:
+3. Check server load:
    ```bash
    uptime
    top
    ```
-
 4. Check SSH port is responding:
    ```bash
    nc -zv hostname 22
@@ -115,11 +100,13 @@ sudo systemctl restart sshd
    ```bash
    ssh-keygen -R hostname
    ```
-
-2. Or manually edit known_hosts:
-   ```bash
-   nano ~/.ssh/known_hosts
-   # Delete the line with the hostname
+2. Or use `accept_new_host_key=true` in ssh_connect (testing only):
+   ```
+   连接 SSH，host=xxx, accept_new_host_key=true
+   ```
+3. Or disable strict checking (not recommended for production):
+   ```
+   连接 SSH，host=xxx, strict_host_key_checking=false
    ```
 
 ### 5. Connection Refused
@@ -134,13 +121,78 @@ sudo systemctl restart sshd
    sudo systemctl start sshd
    sudo systemctl enable sshd
    ```
-
 2. SSH on different port - check port:
    ```bash
    grep "^Port" /etc/ssh/sshd_config
    ```
 
-### 6. Docker Build Failed
+### 6. Command Blocked by Security Policy
+
+**Symptoms**:
+- "Command blocked by security policy"
+- "SecurityError" in output
+- Interactive resolution instructions shown
+
+**Solutions**:
+
+**Method 1: Adjust security level (recommended)**
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "relaxed"
+      }
+    }
+  }
+}
+```
+
+**Method 2: Add extra allowed commands**
+```json
+{
+  "SSH_EXTRA_ALLOWED_COMMANDS": "your-command"
+}
+```
+
+**Method 3: Add extra allowed patterns (for special characters)**
+```json
+{
+  "SSH_EXTRA_ALLOWED_PATTERNS": "|,>,<,&,;"
+}
+```
+
+**Security Levels**:
+| Level | Env Value | Behavior |
+|-------|-----------|----------|
+| Strict | `SSH_SECURITY_LEVEL=strict` | Whitelist only |
+| Balanced | `SSH_SECURITY_LEVEL=balanced` | Default, blocks dangerous patterns |
+| Relaxed | `SSH_SECURITY_LEVEL=relaxed` | Permissive |
+
+### 7. Rate Limit Triggered
+
+**Symptoms**:
+- "Rate limit exceeded" message
+- "超过 30 次请求/60秒"
+
+**Solutions**:
+1. Wait and retry (default: 30 requests per 60 seconds)
+2. Adjust limits:
+   ```json
+   {
+     "SSH_RATE_LIMIT_MAX": "60",
+     "SSH_RATE_LIMIT_WINDOW": "60"
+   }
+   ```
+3. Disable rate limiting (not recommended for production):
+   ```json
+   {
+     "SSH_RATE_LIMIT": "false"
+   }
+   ```
+
+### 8. Docker Build Failed
 
 **Symptoms**:
 - "Docker build failed"
@@ -151,25 +203,21 @@ sudo systemctl restart sshd
    ```bash
    docker --version
    ```
-
 2. Check Docker service:
    ```bash
    sudo systemctl status docker
    sudo systemctl start docker
    ```
-
 3. Add user to docker group:
    ```bash
    sudo usermod -aG docker $USER
-   # Then logout and login
    ```
-
 4. Check Docker socket permissions:
    ```bash
    ls -la /var/run/docker.sock
    ```
 
-### 7. File Transfer Failed
+### 9. File Transfer Failed
 
 **Symptoms**:
 - "SFTP error"
@@ -180,48 +228,77 @@ sudo systemctl restart sshd
    ```bash
    ls -la /remote/path/
    ```
-
 2. Check write permissions:
    ```bash
    touch /remote/path/test.txt
    ```
-
 3. Use correct path separators (Linux uses / not \)
+
+### 10. Background Task Not Found
+
+**Symptoms**:
+- "NOT_FOUND" status when checking task
+- PID file missing
+
+**Solutions**:
+1. Check if the task command was correct
+2. Verify the task_id matches
+3. Check if the session is still active:
+   ```
+   列出 SSH 会话
+   ```
+4. Check logs directly:
+   ```
+   执行命令，command=cat /tmp/background_task.log, session_id=xxx
+   ```
+
+### 11. Password Conflict Detected
+
+**Symptoms**:
+- `ssh_list_hosts` shows password conflict warning
+- Different passwords in MCP config vs hosts.json
+
+**Solutions**:
+1. Unify passwords across config sources
+2. Or use force env mode:
+   ```json
+   {
+     "SSH_FORCE_ENV_CONFIG": "true"
+   }
+   ```
+3. This ensures MCP env config always takes priority
 
 ## Diagnostic Commands
 
 ### Server Diagnostics
 ```bash
-# System info
 uname -a
 cat /etc/os-release
-
-# Network
 ip addr
 ip route
 ss -tuln
-
-# Resources
 df -h
 free -h
 uptime
 top -bn1 | head -15
-
-# Process
 ps aux | head -20
 ps -ef | grep ssh
-
-# Logs
 tail -f /var/log/secure
 journalctl -u sshd -n 100
 ```
 
 ### MCP Diagnostics
 ```python
-# Test password parsing
 import json
 password = "P/[KY}+wa7?2|uc"
 print(json.dumps({"password": password}))
+```
+
+### Security Diagnostics
+```bash
+echo $SSH_SECURITY_LEVEL
+echo $SSH_RATE_LIMIT
+echo $SSH_EXTRA_ALLOWED_COMMANDS
 ```
 
 ## Health Check Script
@@ -251,19 +328,10 @@ last -5
 ## Reset SSH Service (Server Side)
 
 ```bash
-# Stop SSH
 sudo systemctl stop sshd
-
-# Kill stuck sessions
 pkill -9 sshd
-
-# Clear SSH sockets
 rm -rf /run/sshd*
-
-# Start SSH
 sudo systemctl start sshd
-
-# Check status
 sudo systemctl status sshd
 ```
 
@@ -275,22 +343,20 @@ sudo systemctl status sshd
 | SSH | `/var/log/auth.log` (Debian/Ubuntu) |
 | Docker | `journalctl -u docker` |
 | System | `/var/log/messages` |
+| MCP Audit | Configured via `SSH_AUDIT_LOG_PATH` |
 
 ## Get Help
 
 ### Collect Debug Info
 ```bash
-# Save to file
 script debug_session.log
-
-# Run commands
 uname -a
 df -h
 free -h
 systemctl status sshd
 netstat -tuln | grep 22
-
-# Exit script
+echo "Security Level: $SSH_SECURITY_LEVEL"
+echo "Rate Limit: $SSH_RATE_LIMIT"
 exit
 ```
 
@@ -300,7 +366,8 @@ Include:
 2. Server IP/hostname
 3. OS version: `cat /etc/os-release`
 4. SSH version: `ssh -V`
-5. Relevant log excerpts
+5. `SSH_SECURITY_LEVEL` setting
+6. Relevant log excerpts
 
 ## Common Server Fixes
 
@@ -311,7 +378,7 @@ sudo systemctl restart sshd
 
 ### Check SSH Config
 ```bash
-sudo sshd -t  # Test config
+sudo sshd -t
 sudo systemctl reload sshd
 ```
 
@@ -329,13 +396,8 @@ grep username /etc/passwd
 
 ### Allow Root Login (if needed)
 ```bash
-# Edit SSH config
 sudo nano /etc/ssh/sshd_config
-
-# Set:
 PermitRootLogin yes
 PasswordAuthentication yes
-
-# Restart SSH
 sudo systemctl restart sshd
 ```

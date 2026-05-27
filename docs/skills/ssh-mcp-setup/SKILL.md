@@ -7,7 +7,14 @@ description: "Local setup and configuration guide for SSH MCP. Invoke when user 
 
 ## Installation
 
-### From PyPI (Recommended)
+### From npm (Recommended for Windows)
+```bash
+npm install -g ssh-licco
+```
+
+This creates an isolated Python venv and avoids conflicts.
+
+### From PyPI
 ```bash
 pip install ssh-licco
 ```
@@ -21,6 +28,10 @@ pip install -e . --user
 
 ### Update Version
 ```bash
+# npm
+npm update -g ssh-licco
+
+# pip
 pip install --upgrade ssh-licco
 ```
 

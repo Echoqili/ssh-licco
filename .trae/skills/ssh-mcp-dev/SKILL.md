@@ -10,36 +10,54 @@ description: "SSH MCP server development guide. Invoke when working on ssh-licco
 - **Project Name**: ssh-licco
 - **Description**: SSH Model Context Protocol Server - Enable SSH functionality for AI models
 - **Repository**: https://github.com/Echoqili/ssh-licco
-- **Current Version**: 0.1.7 (stored in `ssh_mcp/__init__.py`)
+- **Current Version**: 0.5.5 (stored in `ssh_mcp/__init__.py`)
+- **Python**: >=3.10, <3.14
+- **License**: MIT
 
 ## Project Structure
 
 ```
 ssh-mcp/
-├── ssh_mcp/              # Main source code
-│   ├── __init__.py      # Version info (main version file)
-│   ├── server.py        # MCP server implementation
-│   ├── config_manager.py
-│   ├── session_manager.py
-│   ├── connection_config.py
-│   ├── clients/         # SSH client implementations
-│   │   ├── paramiko_client.py
-│   │   ├── asyncssh_client.py
-│   │   └── fabric_client.py
-│   └── ...
-├── config/               # Runtime configuration
-│   ├── hosts.json       # SSH host configurations
+├── ssh_mcp/                    # Main source code
+│   ├── __init__.py            # Version info (main version file)
+│   ├── server.py              # MCP server implementation (SSHMCPServer)
+│   ├── service.py             # SSH service protocol & connection info
+│   ├── config_manager.py      # Config file management (hosts.json)
+│   ├── session_manager.py     # SSH session lifecycle management
+│   ├── connection_config.py   # Pydantic connection config model
+│   ├── connection_pool.py     # Connection pool with health check
+│   ├── executor.py            # Thread pool executor (async bridge)
+│   ├── batch_executor.py      # Batch command execution across hosts
+│   ├── key_manager.py         # SSH key pair generation (RSA/Ed25519)
+│   ├── security.py            # Multi-level security (command/path validation)
+│   ├── audit_logger.py        # Structured audit logging
+│   ├── logging_config.py      # Centralized logging (SSHLogger singleton)
+│   ├── watchdog.py            # Task monitoring & health check
+│   ├── exceptions.py         # Custom exception hierarchy
+│   └── clients/               # SSH client implementations
+│       ├── __init__.py        # Exports: SSHClientInterface, ClientType, etc.
+│       ├── interface.py       # Abstract base class + data models
+│       ├── factory.py         # Client factory with registration
+│       ├── paramiko_client.py # Paramiko implementation
+│       └── additional_clients.py  # AsyncSSH/Fabric/SSH2 (optional)
+├── config/                     # Runtime configuration
+│   ├── hosts.json             # SSH host configurations
 │   ├── mcp.user.config.json.example
 │   ├── mcp.presets.json
-│   └── CONFIG_GUIDE.md
-├── Dockerfile           # Docker image build
-├── pyproject.toml       # Package configuration
-├── sync_version.py      # Version sync script
+│   └── ssh-hosts.example.json
 ├── .github/workflows/
-│   └── pypi.yml         # PyPI release workflow
-└── .trae/skills/
-    └── ssh-mcp-dev/
-        └── SKILL.md     # This skill file
+│   ├── pypi.yml               # PyPI release workflow
+│   └── mcp-registry.yml       # MCP Registry publish workflow
+├── openspec/                   # OpenSpec specifications
+│   └── specs/                  # Feature specs
+├── docs/                       # Documentation
+│   ├── API_REFERENCE.md
+│   ├── CONTRIBUTING.md
+│   └── skills/                # Skill documentation copies
+├── pyproject.toml              # Package configuration
+├── sync_version.py            # Version sync script
+├── Dockerfile                 # Docker image build (multi-stage)
+└── .trae/skills/              # Trae IDE skills
 ```
 
 ## Git Workflow
@@ -47,38 +65,16 @@ ssh-mcp/
 ### Always create a new branch for changes
 
 ```bash
-# 1. Update local master
 git checkout master
-git pull origin master
-
-# 2. Create a new branch
+git pull github master
 git checkout -b feature/your-feature-name
-# or
-git checkout -b fix/bug-description
-
-# 3. Make your changes
-# ... edit files ...
-
-# 4. Commit your changes
-git add -A
-git commit -m "feat: add new feature"
-
-# 5. Push to remote
-git push -u origin feature/your-feature-name
-
-# 6. Create Pull Request on GitHub
-# Go to https://github.com/Echoqili/ssh-licco and create PR
-
-# 7. After PR is merged, update local master
-git checkout master
-git pull origin master
 ```
 
 ### Branch Naming Conventions
 
 | Type | Example | Use Case |
 |------|---------|----------|
-| `feature/` | `feature/add-server-management` | New features |
+| `feat/` | `feat/add-server-management` | New features |
 | `fix/` | `fix/password-display-issue` | Bug fixes |
 | `docs/` | `docs/update-readme` | Documentation |
 | `refactor/` | `refactor/improve-code` | Code improvements |
@@ -87,54 +83,24 @@ git pull origin master
 
 ```
 <type>: <description>
-
-[optional body]
 ```
 
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `refactor`: Code refactoring
-- `chore`: Maintenance
-- `test`: Testing
-
-Examples:
-```
-feat: add ssh_list_hosts tool
-fix: hide password in MCP responses
-docs: update version management guide
-chore: bump version to 0.1.7
-```
+Types: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `style`
 
 ## Quick Commands
 
 ```bash
-# Install in development mode
 pip install -e . --user
-
-# Run tests
 python -m pytest
-
-# Build package
 python -m build
-
-# Upload to PyPI
 python -m twine upload dist/* -u __token__ -p <TOKEN>
-
-# View version
 python -c "from ssh_mcp import __version__; print(__version__)"
 ```
 
 ## Version Management
 
-### Update Version
 ```bash
-# Bug fix (PATCH): python sync_version.py 1.0.1
-# New feature (MINOR): python sync_version.py 1.1.0
-# Breaking change (MAJOR): python sync_version.py 2.0.0
-
-python sync_version.py 0.1.8
+python sync_version.py 0.5.6
 ```
 
 ### Version Files (sync automatically)
@@ -148,122 +114,76 @@ python sync_version.py 0.1.8
 3. Upload: `python -m twine upload dist/*`
 4. Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
 
-## Docker Configuration
+## MCP Tools (17 tools)
 
-### Build Docker Image
+| Tool | Description |
+|------|-------------|
+| `ssh_config` | Configure and save SSH connection settings to local config |
+| `ssh_login` | Quick login using pre-saved config or MCP env vars (optionally execute command) |
+| `ssh_connect` | Full control connection with explicit params (password/key/agent auth) |
+| `ssh_execute` | Execute command on active session (auto-detect background for long-running) |
+| `ssh_execute_wait` | Execute command with configurable timeout (5-60s range) |
+| `ssh_disconnect` | Close an active SSH session |
+| `ssh_list_hosts` | List configured hosts + password conflict detection |
+| `ssh_list_sessions` | List all active sessions with connection details |
+| `ssh_add_host` | Add new server to hosts.json |
+| `ssh_remove_host` | Remove server from hosts.json |
+| `ssh_generate_key` | Generate SSH key pair (RSA/Ed25519) |
+| `ssh_file_transfer` | Upload/download files via SFTP |
+| `ssh_background_task` | Execute long-running commands in background with status polling |
+| `ssh_task_status` | Check background task status and progress |
+| `ssh_docker_build` | Build Docker image on remote server (background mode) |
+| `ssh_docker_status` | Check Docker containers/images/build logs |
+| `ssh_container_logs` | Retrieve Docker container logs with tailing |
 
-```bash
-# Basic build
-docker build -t ssh-licco:latest .
+## Security Features
 
-# Build with custom tag
-docker build -t ssh-licco:0.1.7 .
+### Multi-Level Security Strategy
 
-# Build with Chinese mirrors (faster in China)
-docker build --build-arg DOCKER_MIRRORS='["https://docker.mirrors.sjtug.sjtu.edu.cn","https://mirror.aliyuncs.com"]' -t ssh-licco:latest .
-```
+| Level | Env Value | Use Case |
+|-------|-----------|----------|
+| Strict | `SSH_SECURITY_LEVEL=strict` | Production (whitelist only) |
+| Balanced | `SSH_SECURITY_LEVEL=balanced` | Default |
+| Relaxed | `SSH_SECURITY_LEVEL=relaxed` | Development/testing |
 
-### Docker Image Tags
+### Security Components
+- **CommandValidator** (`security.py`): Whitelist-based command validation
+- **PathValidator** (`security.py`): Path traversal prevention
+- **Rate Limiting**: Sliding window algorithm (configurable)
+- **Audit Logging**: Structured event logging (connect/disconnect/command/file transfer)
 
-```bash
-# Tag for latest
-docker tag ssh-licco:latest your-registry/ssh-licco:latest
+### Security Environment Variables
 
-# Tag for version
-docker tag ssh-licco:0.1.7 your-registry/ssh-licco:0.1.7
-```
-
-### Push to Registry
-
-```bash
-# Push to Docker Hub
-docker push your-username/ssh-licco:latest
-
-# Push to custom registry
-docker push your-registry/ssh-licco:0.1.7
-```
-
-### Run Docker Container
-
-```bash
-# Run with environment variables
-docker run -d \
-  -e SSH_HOST=192.168.1.100 \
-  -e SSH_USER=root \
-  -e SSH_PASSWORD=your_password \
-  ssh-licco:latest
-
-# Run with config file mounted
-docker run -d \
-  -v $(pwd)/config:/app/config \
-  -e SSH_HOST=192.168.1.100 \
-  ssh-licco:latest
-```
-
-### Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  ssh-mcp:
-    build: .
-    image: ssh-licco:latest
-    environment:
-      - SSH_HOST=192.168.1.100
-      - SSH_USER=root
-      - SSH_PASSWORD=${SSH_PASSWORD}
-      - SSH_TIMEOUT=120
-    volumes:
-      - ./config:/app/config
-    restart: unless-stopped
-```
-
-### Docker Build Arguments
-
-| Argument | Default | Description |
+| Variable | Default | Description |
 |----------|---------|-------------|
-| `DOCKER_MIRRORS` | 14 Chinese mirrors | Docker registry mirrors |
-
-### Multi-stage Build Optimization
-
-The Dockerfile uses multi-stage builds:
-1. **Builder stage**: Install dependencies in venv
-2. **Runtime stage**: Minimal runtime with only SSH client
-
-Benefits:
-- Smaller image size (~150MB vs ~1GB)
-- Faster deployment
-- Better security (non-root user)
-
-## MCP Tools
-
-Available tools:
-- `ssh_config` - Configure SSH connection
-- `ssh_connect` - Connect to SSH server
-- `ssh_execute` - Execute remote command
-- `ssh_disconnect` - Close connection
-- `ssh_list_hosts` - List configured servers
-- `ssh_add_host` - Add new server to config
-- `ssh_remove_host` - Remove server from config
-- `ssh_generate_key` - Generate SSH key pair
-- `ssh_file_transfer` - Upload/download files
-- `ssh_docker_build` - Build Docker image remotely
-- `ssh_docker_status` - Check Docker status
+| `SSH_SECURITY_LEVEL` | balanced | Security level (strict/balanced/relaxed) |
+| `SSH_EXTRA_ALLOWED_COMMANDS` | - | Additional allowed commands |
+| `SSH_EXTRA_ALLOWED_PATTERNS` | - | Additional allowed patterns (e.g. `\|,>,<,&,;`) |
+| `SSH_RATE_LIMIT` | true | Enable rate limiting |
+| `SSH_RATE_LIMIT_MAX` | 30 | Max requests per window |
+| `SSH_RATE_LIMIT_WINDOW` | 60 | Time window in seconds |
+| `SSH_AUDIT_LOG_PATH` | - | Audit log file path |
 
 ## SSH Client Types
 
-### Configuration
+Supported types (via `SSHClientFactory`):
+- `paramiko` - Pure Python, stable, registered by default
+- `asyncssh` - Async high performance (optional)
+- `fabric` - High-level API (optional)
+- `ssh2` - C extension (optional)
 
-Set `SSH_CLIENT_TYPE` environment variable:
-- `common` (default) - paramiko (stable, recommended)
-- `performance` - asyncssh (high performance)
-- `development` - fabric (simple API)
+Default client type in `ConnectionConfig`: `asyncssh`
 
-### Configuration Priority
+### Configuration Priority (ssh_connect)
 
-1. **MCP Config** (mcp.json env) - Highest
-2. **Local Config** (config/hosts.json)
-3. **User Parameters** - Lowest
+**Default mode** (user params highest):
+1. User parameters (args) - Highest
+2. hosts.json (by name) - Medium
+3. MCP environment variables - Lowest (fallback)
+
+**Force env mode** (`SSH_FORCE_ENV_CONFIG=true`):
+1. MCP environment variables - Highest
+2. User parameters - Fallback
 
 ## MCP Configuration Example
 
@@ -277,13 +197,63 @@ Set `SSH_CLIENT_TYPE` environment variable:
         "SSH_USER": "root",
         "SSH_PASSWORD": "your_password",
         "SSH_PORT": "22",
-        "SSH_TIMEOUT": "120",
-        "SSH_CLIENT_TYPE": "common"
+        "SSH_TIMEOUT": "60",
+        "SSH_KEEPALIVE_INTERVAL": "30",
+        "SSH_SESSION_TIMEOUT": "7200",
+        "SSH_CLIENT_TYPE": "asyncssh",
+        "SSH_SECURITY_LEVEL": "balanced",
+        "SSH_RATE_LIMIT": "true"
       }
     }
   }
 }
 ```
+
+## Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `server.py` | MCP server (SSHMCPServer) - tool registration & dispatch |
+| `service.py` | SSH service protocol, ClientType enum, HealthCheckResult |
+| `session_manager.py` | Session lifecycle (create/close/list), SessionInfo, SessionState |
+| `connection_config.py` | Pydantic model with validation (port, timeout, auth) |
+| `connection_pool.py` | PooledConnection, PoolConfig, health monitoring |
+| `executor.py` | ThreadPoolExecutor singleton, async bridge for blocking ops |
+| `batch_executor.py` | BatchExecutionResult, HostResult, parallel execution |
+| `security.py` | CommandValidator, PathValidator, SecurityLevel, SecurityError |
+| `audit_logger.py` | AuditLogger singleton, AuditEventType enum |
+| `watchdog.py` | Watchdog monitor, TaskInfo, WatchdogEvent |
+| `key_manager.py` | SSHKeyPair generation (RSA/Ed25519), save/load |
+| `logging_config.py` | SSHLogger singleton, file handler support |
+| `exceptions.py` | Exception hierarchy (Connection/Auth/Command/File/Session/Timeout/Pool) |
+| `clients/interface.py` | SSHClientInterface ABC, ClientType, CommandResult, FileTransferResult |
+| `clients/factory.py` | SSHClientFactory, ClientConfig, dynamic registration |
+| `clients/paramiko_client.py` | ParamikoClient implementation |
+
+## Docker Configuration
+
+### Build Docker Image
+
+```bash
+docker build -t ssh-licco:latest .
+docker build -t ssh-licco:0.5.5 .
+docker build --build-arg DOCKER_MIRRORS='["https://docker.mirrors.sjtug.sjtu.edu.cn"]' -t ssh-licco:latest .
+```
+
+### Run Docker Container
+
+```bash
+docker run -d \
+  -e SSH_HOST=192.168.1.100 \
+  -e SSH_USER=root \
+  -e SSH_PASSWORD=your_password \
+  -e SSH_SECURITY_LEVEL=balanced \
+  ssh-licco:latest
+```
+
+### Multi-stage Build
+1. **Builder stage**: Install dependencies in venv
+2. **Runtime stage**: Minimal runtime (~150MB)
 
 ## Common Issues
 
@@ -298,67 +268,41 @@ Passwords with special characters work fine in JSON - no escaping needed.
 - Restart Trae IDE after updating
 - Or restart MCP server process
 
-### Docker Build Failed
-- Check Docker daemon is running: `docker info`
-- Try with Chinese mirrors if in China
-- Check disk space
+### Command Blocked by Security
+- Check `SSH_SECURITY_LEVEL` env var
+- Add allowed commands via `SSH_EXTRA_ALLOWED_COMMANDS`
+- Or temporarily set `SSH_SECURITY_LEVEL=relaxed`
 
-### Docker Image Too Large
-- Use multi-stage build (already optimized)
-- Clean up cache: `docker builder prune`
+### Rate Limit Triggered
+- Check `SSH_RATE_LIMIT_MAX` and `SSH_RATE_LIMIT_WINDOW`
+- Disable temporarily: `SSH_RATE_LIMIT=false`
 
 ## Development Workflow (Complete)
 
 1. **Create branch** from master
-   ```bash
-   git checkout master
-   git pull origin master
-   git checkout -b feature/your-feature
-   ```
-
 2. **Make changes** to source code in `ssh_mcp/`
-
-3. **Test locally**
-   ```bash
-   pip install -e . --user
-   # test your changes
-   ```
-
-4. **Commit and push**
-   ```bash
-   git add -A
-   git commit -m "feat: your feature"
-   git push -u origin feature/your-feature
-   ```
-
+3. **Test locally**: `pip install -e . --user`
+4. **Commit and push**: `git push -u github feat/your-feature`
 5. **Create Pull Request** on GitHub
-
-6. **After PR merged**:
-   - Update version: `python sync_version.py x.x.x`
-   - Build: `python -m build`
-   - Upload to PyPI: `python -m twine upload dist/*`
-   - Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
-
-7. **Update local master**
-   ```bash
-   git checkout master
-   git pull origin master
-   ```
+6. **After PR merged**: Update version, build, upload to PyPI
+7. **Update local master**: `git pull github master`
 
 ## Key Files Reference
 
 | File | Purpose |
 |------|---------|
 | `ssh_mcp/__init__.py` | Version (main) |
-| `ssh_mcp/server.py` | MCP server logic |
+| `ssh_mcp/server.py` | MCP server logic + all tool handlers |
+| `ssh_mcp/security.py` | Security validation (command/path) |
+| `ssh_mcp/audit_logger.py` | Audit logging |
+| `ssh_mcp/connection_config.py` | Connection config Pydantic model |
+| `ssh_mcp/session_manager.py` | Session management |
+| `ssh_mcp/service.py` | Service protocol & health check |
+| `ssh_mcp/exceptions.py` | Exception hierarchy |
 | `config/hosts.json` | Saved SSH hosts |
-| `config/mcp.user.config.json` | User configuration |
-| `config/mcp.presets.json` | SSH client type presets |
-| `config/CONFIG_GUIDE.md` | Configuration guide |
 | `pyproject.toml` | Package config |
 | `Dockerfile` | Docker image build |
 | `sync_version.py` | Version sync script |
-| `.trae/skills/ssh-mcp-dev/SKILL.md` | This skill |
 
 ## Documentation Reference
 
@@ -366,8 +310,6 @@ Passwords with special characters work fine in JSON - no escaping needed.
 |----------|---------|
 | `README.md` | Project overview and quick start |
 | `USAGE.md` | Detailed usage guide |
-| `VERSION_MANAGEMENT.md` | Version management and release process |
-| `COMPLETE_SECURITY_FIXES.md` | Security fixes and best practices |
 | `docs/API_REFERENCE.md` | API documentation |
 | `docs/CONTRIBUTING.md` | Contribution guidelines |
 

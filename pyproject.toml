@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-ssh-licco = "ssh_mcp.server:run_server"
+ssh-licco = "ssh_mcp.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]
