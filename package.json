@@ -1,27 +1,26 @@
 {
   "name": "ssh-licco",
   "version": "0.5.5",
-  "description": "SSH MCP Server - Secure SSH operations over Model Context Protocol, now with npm wrapper",
+  "description": "SSH MCP Server - Remote server management via SSH protocol",
   "main": "ssh-licco.js",
   "bin": {
     "ssh-licco": "./ssh-licco.js"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "postinstall": "node ./install.js"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/Echoqili/ssh-licco.git"
   },
   "keywords": [
-    "mcp",
     "ssh",
+    "mcp",
     "server",
-    "model-context-protocol"
+    "remote"
   ],
-  "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=16.0.0"
   }
 }
