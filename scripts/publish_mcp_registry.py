@@ -89,8 +89,8 @@ def login_registry():
         
         if response.status_code == 200:
             data = response.json()
-            token = data.get('access_token')
-            print(f"[DEBUG] 解析到 access_token: {'有值' if token else 'None/缺失'}")
+            token = data.get('registry_token') or data.get('access_token')
+            print(f"[DEBUG] 解析到 registry_token: {'有值' if token else 'None/缺失'}")
             if token:
                 print(f"[DEBUG] token 长度: {len(token)}")
                 print("[OK] 登录成功！")
