@@ -25,7 +25,7 @@ def get_version():
     return None
 
 def get_pypi_info(package_name, version):
-    """获取 PyPI 包信息"""
+    """获取 PyPI 包信息，如果没有就用本地信息"""
     print(f"📦 获取 PyPI 包信息：{package_name} v{version}")
     
     response = requests.get(
@@ -42,8 +42,13 @@ def get_pypi_info(package_name, version):
             "home_page": data['info'].get('home_page', ''),
         }
     else:
-        print(f"❌ 获取 PyPI 信息失败：{response.status_code}")
-        return None
+        print(f"⚠️  PyPI 还没发布（status: {response.status_code}），使用本地信息")
+        return {
+            "name": package_name,
+            "version": version,
+            "description": "SSH Model Context Protocol Server - Enable SSH functionality for AI models",
+            "home_page": "https://github.com/Echoqili/ssh-licco",
+        }
 
 def login_registry():
     """登录 MCP Registry"""
