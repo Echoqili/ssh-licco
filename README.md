@@ -3,7 +3,7 @@
 <!-- mcp-name: io.github.Echoqili/ssh-licco -->
 
 [![PyPI version](https://badge.fury.io/py/ssh-licco.svg)](https://badge.fury.io/py/ssh-licco)
-[![Python 3.10-3.13](https://img.shields.io/badge/python-3.10--3.13-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP Registry](https://img.shields.io/badge/MCP-Registry-green.svg)](https://registry.modelcontextprotocol.io/)
 
@@ -20,6 +20,7 @@
 
 ### 核心功能
 - **[🔐 安全配置](#-安全配置)** - 多级安全策略
+- **[🐍 Anaconda 指南](ANACONDA_GUIDE.md)** - conda 环境兼容
 - **[🛠️ 可用工具](#-可用工具)** - 完整功能列表
 - **[💡 使用示例](#-使用示例)** - 实际应用场景
 
@@ -72,6 +73,8 @@ npx ssh-licco
 pip install ssh-licco
 ```
 
+> ⚠️ **Anaconda 用户注意**：如果使用 conda 环境，推荐用 `npx` 方式安装（完全隔离），或创建专用 conda 环境安装。直接在 base 环境 `pip install` 可能导致依赖冲突。详见 [Anaconda 环境指南](ANACONDA_GUIDE.md)。
+
 ### 方式三：从源码安装
 
 ```bash
@@ -80,7 +83,7 @@ cd ssh-licco
 pip install -e .
 ```
 
-**Python 版本要求：** Python 3.10, 3.11, 3.12, 3.13
+**Python 版本要求：** Python 3.10+
 
 ---
 
@@ -533,7 +536,16 @@ npm uninstall -g ssh-licco
 }
 ```
 
-#### 5. 自动修复依赖
+#### 5. Anaconda 环境冲突
+
+**错误**: `pip install` 后在 conda 环境中出现依赖冲突
+
+**解决**:
+- 推荐用 `npx ssh-licco` 代替 `pip install`（完全隔离，不影响 conda 环境）
+- 或创建专用 conda 环境：`conda create -n ssh-licco python=3.10 && conda activate ssh-licco && pip install ssh-licco`
+- 不要在 base 环境中 `pip install`
+
+#### 6. 自动修复依赖
 
 如果遇到 `ModuleNotFoundError` 之类的问题，ssh-licco 每次启动会自动验证依赖完整性并修复。你也可以手动运行：
 
