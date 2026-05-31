@@ -5,6 +5,41 @@ description: "SSH MCP operations guide. Invoke when user needs to perform SSH se
 
 # SSH MCP Operations Guide
 
+## Tool Calling Priority
+
+When executing server operations, tools must be called in the following priority order:
+
+```
+1️⃣ MCP Tools (ssh_execute, ssh_login, etc.)    ← Always use first
+         ↓ If MCP tools are unavailable/not loaded in current session
+2️⃣ CLI Tool (ssh-licco exec)                    ← Second choice
+         │ Note: Use SSH_SECURITY_LEVEL=relaxed mode
+         │       Set SSH_EXTRA_ALLOWED_COMMANDS for non-whitelist commands
+         ↓ If CLI tool is also not available
+3️⃣ Python Paramiko Script                        ← Last resort
+```
+
+### How to determine which layer to use
+
+| Indicator | Use |
+|-----------|-----|
+| MCP tools appear in your tool list | **1️⃣ MCP tools** - direct invocation |
+| MCP tools not in tool list, but `ssh-licco` command works | **2️⃣ CLI** - `ssh-licco exec` with relaxed mode |
+| Neither MCP nor CLI available | **3️⃣ Python paramiko** - write inline Python script |
+
+### CLI usage pattern
+
+```powershell
+# Set relaxed mode to allow pipes, redirects, etc.
+$env:SSH_SECURITY_LEVEL="relaxed"
+
+# Set extra allowed commands for non-default tools
+$env:SSH_EXTRA_ALLOWED_COMMANDS="pg_isready,psql"
+
+# Execute command
+ssh-licco exec --host <ip> -u <user> --password <pwd> "<command>"
+```
+
 ## Quick Reference
 
 ### Quick Login (using saved config or env vars)

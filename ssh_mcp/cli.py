@@ -242,6 +242,23 @@ def _add_connection_args(parser: argparse.ArgumentParser):
     parser.add_argument("--connect-timeout", type=int, default=60, help="Connection timeout in seconds (default: 60)")
 
 
+async def _cmd_exec_fallback(args):
+    """Execute command with automatic fallback (CLI → Paramiko)"""
+    from .fallback_executor import FallbackExecutor, create_fallback_executor_from_env
+
+    command = args.cmd
+    timeout = args.timeout
+
+    try:
+        executor = create_fallback_executor_from_env()
+        result = executor.execute(command, timeout=timeout)
+        print(FallbackExecutor.format_result(result))
+        sys.exit(result.get("exit_code", 1))
+    except Exception as e:
+        print(f"Fallback execute failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ssh-licco",
@@ -256,6 +273,12 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_connection_args(p_exec)
     p_exec.add_argument("cmd", help="Command to execute")
     p_exec.add_argument("--timeout", "-t", type=int, default=60, help="Command timeout in seconds")
+
+    # exec-fallback (with auto CLI → Paramiko fallback)
+    p_exec_fb = sub.add_parser("exec-fallback", help="Execute a command with automatic fallback (CLI → Paramiko)")
+    _add_connection_args(p_exec_fb)
+    p_exec_fb.add_argument("cmd", help="Command to execute")
+    p_exec_fb.add_argument("--timeout", "-t", type=int, default=60, help="Command timeout in seconds")
 
     # upload
     p_upload = sub.add_parser("upload", help="Upload a file to remote server")
@@ -303,6 +326,7 @@ def main():
 
     cmd_map = {
         "exec": _cmd_exec,
+        "exec-fallback": _cmd_exec_fallback,
         "upload": _cmd_upload,
         "download": _cmd_download,
         "docker-build": _cmd_docker_build,
