@@ -89,7 +89,7 @@ def build_publish_data(version):
         "packages": [
             {
                 "registryType": "pypi",
-                "registryBaseUrl": "https://pypi.org/pypi",
+                "registryBaseUrl": "https://pypi.org",
                 "identifier": PYPI_PACKAGE_NAME,
                 "version": version,
                 "runtimeHint": "python",
