@@ -44,7 +44,7 @@ def login_registry():
         response = requests.post(
             f"{REGISTRY_BASE_URL}/auth/github-at",
             json={"github_token": GITHUB_TOKEN},
-            timeout=10
+            timeout=30
         )
         
         print(f"[DEBUG] 登录 API 响应: status={response.status_code}")
@@ -150,7 +150,7 @@ def publish_to_registry(access_token):
             f"{REGISTRY_BASE_URL}/publish",
             json=publish_data,
             headers=headers,
-            timeout=30
+            timeout=120
         )
         
         print(f"[DEBUG] 发布 API 响应: status={response.status_code}")
