@@ -6,6 +6,7 @@
 import requests
 import os
 import json
+import time
 
 # 配置
 PYPI_PACKAGE_NAME = "ssh-licco"
@@ -25,30 +26,47 @@ def get_version():
     return None
 
 def get_pypi_info(package_name, version):
-    """获取 PyPI 包信息，如果没有就用本地信息"""
+    """获取 PyPI 包信息，重试 3 次，如果没有就用本地信息"""
     print(f"📦 获取 PyPI 包信息：{package_name} v{version}")
     
-    response = requests.get(
-        f"https://pypi.org/pypi/{package_name}/{version}/json",
-        timeout=10
-    )
+    max_retries = 3
+    retry_delay = 5  # 秒
     
-    if response.status_code == 200:
-        data = response.json()
-        return {
-            "name": data['info']['name'],
-            "version": data['info']['version'],
-            "description": data['info']['summary'],
-            "home_page": data['info'].get('home_page', ''),
-        }
-    else:
-        print(f"⚠️  PyPI 还没发布（status: {response.status_code}），使用本地信息")
-        return {
-            "name": package_name,
-            "version": version,
-            "description": "SSH Model Context Protocol Server - Enable SSH functionality for AI models",
-            "home_page": "https://github.com/Echoqili/ssh-licco",
-        }
+    for i in range(max_retries):
+        try:
+            response = requests.get(
+                f"https://pypi.org/pypi/{package_name}/{version}/json",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"✅ PyPI 信息获取成功！")
+                return {
+                    "name": data['info']['name'],
+                    "version": data['info']['version'],
+                    "description": data['info']['summary'],
+                    "home_page": data['info'].get('home_page', ''),
+                }
+            else:
+                print(f"⚠️  尝试 {i+1}/{max_retries}：PyPI 返回 {response.status_code}")
+                if i < max_retries - 1:
+                    print(f"   等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+        
+        except Exception as e:
+            print(f"⚠️  尝试 {i+1}/{max_retries}：网络错误 {e}")
+            if i < max_retries -1:
+                print(f"   等待 {retry_delay} 秒后重试...")
+                time.sleep(retry_delay)
+    
+    print(f"⚠️  PyPI 重试次数用完，使用本地信息")
+    return {
+        "name": package_name,
+        "version": version,
+        "description": "SSH Model Context Protocol Server - Enable SSH functionality for AI models",
+        "home_page": "https://github.com/Echoqili/ssh-licco",
+    }
 
 def login_registry():
     """登录 MCP Registry"""
