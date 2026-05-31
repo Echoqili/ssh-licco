@@ -41,31 +41,35 @@
 - 🔐 **多种认证方式** - 密码、密钥、Agent 转发
 - 🔗 **长连接支持** - 自动保活（30 秒心跳），避免账户锁定
 - ⏱️ **可配置超时** - Banner 超时 (60s)、会话超时 (2 小时)
-- 📦 **异步高性能** - 基于 AsyncSSH 的异步架构
-- 🛡️ **完善的异常处理** - 统一的错误处理机制
-- 📊 **会话管理** - 支持多个并发 SSH 会话
+- 📦 **异步高性能** - 基于 Paramiko 的异步架构（线程池 + asyncio）
+- 🛡️ **完善的异常处理** - 统一的错误处理机制（7 层异常层次）
+- 📊 **会话管理** - 支持多个并发 SSH 会话（最大 10 个，每主机 3 个）
 - 📁 **SFTP 文件传输** - 上传、下载、目录管理
-- 🔑 **密钥管理** - 生成和管理 SSH 密钥对
-- 📝 **审计日志** - 完整的操作审计记录
-- 🚀 **连接池** - 高性能连接复用
-- 📊 **批量执行** - 多主机并行命令执行
+- 🔑 **密钥管理** - 生成和管理 SSH 密钥对（RSA/Ed25519）
+- 📝 **审计日志** - 完整的操作审计记录（JSON 结构化日志）
+- 🚀 **连接池** - 高性能连接复用（PooledConnection + ConnectionPool）
+- 📊 **批量执行** - 多主机并行命令执行（BatchExecutor + AsyncBatchExecutor）
 - 🐳 **Docker 支持** - Docker 构建和状态监控
 - 📋 **后台任务** - 异步任务执行和状态跟踪
+- 🖥️ **CLI 命令行** - exec / upload / download / docker-build / list-hosts 子命令
+- 🔍 **看门狗** - 任务监控、心跳检测、全局异常处理
 
 ---
 
 ## 📦 快速安装
 
-### 方式一：pip 安装（推荐）
+### 方式一：npx 一键启动（推荐，零配置）
+
+```bash
+npx ssh-licco
+```
+
+首次运行自动完成：检测 Python → 创建虚拟环境 → 安装依赖 → 启动 MCP 服务器。**无需手动安装任何东西。**
+
+### 方式二：pip 安装（推荐 Python 项目）
 
 ```bash
 pip install ssh-licco
-```
-
-### 方式二：MCP 安装
-
-```bash
-mcp install io.github.Echoqili/ssh-licco
 ```
 
 ### 方式三：从源码安装
@@ -80,70 +84,39 @@ pip install -e .
 
 ---
 
-## ⚠️ 依赖版本兼容性
+## 🏗️ 自动安装体系
 
-### 已知依赖冲突
-
-以下依赖版本冲突已在测试环境中验证，**不影响 ssh-licco 的正常使用**：
-
-#### 1. starlette 版本冲突
+ssh-licco 采用 **三层架构** 实现零配置启动：
 
 ```
-fastapi 需要 starlette<0.51.0
-但安装了 starlette 0.52.1
+用户 → npx ssh-licco
+           ↓
+    ┌──── ssh-licco.js (Node 层) ────┐
+    │  ① 查找 Python 3.10+          │
+    │  ② 检测 Anaconda 环境         │
+    │  ③ 创建/复用 ~/.ssh-licco-venv │
+    │  ④ pip install 安装           │
+    │  ⑤ 验证依赖完整性             │
+    └──────────┬────────────────────┘
+               ↓
+    ┌── cli.py (Python 入口) ──────┐
+    │  只负责启动 MCP 服务器        │
+    └──────────┬────────────────────┘
+               ↓
+    ┌── SSHMCPServer (MCP 服务) ──┐
+    │  提供 SSH 连接、命令执行等    │
+    └────────────────────────────┘
 ```
 
-**影响范围：**
-- ✅ **ssh-licco**: 无影响，正常工作
-- ⚠️ **fastapi**: 可能存在兼容性问题（如果同时使用 fastapi）
+### 智能安装特性
 
-**解决方案：**
-- 如果只使用 ssh-licco，可以忽略此警告
-- 如果同时使用 fastapi，建议：
-  ```bash
-  pip install starlette==0.50.0
-  ```
-
-#### 2. cryptography 版本冲突
-
-```
-pyopenssl 需要 cryptography<45
-但安装了 cryptography 46.0.5
-```
-
-**影响范围：**
-- ✅ **ssh-licco**: 无影响，正常工作
-- ⚠️ **pyopenssl**: 可能存在兼容性问题（如果同时使用 pyopenssl）
-
-**解决方案：**
-- 如果只使用 ssh-licco，可以忽略此警告
-- 如果同时使用 pyopenssl，建议：
-  ```bash
-  pip install cryptography==44.0.0
-  ```
-
-### 测试环境
-
-**测试通过的配置：**
-- ✅ starlette 0.52.1 + ssh-licco 0.4.1
-- ✅ cryptography 46.0.5 + ssh-licco 0.4.1
-- ✅ mcp 1.26.0 + ssh-licco 0.4.1
-
-**测试场景：**
-- ✅ SSH 连接和执行命令
-- ✅ 文件上传和下载
-- ✅ 后台任务执行
-- ✅ Docker 构建和监控
-- ✅ 多语言后台命令自动检测
-
-### 为什么允许这些冲突？
-
-ssh-licco 的核心依赖是：
-- `mcp` - MCP 协议实现
-- `asyncssh` - SSH 客户端
-- `pydantic` - 数据验证
-
-而 `starlette` 和 `cryptography` 是通过 `mcp` 间接引入的。ssh-licco 本身不直接使用这些库的 API，因此版本冲突不会影响 ssh-licco 的功能。
+| 特性 | 说明 |
+|------|------|
+| **Anaconda 自动检测** | 检测 conda 环境，使用独立 venv 避免冲突 |
+| **依赖完整性检查** | 每次启动验证所有依赖可导入，缺失则自动修复 |
+| **增量更新** | 已有 venv 时不删除，直接 `pip install -e .` 增量安装 |
+| **自动修复** | 依赖损坏时自动重新安装，无需手动干预 |
+| **npm postinstall** | `install.js` 自动检测已有 venv，跳过删除重建 |
 
 ---
 
@@ -164,6 +137,8 @@ ssh-licco 的核心依赖是：
   }
 }
 ```
+
+首次启动会自动安装所有依赖，稍等片刻即可使用。
 
 ### 2️⃣ 配置 SSH 连接（可选但推荐）
 
@@ -232,14 +207,14 @@ python -m ssh_mcp.server
 ```powershell
 $env:SSH_SECURITY_LEVEL = "balanced"
 $env:SSH_EXTRA_ALLOWED_COMMANDS = "git,pip,npm"
-python -m ssh_mcp.server
+npx ssh-licco
 ```
 
 **Linux/Mac**:
 ```bash
 export SSH_SECURITY_LEVEL="balanced"
 export SSH_EXTRA_ALLOWED_COMMANDS="git,pip,npm"
-python -m ssh_mcp.server
+npx ssh-licco
 ```
 
 #### 方式 2：MCP 配置文件
@@ -469,11 +444,91 @@ localhost:5432 - accepting connections
 
 ---
 
+## ⚠️ 依赖版本兼容性
+
+### 已知依赖冲突
+
+以下依赖版本冲突已在测试环境中验证，**不影响 ssh-licco 的正常使用**：
+
+#### 1. starlette 版本冲突
+
+```
+fastapi 需要 starlette<0.51.0
+但安装了 starlette 0.52.1
+```
+
+**影响范围：**
+- ✅ **ssh-licco**: 无影响，正常工作
+- ⚠️ **fastapi**: 可能存在兼容性问题（如果同时使用 fastapi）
+
+**解决方案：**
+- 如果只使用 ssh-licco，可以忽略此警告
+- 如果同时使用 fastapi，建议：
+  ```bash
+  pip install starlette==0.50.0
+  ```
+
+#### 2. cryptography 版本冲突
+
+```
+pyopenssl 需要 cryptography<45
+但安装了 cryptography 46.0.5
+```
+
+**影响范围：**
+- ✅ **ssh-licco**: 无影响，正常工作
+- ⚠️ **pyopenssl**: 可能存在兼容性问题（如果同时使用 pyopenssl）
+
+**解决方案：**
+- 如果只使用 ssh-licco，可以忽略此警告
+- 如果同时使用 pyopenssl，建议：
+  ```bash
+  pip install cryptography==44.0.0
+  ```
+
+### 测试环境
+
+**测试通过的配置：**
+- ✅ starlette 0.52.1 + ssh-licco 0.4.1
+- ✅ cryptography 46.0.5 + ssh-licco 0.4.1
+- ✅ mcp 1.26.0 + ssh-licco 0.4.1
+
+**测试场景：**
+- ✅ SSH 连接和执行命令
+- ✅ 文件上传和下载
+- ✅ 后台任务执行
+- ✅ Docker 构建和监控
+- ✅ 多语言后台命令自动检测
+
+### 为什么允许这些冲突？
+
+ssh-licco 的核心依赖是：
+- `mcp` - MCP 协议实现
+- `asyncssh` - SSH 客户端
+- `paramiko` - SSH 客户端（稳定模式）
+- `pydantic` - 数据验证
+
+而 `starlette` 和 `cryptography` 是通过 `mcp` 间接引入的。ssh-licco 本身不直接使用这些库的 API，因此版本冲突不会影响 ssh-licco 的功能。
+
+---
+
 ## 🔧 故障排查
 
 ### 常见问题
 
-#### 1. 连接失败
+#### 1. npx `Cannot find module` 错误
+
+**错误**: `Cannot find module '.../node_modules/ssh-licco/bin/ssh-licco.js'`
+
+**原因**: npm 全局目录存在损坏的 ssh-licco 包
+
+**解决**:
+```bash
+npm uninstall -g ssh-licco
+# 卸载后 npx 会重新从 npm registry 下载完整包
+```
+
+#### 2. 连接失败
 
 **错误**: `Connection refused`
 
@@ -482,7 +537,7 @@ localhost:5432 - accepting connections
 - 检查防火墙设置：`ufw status`
 - 确认端口正确：默认 22
 
-#### 2. 认证失败
+#### 3. 认证失败
 
 **错误**: `Authentication failed`
 
@@ -491,7 +546,7 @@ localhost:5432 - accepting connections
 - 尝试使用密钥认证
 - 查看 SSH 日志：`/var/log/auth.log`
 
-#### 3. 命令被阻止
+#### 4. 命令被阻止
 
 **错误**: `命令 'xxx' 不在允许列表中`
 
@@ -503,13 +558,12 @@ localhost:5432 - accepting connections
 }
 ```
 
-#### 4. 后台任务失败
+#### 5. 自动修复依赖
 
-**错误**: `'SSHMCPServer' object has no attribute '_logger'`
+如果遇到 `ModuleNotFoundError` 之类的问题，ssh-licco 每次启动会自动验证依赖完整性并修复。你也可以手动运行：
 
-**解决**: 升级到最新版本 v0.2.3+
 ```bash
-pip install --upgrade ssh-licco
+node install.js
 ```
 
 ### 📖 详细文档
@@ -562,10 +616,110 @@ pip install --upgrade ssh-licco
 
 ---
 
+## 🖥️ CLI 命令行工具
+
+ssh-licco 提供命令行接口，支持直接在终端执行 SSH 操作：
+
+### 基本用法
+
+```bash
+# 启动 MCP 服务器（默认模式）
+ssh-licco
+ssh-licco serve
+
+# 查看版本
+ssh-licco --version
+```
+
+### exec - 执行远程命令
+
+```bash
+ssh-licco exec --host 192.168.1.100 -u root --password pwd "ls -la /home"
+ssh-licco exec --timeout 120 "docker ps"
+```
+
+### upload / download - 文件传输
+
+```bash
+# 上传文件
+ssh-licco upload --host 192.168.1.100 -u root --password pwd ./local.txt /remote/path.txt
+
+# 下载文件
+ssh-licco download --host 192.168.1.100 -u root --password pwd /remote/log.txt ./local.log
+```
+
+### docker-build - 远程 Docker 构建
+
+```bash
+ssh-licco docker-build --host 192.168.1.100 -u root --password pwd myapp:latest \
+  --context /app --dockerfile ./Dockerfile --timeout 600
+```
+
+### list-hosts - 列出已配置主机
+
+```bash
+ssh-licco list-hosts
+ssh-licco list-hosts --json
+```
+
+> 💡 所有 CLI 子命令都支持环境变量配置（`SSH_HOST`、`SSH_USER`、`SSH_PASSWORD` 等），无需每次手动指定。
+
+---
+
+## 🧪 测试
+
+### 测试状态
+
+| 指标 | 状态 |
+|------|------|
+| **测试用例** | 402 passed, 3 skipped |
+| **覆盖率** | 17 个源模块全覆盖 |
+| **测试框架** | pytest + pytest-asyncio |
+
+### 测试模块覆盖
+
+| 源模块 | 测试文件 | 用例数 |
+|--------|----------|--------|
+| `exceptions.py` | `test_exceptions.py` | 7 |
+| `connection_config.py` | `test_connection_config.py` | 8 |
+| `security.py` | `test_security.py` | 24 |
+| `logging_config.py` | `test_logging_config.py` | 8 |
+| `audit_logger.py` | `test_audit_logger.py` | 12 |
+| `executor.py` | `test_executor.py` | 8 |
+| `watchdog.py` | `test_watchdog.py` | 18 |
+| `key_manager.py` | `test_key_manager.py` | 6 |
+| `config_manager.py` | `test_config_manager.py` | 10 |
+| `clients/interface.py` | `test_factory.py` | 10 |
+| `clients/paramiko_client.py` | `test_paramiko_client.py` | 18 |
+| `clients/factory.py` | `test_factory.py` | 10 |
+| `session_manager.py` | `test_session_manager.py` | 18 |
+| `connection_pool.py` | `test_connection_pool.py` | 10 |
+| `batch_executor.py` | `test_batch_executor.py` | 10 |
+| `cli.py` | `test_cli.py` | 10 |
+| `server.py` | `test_server.py` | 30+ |
+| `service.py` | `test_service.py` | 14 |
+
+### 运行测试
+
+```bash
+# 运行全部测试
+pytest tests/ -v
+
+# 运行特定模块测试
+pytest tests/test_security.py -v
+
+# 查看覆盖率
+pytest --cov=ssh_mcp --cov-report=term-missing
+```
+
+---
+
 ## 📊 版本历史
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v1.0.0 | 2026-05-31 | 🎉 首个主要版本！CLI 增强（exec/upload/download/docker-build/list-hosts）、完整测试套件（402 用例）、看门狗监控、审计日志、连接池、批量执行 |
+| v0.5.5 | 2026-05 | 自动安装体系优化：依赖完整性检查、增量更新、Anaconda 检测、cli.py 精简 |
 | v0.2.3 | 2026-03-14 | 修复 `_logger` 初始化 bug |
 | v0.2.2 | 2026-03-14 | 安全配置增强（有 bug） |
 | v0.2.1 | 2026-03-13 | 多级安全策略、环境变量配置 |
@@ -617,4 +771,4 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 **Made with ❤️ by Echoqili**
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-05-31*

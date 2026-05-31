@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 import os
-from typing import Optional, AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import uuid
-
-import paramiko
-from paramiko import SSHClient, AutoAddPolicy, SFTPClient, HostKeys, RejectPolicy, WarningPolicy
 from pathlib import Path
 
+import paramiko
+from paramiko import AutoAddPolicy, HostKeys, RejectPolicy, SSHClient, WarningPolicy
+
 from .connection_config import ConnectionConfig
+from .exceptions import ConnectionException
 from .executor import get_executor
 
 
@@ -37,20 +37,20 @@ class SessionInfo:
     connected_at: datetime
     last_activity: datetime
     command_count: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
     last_keepalive: datetime = field(default_factory=datetime.now)
 
 
 class SSHSession:
     def __init__(self, config: ConnectionConfig):
         self.config = config
-        self.client: Optional[SSHClient] = None
+        self.client: SSHClient | None = None
         self.session_id = str(uuid.uuid4())
         self._state = SessionState.DISCONNECTED
-        self._connected_at: Optional[datetime] = None
+        self._connected_at: datetime | None = None
         self._last_activity: datetime = datetime.now()
         self._last_keepalive: datetime = datetime.now()
-        self._keepalive_task: Optional[asyncio.Task] = None
+        self._keepalive_task: asyncio.Task | None = None
         self._executor = get_executor()
         self._connect_lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
@@ -67,9 +67,9 @@ class SSHSession:
         async with self._connect_lock:
             if self.is_connected:
                 return self._get_session_info()
-            
+
             self._state = SessionState.CONNECTING
-            
+
             try:
                 await self._executor.submit(self._connect_sync, timeout=self.config.timeout + 10)
                 self._connected_at = datetime.now()
@@ -82,7 +82,7 @@ class SSHSession:
 
     def _connect_sync(self) -> None:
         self.client = SSHClient()
-        
+
         # 🔒 主机密钥验证策略（修复 MITM 漏洞）
         if self.config.accept_new_host_key:
             # ⚠️ 测试模式：自动接受新主机密钥（仅用于开发/测试）
@@ -90,23 +90,23 @@ class SSHSession:
         elif self.config.strict_host_key_checking:
             # 🔒 严格模式：使用已知主机密钥文件验证
             host_keys = HostKeys()
-            
+
             # 优先使用配置的 known_hosts 路径
             if self.config.known_hosts_path:
                 known_hosts_file = Path(os.path.expanduser(str(self.config.known_hosts_path)))
             else:
                 # 默认使用 ~/.ssh/known_hosts
                 known_hosts_file = Path.home() / ".ssh" / "known_hosts"
-            
+
             if known_hosts_file.exists():
                 host_keys.load(str(known_hosts_file))
-            
+
             self.client.get_host_keys().update(host_keys)
             self.client.set_missing_host_key_policy(RejectPolicy())
         else:
             # 宽松模式：使用警告策略
             self.client.set_missing_host_key_policy(WarningPolicy())
-        
+
         connect_kwargs = {
             'hostname': self.config.host,
             'port': self.config.port,
@@ -116,16 +116,16 @@ class SSHSession:
             'look_for_keys': self.config.look_for_keys,
             'allow_agent': self.config.allow_agent,
         }
-        
+
         if self.config.auth_method == "password" and self.config.password:
             connect_kwargs['password'] = self.config.password
         elif self.config.auth_method == "private_key" and self.config.private_key_path:
             connect_kwargs['key_filename'] = str(self.config.private_key_path)
             if self.config.passphrase:
                 connect_kwargs['passphrase'] = self.config.passphrase
-        
-        self.client.connect(**connect_kwargs)
-        
+
+        self.client.connect(**connect_kwargs)  # type: ignore[arg-type]
+
         transport = self.client.get_transport()
         if transport:
             transport.set_keepalive(self.config.keepalive_interval)
@@ -133,15 +133,15 @@ class SSHSession:
     async def _start_keepalive(self):
         if self._keepalive_task:
             self._keepalive_task.cancel()
-        
+
         async def keepalive_loop():
             while self.is_connected and not self._shutdown_event.is_set():
                 try:
                     await asyncio.sleep(self.config.keepalive_interval)
-                    
+
                     if not self.is_connected or self._shutdown_event.is_set():
                         break
-                    
+
                     transport = await self._executor.submit(
                         lambda: self.client.get_transport() if self.client else None
                     )
@@ -151,13 +151,13 @@ class SSHSession:
                 except Exception as e:
                     print(f"Keepalive failed for session {self.session_id}: {e}")
                     break
-        
+
         self._keepalive_task = asyncio.create_task(keepalive_loop())
 
     async def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        
+
         async with self._connect_lock:
             self._state = SessionState.EXECUTING
             self._last_activity = datetime.now()
@@ -172,27 +172,27 @@ class SSHSession:
 
     def _execute_command_sync(self, command: str, timeout: int, background: bool = False) -> dict:
         assert self.client is not None
-        
+
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
-        
+
         if background:
             try:
-                pid = stdout.channel.pid
+                pid = stdout.channel.pid  # type: ignore[attr-defined]
                 pid_msg = f"PID: {pid}"
             except AttributeError:
                 pid_msg = "background mode"
-            
+
             return {
                 "exit_code": 0,
                 "stdout": f"Command started in {pid_msg}",
                 "stderr": "",
                 "session_id": self.session_id
             }
-        
+
         exit_code = stdout.channel.recv_exit_status()
         stdout_data = stdout.read().decode('utf-8', errors='replace')
         stderr_data = stderr.read().decode('utf-8', errors='replace')
-        
+
         return {
             "exit_code": exit_code,
             "stdout": stdout_data,
@@ -205,7 +205,7 @@ class SSHSession:
     ) -> AsyncIterator[str]:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        
+
         async with self._connect_lock:
             self._state = SessionState.EXECUTING
             self._last_activity = datetime.now()
@@ -219,11 +219,11 @@ class SSHSession:
             finally:
                 self._state = SessionState.CONNECTED
 
-    def _execute_command_stream_sync(self, command: str) -> AsyncIterator[str]:
+    def _execute_command_stream_sync(self, command: str) -> Iterator[str]:
         assert self.client is not None
-        
+
         stdin, stdout, stderr = self.client.exec_command(command)
-        
+
         for line in stdout:
             yield line.decode('utf-8', errors='replace')
 
@@ -244,7 +244,7 @@ class SSHSession:
     async def open_shell(self, term: str = "xterm", width: int = 80, height: int = 24) -> paramiko.Channel:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        
+
         self._last_activity = datetime.now()
         return await self._executor.submit(
             self._open_shell_sync, term, width, height,
@@ -258,17 +258,16 @@ class SSHSession:
     async def upload_file(self, local_path: str, remote_path: str) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        
+
         # 🔒 安全验证：本地路径验证（防止路径遍历）
         try:
-            from .security import path_validator, SecurityError
+            from .security import SecurityError, path_validator
             safe_local = path_validator.validate_path(local_path)
         except (ImportError, SecurityError):
             # 如果 security 模块不可用或路径验证失败，使用基础安全检查
-            import re
             if '..' in local_path or local_path.startswith('~'):
                 return {"success": False, "message": "Invalid local path: path traversal detected", "session_id": self.session_id}
-        
+
         async with self._connect_lock:
             self._last_activity = datetime.now()
             return await self._executor.submit(
@@ -289,16 +288,15 @@ class SSHSession:
     async def download_file(self, remote_path: str, local_path: str) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
-        
+
         # 🔒 安全验证：下载目标路径验证（防止写入到禁止目录）
         try:
-            from .security import path_validator, SecurityError
+            from .security import SecurityError, path_validator
             safe_local = path_validator.validate_path(local_path)
         except (ImportError, SecurityError):
-            import re
             if '..' in local_path or local_path.startswith('~'):
                 return {"success": False, "message": "Invalid local path: path traversal detected", "session_id": self.session_id}
-        
+
         async with self._connect_lock:
             self._last_activity = datetime.now()
             return await self._executor.submit(
@@ -364,12 +362,12 @@ class SessionManager:
     # 🔒 安全限制：最大并发会话数（防止资源耗尽 DoS）
     MAX_SESSIONS = 10
     MAX_SESSIONS_PER_HOST = 3  # 每个主机最多 3 个并发会话
-    
+
     def __init__(self):
         self._sessions: dict[str, SSHSession] = {}
         self._lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
-        self._timeout_cleanup_task: Optional[asyncio.Task] = None
+        self._timeout_cleanup_task: asyncio.Task | None = None
         self._start_timeout_cleanup()
         self._session_counter = 0  # 用于统计和限制
 
@@ -383,7 +381,7 @@ class SessionManager:
                     break
                 except Exception as e:
                     print(f"Session cleanup error: {e}")
-        
+
         try:
             loop = asyncio.get_running_loop()
             self._timeout_cleanup_task = loop.create_task(cleanup_loop())
@@ -394,13 +392,13 @@ class SessionManager:
         async with self._lock:
             now = datetime.now()
             timeout_sessions = []
-            
+
             for session_id, session in self._sessions.items():
                 if session.is_connected:
                     idle_time = now - session._last_activity
                     if idle_time > timedelta(seconds=session.config.session_timeout):
                         timeout_sessions.append(session_id)
-            
+
             for session_id in timeout_sessions:
                 try:
                     session = self._sessions[session_id]
@@ -417,7 +415,7 @@ class SessionManager:
                 raise ConnectionException(
                     f"达到最大会话数限制 ({self.MAX_SESSIONS})，请先关闭一些会话"
                 )
-            
+
             # 🔒 安全检查：每个主机会话数限制
             host_sessions = sum(
                 1 for s in self._sessions.values()
@@ -427,14 +425,14 @@ class SessionManager:
                 raise ConnectionException(
                     f"主机 {config.host} 已达到最大会话数限制 ({self.MAX_SESSIONS_PER_HOST})"
                 )
-            
+
             session = SSHSession(config)
             session_info = await session.connect()
             self._sessions[session.session_id] = session
             self._session_counter += 1
             return session_info
 
-    async def get_session(self, session_id: str) -> Optional[SSHSession]:
+    async def get_session(self, session_id: str) -> SSHSession | None:
         async with self._lock:
             return self._sessions.get(session_id)
 

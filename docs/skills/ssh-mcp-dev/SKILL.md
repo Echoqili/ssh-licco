@@ -34,14 +34,18 @@ ssh-mcp/
 │   ├── logging_config.py      # Centralized logging (SSHLogger singleton)
 │   ├── watchdog.py            # Task monitoring & health check
 │   ├── exceptions.py         # Custom exception hierarchy
+│   ├── cli.py                # Python entry point (simplified to only start server)
 │   └── clients/               # SSH client implementations
 │       ├── __init__.py        # Exports: SSHClientInterface, ClientType, etc.
 │       ├── interface.py       # Abstract base class + data models
 │       ├── factory.py         # Client factory with registration
 │       ├── paramiko_client.py # Paramiko implementation
 │       └── additional_clients.py  # AsyncSSH/Fabric/SSH2 (optional)
-├── config/                     # Runtime configuration
-│   ├── hosts.json             # SSH host configurations
+├── ssh-licco.js              # Node.js wrapper - auto-install + integrity check + startup
+├── install.js                # npm postinstall script - incremental install
+├── smart_install.py          # Standalone diagnostic installer with SSH test
+├── config/                    # Runtime configuration
+│   ├── hosts.json            # SSH host configurations
 │   ├── mcp.user.config.json.example
 │   ├── mcp.presets.json
 │   └── ssh-hosts.example.json
@@ -59,6 +63,51 @@ ssh-mcp/
 ├── Dockerfile                 # Docker image build (multi-stage)
 └── .trae/skills/              # Trae IDE skills
 ```
+
+## Auto-Install System Architecture
+
+The npx auto-install uses a **three-layer architecture**:
+
+```
+User → npx ssh-licco
+           ↓
+    ┌──── ssh-licco.js (Node Layer) ────┐
+    │  ① Find Python 3.10+             │
+    │  ② Detect Anaconda environment   │
+    │  ③ Create/reuse ~/.ssh-licco-venv │
+    │  ④ pip install dependencies      │
+    │  ⑤ Verify dependency integrity   │
+    └──────────┬────────────────────────┘
+               ↓
+    ┌── cli.py (Python Entry) ──────┐
+    │  Only starts MCP server       │
+    └──────────┬────────────────────┘
+               ↓
+    ┌── SSHMCPServer (MCP Service) ─┐
+    │  SSH connect, execute, etc.   │
+    └───────────────────────────────┘
+```
+
+### Key Design Decisions
+
+1. **Node.js wrapper (`ssh-licco.js`) handles all environment prep** - Python finding, venv creation, dependency installation, integrity verification. This ensures the Python layer can focus purely on MCP logic.
+
+2. **Incremental install (`install.js`)** - The postinstall script checks `venvHasInstallation()` first. If the venv already has valid dependencies, it skips deletion and does incremental `pip install -e .`. This makes re-installs nearly instant.
+
+3. **cli.py is stripped down** - No duplicate install logic. Only 17 lines: imports `run_server()` and calls it.
+
+4. **Dependency integrity check** - Every startup verifies `from ssh_mcp.server import SSHMCPServer; from ssh_mcp.session_manager import SessionManager` works. If not, auto-repairs.
+
+5. **Anaconda detection** - Both `ssh-licco.js` and `install.js` detect Anaconda/Miniconda Python and log a warning, ensuring users know their conda environment won't be touched.
+
+### Smart Install Features
+
+| Feature | Description |
+|---------|-------------|
+| **Anaconda Auto-Detect** | Detects conda environment, uses isolated venv |
+| **Dependency Integrity Check** | Verifies on startup, auto-repairs if missing |
+| **Incremental Update** | Doesn't delete venv, `pip install -e .` only |
+| **Auto-Repair** | Re-installs when deps corrupted |
 
 ## Git Workflow
 
@@ -90,7 +139,7 @@ Types: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `style`
 ## Quick Commands
 
 ```bash
-pip install -e . --user
+pip install -e .
 python -m pytest
 python -m build
 python -m twine upload dist/* -u __token__ -p <TOKEN>
@@ -213,6 +262,9 @@ Default client type in `ConnectionConfig`: `asyncssh`
 
 | Module | Purpose |
 |--------|---------|
+| `ssh-licco.js` | Node.js wrapper - auto-install, Anaconda detection, integrity check |
+| `install.js` | npm postinstall - incremental venv install |
+| `cli.py` | Python entry - simplified startup only |
 | `server.py` | MCP server (SSHMCPServer) - tool registration & dispatch |
 | `service.py` | SSH service protocol, ClientType enum, HealthCheckResult |
 | `session_manager.py` | Session lifecycle (create/close/list), SessionInfo, SessionState |
@@ -277,11 +329,19 @@ Passwords with special characters work fine in JSON - no escaping needed.
 - Check `SSH_RATE_LIMIT_MAX` and `SSH_RATE_LIMIT_WINDOW`
 - Disable temporarily: `SSH_RATE_LIMIT=false`
 
+### npx Cannot Find Module Error
+- Cause: Damaged npm global package
+- Fix: `npm uninstall -g ssh-licco`
+
+### Dependency Missing
+- ssh-licco auto-verifies and repairs on startup
+- Manual: `node install.js`
+
 ## Development Workflow (Complete)
 
 1. **Create branch** from master
-2. **Make changes** to source code in `ssh_mcp/`
-3. **Test locally**: `pip install -e . --user`
+2. **Make changes** to source code in `ssh_mcp/` or wrapper files (`ssh-licco.js`, `install.js`)
+3. **Test locally**: `pip install -e .`
 4. **Commit and push**: `git push -u github feat/your-feature`
 5. **Create Pull Request** on GitHub
 6. **After PR merged**: Update version, build, upload to PyPI
@@ -291,6 +351,8 @@ Passwords with special characters work fine in JSON - no escaping needed.
 
 | File | Purpose |
 |------|---------|
+| `ssh-licco.js` | Node.js auto-install wrapper |
+| `install.js` | npm postinstall script |
 | `ssh_mcp/__init__.py` | Version (main) |
 | `ssh_mcp/server.py` | MCP server logic + all tool handlers |
 | `ssh_mcp/security.py` | Security validation (command/path) |
@@ -299,6 +361,7 @@ Passwords with special characters work fine in JSON - no escaping needed.
 | `ssh_mcp/session_manager.py` | Session management |
 | `ssh_mcp/service.py` | Service protocol & health check |
 | `ssh_mcp/exceptions.py` | Exception hierarchy |
+| `ssh_mcp/cli.py` | Python entry point |
 | `config/hosts.json` | Saved SSH hosts |
 | `pyproject.toml` | Package config |
 | `Dockerfile` | Docker image build |

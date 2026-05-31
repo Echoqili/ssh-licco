@@ -122,15 +122,44 @@ pip install -r requirements-dev.txt
 ### 4. 运行测试
 
 ```bash
-# 运行所有测试
-pytest
+# 运行所有测试（402 passed, 3 skipped）
+pytest tests/ -v
 
 # 运行特定测试
 pytest tests/test_session_manager.py
 
+# 运行特定测试类
+pytest tests/test_security.py::TestCommandValidator
+
 # 查看测试覆盖率
 pytest --cov=ssh_mcp --cov-report=html
+
+# 运行并显示详细输出
+pytest tests/ -v --tb=short
 ```
+
+### 测试覆盖
+
+项目所有 17 个源模块均有完整的单元测试覆盖：
+
+| 源模块 | 测试文件 |
+|--------|----------|
+| `exceptions.py` | `test_exceptions.py` |
+| `connection_config.py` | `test_connection_config.py` |
+| `security.py` | `test_security.py` |
+| `logging_config.py` | `test_logging_config.py` |
+| `audit_logger.py` | `test_audit_logger.py` |
+| `executor.py` | `test_executor.py` |
+| `watchdog.py` | `test_watchdog.py` |
+| `key_manager.py` | `test_key_manager.py` |
+| `config_manager.py` | `test_config_manager.py` |
+| `clients/` | `test_factory.py`, `test_paramiko_client.py` |
+| `session_manager.py` | `test_session_manager.py` |
+| `connection_pool.py` | `test_connection_pool.py` |
+| `batch_executor.py` | `test_batch_executor.py` |
+| `cli.py` | `test_cli.py` |
+| `server.py` | `test_server.py` |
+| `service.py` | `test_service.py` |
 
 ---
 

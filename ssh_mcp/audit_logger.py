@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import logging
 import json
-import os
-from pathlib import Path
-from typing import Optional, Dict, Any
+import logging
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
+from typing import Any
 
 
 class AuditEventType(Enum):
@@ -30,51 +29,51 @@ class AuditLogger:
     - 用户操作记录
     - 满足合规审计要求
     """
-    
-    _instance: Optional['AuditLogger'] = None
-    _logger: Optional[logging.Logger] = None
-    
+
+    _instance: AuditLogger | None = None
+    _logger: logging.Logger | None = None
+
     def __init__(
         self,
-        audit_log_path: Optional[str | Path] = None,
+        audit_log_path: str | Path | None = None,
         log_level: int = logging.INFO
     ):
         self._audit_log_path = audit_log_path
         self._log_level = log_level
-        self._extra_fields: Dict[str, Any] = {}
-    
+        self._extra_fields: dict[str, Any] = {}
+
     @classmethod
     def get_instance(
         cls,
-        audit_log_path: Optional[str | Path] = None,
+        audit_log_path: str | Path | None = None,
         log_level: int = logging.INFO
-    ) -> 'AuditLogger':
+    ) -> AuditLogger:
         """获取审计日志单例"""
         if cls._instance is None:
             cls._instance = cls(audit_log_path, log_level)
             cls._instance._initialize()
         return cls._instance
-    
+
     def _initialize(self) -> None:
         """初始化审计日志器"""
         if self._audit_log_path:
             self._audit_log_path = Path(self._audit_log_path)
             self._audit_log_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         self._logger = logging.getLogger("ssh-audit")
         self._logger.setLevel(self._log_level)
-        
+
         if not self._logger.handlers:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(self._log_level)
-            
+
             formatter = logging.Formatter(
                 '%(asctime)s | AUDIT | %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
             )
             console_handler.setFormatter(formatter)
             self._logger.addHandler(console_handler)
-            
+
             if self._audit_log_path:
                 file_handler = logging.FileHandler(
                     self._audit_log_path,
@@ -83,11 +82,11 @@ class AuditLogger:
                 file_handler.setLevel(logging.DEBUG)
                 file_handler.setFormatter(formatter)
                 self._logger.addHandler(file_handler)
-    
+
     def set_extra_fields(self, **kwargs) -> None:
         """设置额外字段"""
         self._extra_fields.update(kwargs)
-    
+
     def log(
         self,
         event_type: AuditEventType,
@@ -95,8 +94,8 @@ class AuditLogger:
         host: str,
         action: str,
         result: str,
-        details: Optional[Dict[str, Any]] = None,
-        session_id: Optional[str] = None
+        details: dict[str, Any] | None = None,
+        session_id: str | None = None
     ) -> None:
         """记录审计日志"""
         audit_entry = {
@@ -110,19 +109,20 @@ class AuditLogger:
             "details": details or {},
             **self._extra_fields
         }
-        
+
         log_message = json.dumps(audit_entry, ensure_ascii=False, default=str)
-        self._logger.info(log_message)
-    
+        if self._logger:
+            self._logger.info(log_message)
+
     def log_connect(
         self,
         username: str,
         host: str,
         port: int,
         client_type: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         success: bool = True,
-        error_message: Optional[str] = None
+        error_message: str | None = None
     ) -> None:
         """记录连接事件"""
         self.log(
@@ -138,13 +138,13 @@ class AuditLogger:
             },
             session_id=session_id
         )
-    
+
     def log_disconnect(
         self,
         username: str,
         host: str,
         session_id: str,
-        duration_seconds: Optional[float] = None
+        duration_seconds: float | None = None
     ) -> None:
         """记录断开连接事件"""
         self.log(
@@ -159,7 +159,7 @@ class AuditLogger:
             },
             session_id=session_id
         )
-    
+
     def log_command(
         self,
         username: str,
@@ -168,8 +168,8 @@ class AuditLogger:
         return_code: int,
         stdout_length: int,
         stderr_length: int,
-        session_id: Optional[str] = None,
-        execution_time_ms: Optional[float] = None
+        session_id: str | None = None,
+        execution_time_ms: float | None = None
     ) -> None:
         """记录命令执行事件"""
         self.log(
@@ -187,7 +187,7 @@ class AuditLogger:
             },
             session_id=session_id
         )
-    
+
     def log_file_transfer(
         self,
         event_type: AuditEventType,
@@ -197,8 +197,8 @@ class AuditLogger:
         file_size: int,
         direction: str,
         success: bool = True,
-        error_message: Optional[str] = None,
-        session_id: Optional[str] = None
+        error_message: str | None = None,
+        session_id: str | None = None
     ) -> None:
         """记录文件传输事件"""
         self.log(
@@ -215,14 +215,14 @@ class AuditLogger:
             },
             session_id=session_id
         )
-    
+
     def log_auth(
         self,
         username: str,
         host: str,
         auth_method: str,
         success: bool,
-        error_message: Optional[str] = None
+        error_message: str | None = None
     ) -> None:
         """记录认证事件"""
         self.log(
@@ -239,7 +239,7 @@ class AuditLogger:
 
 
 def get_audit_logger(
-    audit_log_path: Optional[str | Path] = None,
+    audit_log_path: str | Path | None = None,
     log_level: int = logging.INFO
 ) -> AuditLogger:
     """便捷函数：获取审计日志实例"""

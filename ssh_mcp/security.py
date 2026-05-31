@@ -3,12 +3,11 @@ SSH LICCO Security Module
 安全验证和防护模块 - 支持多级安全策略
 """
 
+import os
 import re
 import shlex
-import os
-from typing import Set, Optional
-from pathlib import Path
 from enum import Enum
+from pathlib import Path
 
 
 class SecurityLevel(Enum):
@@ -25,73 +24,73 @@ class SecurityError(Exception):
 
 class CommandValidator:
     """命令验证器 - 防止命令注入攻击"""
-    
+
     # 基础允许的命令白名单（所有模式都允许）
-    BASE_ALLOWED_COMMANDS: Set[str] = {
+    BASE_ALLOWED_COMMANDS: set[str] = {
         # Shell
         'bash', 'sh', 'zsh', 'csh', 'tcsh', 'ksh', 'dash',
-        
+
         # 基础命令
         'ls', 'dir', 'cd', 'pwd', 'cat', 'head', 'tail', 'less', 'more',
         'grep', 'egrep', 'fgrep', 'find', 'which', 'whereis', 'type',
-        
+
         # 系统信息
         'uname', 'hostname', 'whoami', 'id', 'uptime', 'date', 'cal',
         'top', 'htop', 'ps', 'free', 'df', 'du', 'vmstat', 'iostat', 'mpstat',
-        
+
         # 网络
         'ping', 'ping6', 'netstat', 'ss', 'dig', 'nslookup', 'host',
         'nc', 'telnet', 'traceroute', 'mtr',
-        
+
         # 文件操作
         'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod', 'chown', 'chgrp',
         'ln', 'tar', 'gzip', 'gunzip', 'bzip2', 'bzcat', 'zip', 'unzip',
         'rsync', 'scp', 'sftp', 'rsync',
-        
+
         # 文本处理
         'echo', 'printf', 'sed', 'awk', 'cut', 'sort', 'uniq', 'wc',
         'tr', 'nl', 'fmt', 'fold', 'paste', 'join',
-        
+
         # Docker & Container
         'docker', 'docker-compose', 'docker-compose-v2', 'podman', 'containerd', 'runc',
-        
+
         # 系统管理
         'systemctl', 'journalctl', 'service', 'init', 'reboot', 'shutdown', 'poweroff',
-        
+
         # 开发工具
         'git', 'git-lfs', 'svn', 'hg', 'make', 'cmake', 'autoconf', 'automake',
         'gcc', 'g++', 'clang', 'rustc', 'cargo', 'go', 'npm', 'yarn', 'npx',
         'python', 'python3', 'pip', 'pip3', 'node', 'nodejs', 'java', 'javac',
         'mvn', 'gradle', 'dotnet', 'csharp', 'ruby', 'rails', 'bundle',
-        
+
         # 包管理
         'apt-get', 'apt', 'apt-cache', 'apt-key', 'dpkg', 'dpkg-deb',
         'yum', 'dnf', 'rpm', 'dnf-yum',
         'pacman', 'makepkg',
         'brew', 'port',
-        
+
         # 文本编辑器
         'vim', 'vi', 'nano', 'emacs', 'nedit', 'pico', 'joe',
-        
+
         # 进程管理
         'kill', 'pkill', 'killall', 'nice', 'renice', 'bg', 'fg', 'jobs',
-        
+
         # 安全工具
         'chpasswd', 'passwd', 'openssl', 'gpg', 'ssh-keygen', 'ssh-agent',
-        
+
         # 实用工具
         'wget', 'curl', 'httpie', 'jq', 'curlftpfs', 'ncftp',
-        
+
         # 数据库
         'mysql', 'mysqladmin', 'mysqldump', 'psql', 'pg_dump', 'pg_restore',
         'mongosh', 'mongodump', 'mongorestore', 'redis-cli', 'redis-server',
-        
+
         # 监控工具
         'prometheus', 'grafana-server', 'telegraf', 'influxd', 'zabbix', 'nagios',
     }
-    
+
     # 扩展命令（仅在 relaxed 模式允许）
-    EXTENDED_COMMANDS: Set[str] = {
+    EXTENDED_COMMANDS: set[str] = {
         'sudo', 'su', 'doas',
         'rm', 'rmdir',
         'shutdown', 'reboot', 'poweroff', 'halt',
@@ -103,7 +102,7 @@ class CommandValidator:
         'iptables', 'ip6tables', 'firewalld', 'ufw',
         'systemctl', 'service',
     }
-    
+
     # 危险字符模式（strict 模式检查）
     DANGEROUS_PATTERNS_STRICT = [
         r'\|',          # 管道
@@ -116,7 +115,7 @@ class CommandValidator:
         r'\n',          # 换行注入
         r'\r',          # 回车注入
     ]
-    
+
     # 危险字符模式（balanced 模式检查）
     DANGEROUS_PATTERNS_BALANCED = [
         r'\|',          # 管道
@@ -124,14 +123,14 @@ class CommandValidator:
         r'\$\(',        # 命令替换
         r'`',           # 命令替换
     ]
-    
+
     # 危险关键字
     DANGEROUS_KEYWORDS = ['passwd', 'shadow', '/etc/shadow', '/root/.ssh']
-    
+
     def __init__(
-        self, 
+        self,
         security_level: SecurityLevel = SecurityLevel.BALANCED,
-        extra_allowed_commands: Optional[Set[str]] = None
+        extra_allowed_commands: set[str] | None = None
     ):
         """
         初始化命令验证器
@@ -142,7 +141,7 @@ class CommandValidator:
         """
         self.security_level = security_level
         self.extra_allowed_commands = extra_allowed_commands or set()
-        
+
         # 根据安全级别设置严格程度
         if security_level == SecurityLevel.STRICT:
             self.strict_mode = True
@@ -153,29 +152,29 @@ class CommandValidator:
         else:  # RELAXED
             self.strict_mode = False
             self.dangerous_patterns = []
-        
+
         self.allowed_commands = self._build_allowed_commands()
         self._compile_patterns()
-    
-    def _build_allowed_commands(self) -> Set[str]:
+
+    def _build_allowed_commands(self) -> set[str]:
         """构建允许的命令集合"""
         allowed = self.BASE_ALLOWED_COMMANDS.copy()
-        
+
         # 在 relaxed 模式添加扩展命令
         if self.security_level == SecurityLevel.RELAXED:
             allowed.update(self.EXTENDED_COMMANDS)
-        
+
         # 添加用户自定义命令
         allowed.update(self.extra_allowed_commands)
-        
+
         return allowed
-    
+
     def _compile_patterns(self):
         """编译危险模式正则"""
         self.dangerous_regex = [
             re.compile(pattern) for pattern in self.dangerous_patterns
         ]
-    
+
     def validate_command(self, command: str) -> bool:
         """
         验证命令是否安全
@@ -191,18 +190,18 @@ class CommandValidator:
         """
         if not command or not command.strip():
             raise SecurityError("命令不能为空")
-        
+
         # 分割命令获取基础命令
         try:
             cmd_parts = shlex.split(command)
         except ValueError as e:
             raise SecurityError(f"命令格式错误：{e}")
-        
+
         if not cmd_parts:
             raise SecurityError("命令不能为空")
-        
+
         base_command = cmd_parts[0]
-        
+
         # 1. 检查白名单
         if base_command not in self.allowed_commands:
             # 提供友好提示
@@ -210,13 +209,13 @@ class CommandValidator:
             hint = ""
             if similar_cmds:
                 hint = f"\n提示：您可能是想用 {' 或 '.join(similar_cmds[:3])}？"
-            
+
             raise SecurityError(
                 f"命令 '{base_command}' 不在允许列表中。{hint}\n"
                 f"当前安全级别：{self.security_level.value}\n"
                 f"如需使用该命令，请设置环境变量：SSH_EXTRA_ALLOWED_COMMANDS={base_command}"
             )
-        
+
         # 2. 严格模式下检查危险字符
         if self.strict_mode:
             for regex in self.dangerous_regex:
@@ -225,11 +224,11 @@ class CommandValidator:
                         f"命令包含危险字符，可能被用于命令注入。\n"
                         f"被阻止的命令：{command}"
                     )
-        
+
         # 3. 检查命令长度
         if len(command) > 4096:
             raise SecurityError("命令过长（最大 4096 字符）")
-        
+
         # 4. 检查特殊关键字
         for keyword in self.DANGEROUS_KEYWORDS:
             if keyword in command.lower():
@@ -237,9 +236,9 @@ class CommandValidator:
                     f"命令包含受限关键字：'{keyword}'\n"
                     f"这是为了保护系统安全，防止未授权访问敏感文件。"
                 )
-        
+
         return True
-    
+
     def _find_similar_commands(self, cmd: str) -> list:
         """查找相似的允许命令（用于友好提示）"""
         similar = []
@@ -254,25 +253,25 @@ class CommandValidator:
 
 class PathValidator:
     """路径验证器 - 防止路径遍历攻击"""
-    
+
     # 禁止访问的路径
     FORBIDDEN_PATHS = [
         '/etc', '/root', '/boot', '/proc', '/sys',
         '/var/log', '/var/spool', '/var/cache',
     ]
-    
+
     # relaxed 模式允许的路径
     RELAXED_ALLOWED_PATHS = [
         '/tmp', '/var/tmp',
         '/home', '/opt', '/srv',
         '/usr/local', '/usr/share',
     ]
-    
+
     def __init__(
-        self, 
+        self,
         security_level: SecurityLevel = SecurityLevel.BALANCED,
         base_dir: str = '/home',
-        extra_allowed_paths: Optional[list] = None
+        extra_allowed_paths: list | None = None
     ):
         """
         初始化路径验证器
@@ -285,13 +284,13 @@ class PathValidator:
         self.security_level = security_level
         self.base_dir = Path(base_dir).resolve()
         self.extra_allowed_paths = extra_allowed_paths or []
-        
+
         # 在 relaxed 模式扩展允许的路径
         if security_level == SecurityLevel.RELAXED:
             self.forbidden_paths = []  # 不限制
         else:
             self.forbidden_paths = self.FORBIDDEN_PATHS.copy()
-    
+
     def validate_path(self, user_path: str) -> Path:
         """
         验证用户提供的路径
@@ -307,10 +306,10 @@ class PathValidator:
         """
         if not user_path or not user_path.strip():
             raise SecurityError("路径不能为空")
-        
+
         # 转换为绝对路径
         full_path = (self.base_dir / user_path).resolve()
-        
+
         # 1. 检查路径遍历（strict 和 balanced 模式）
         if self.security_level in [SecurityLevel.STRICT, SecurityLevel.BALANCED]:
             if not str(full_path).startswith(str(self.base_dir)):
@@ -320,7 +319,7 @@ class PathValidator:
                     f"解析路径：{full_path}\n"
                     f"允许的基础路径：{self.base_dir}"
                 )
-        
+
         # 2. 检查禁止路径（strict 和 balanced 模式）
         if self.forbidden_paths:
             path_str = str(full_path)
@@ -330,14 +329,14 @@ class PathValidator:
                         f"禁止访问敏感路径：{forbidden}\n"
                         f"这是为了保护系统关键文件。"
                     )
-        
+
         return full_path
 
 
 # 全局验证器实例（从环境变量读取配置）
 def create_validators_from_env():
     """从环境变量创建验证器实例"""
-    
+
     # 读取安全级别
     level_str = os.getenv('SSH_SECURITY_LEVEL', 'balanced').lower()
     try:
@@ -345,27 +344,27 @@ def create_validators_from_env():
     except ValueError:
         security_level = SecurityLevel.BALANCED
         print(f"⚠️  未知的安全级别 '{level_str}'，使用默认值 'balanced'")
-    
+
     # 读取额外允许的命令
     extra_commands_str = os.getenv('SSH_EXTRA_ALLOWED_COMMANDS', '')
     extra_commands = set()
     if extra_commands_str:
         extra_commands = set(cmd.strip() for cmd in extra_commands_str.split(',') if cmd.strip())
-    
+
     # 读取基础目录
     base_dir = os.getenv('SSH_BASE_DIR', '/home')
-    
+
     # 创建验证器
     command_validator = CommandValidator(
         security_level=security_level,
         extra_allowed_commands=extra_commands
     )
-    
+
     path_validator = PathValidator(
         security_level=security_level,
         base_dir=base_dir
     )
-    
+
     return command_validator, path_validator
 
 

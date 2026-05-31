@@ -1,6 +1,6 @@
 ---
 name: "ssh-mcp-troubleshoot"
-description: "SSH MCP troubleshooting guide. Invoke when user encounters connection issues, authentication errors, or needs to diagnose SSH/Docker problems."
+description: "SSH MCP troubleshooting guide. Invoke when user encounters connection issues, authentication errors, npm/npx startup problems, or needs to diagnose SSH/Docker problems."
 ---
 
 # SSH MCP Troubleshooting Guide
@@ -267,6 +267,128 @@ sudo systemctl restart sshd
    }
    ```
 3. This ensures MCP env config always takes priority
+
+### 12. npx `Cannot find module` Error (Startup Failure)
+
+**Symptoms**:
+- 配置 `"command": "npx", "args": ["ssh-licco"]` 后 MCP 客户端报错
+- 错误包含 `Cannot find module '.../node_modules/ssh-licco/bin/ssh-licco.js'`
+- 错误包含 `MODULE_NOT_FOUND`
+
+**Cause**: npm 全局目录中存在损坏/不完整的 `ssh-licco` 包，导致 `npx` 加载本地缓存而非下载新包。
+
+**Solution 1: Clean npm global package (recommended)**:
+```bash
+npm uninstall -g ssh-licco
+```
+卸载后 `npx ssh-licco` 会重新从 npm registry 下载完整包，自动安装 Python 依赖并运行。
+
+**Solution 2: Use local source directly (for development)**:
+如果本地有项目源码，将 MCP 配置改为直接引用本地文件：
+```json
+{
+  "mcpServers": {
+    "ssh-licco": {
+      "command": "node",
+      "args": ["D:\\path\\to\\ssh-licco\\ssh-licco.js"],
+      "env": {
+        "SSH_LICCO_AUTO_INSTALL": "true",
+        ...
+      }
+    }
+  }
+}
+```
+
+**Solution 3: Run smart installer directly**:
+```bash
+python smart_install.py
+```
+
+**Prevention**:
+- 初次使用 `npx ssh-licco` 前，确保没有全局安装的损坏包
+- 如果全局安装过旧版本，先 `npm uninstall -g ssh-licco` 清理
+- 避免将全局 npm 缓存路径设置为项目源码路径
+
+### 13. Anaconda `ModuleNotFoundError: No module named 'ssh_mcp'`
+
+**Symptoms**:
+- 错误栈指向 `D:\software\anaconda\Scripts\ssh-licco.exe\__main__.py`
+- `ModuleNotFoundError: No module named 'ssh_mcp'`
+- `pip show ssh-licco` 显示 `WARNING: Ignoring invalid distribution ~sh-licco`
+- `where ssh-licco` 找不到命令，但 exe 文件实际存在
+
+**Cause**: Anaconda 的 `site-packages` 目录中存在带 `~` 前缀的损坏残留目录（如 `~sh_licco-0.5.5.dist-info`），pip 的 `console_scripts` 入口点（`ssh-licco.exe`）存在但模块已丢失。通常由 pip 安装过程中断导致。
+
+---
+
+**Diagnosis Flow**（复现该问题的完整排查步骤）：
+
+```powershell
+# 1. 检查 pip 中包的状态
+pip show ssh-licco
+# → WARNING: Ignoring invalid distribution ~sh-licco
+# → Package(s) not found: ssh-licco
+
+# 2. 检查可执行文件
+where ssh-licco
+# → 可能找不到（PATH 未包含 Anaconda Scripts）
+Get-ChildItem D:\software\anaconda\Scripts\ssh-licco*
+# → ssh-licco.exe 存在（入口点残留）
+
+# 3. 检查 site-packages 中的残留
+Get-ChildItem D:\software\anaconda\Lib\site-packages | Where-Object { $_.Name -like "~*licco*" }
+# → ~sh_licco-0.5.5.dist-info 目录（带 ~ 前缀 = pip 标记为损坏）
+
+# 4. 尝试直接导入验证
+D:\software\anaconda\python.exe -c "from ssh_mcp.cli import main; print('OK')"
+# → ModuleNotFoundError: No module named 'ssh_mcp'
+
+# 5. 尝试 pip 安装后再次验证
+D:\software\anaconda\python.exe -m pip install --force-reinstall ssh-licco
+# → 成功安装 0.5.4 及 33 个依赖
+# → 仍报 WARNING: Ignoring invalid distribution ~sh-licco（~ 目录未清理）
+```
+
+---
+
+**Fix: Diagnosis-based repair**:
+
+```powershell
+# Step 1: Clean corrupted ~-prefixed dist-info using Python（shell 权限限制时用）
+D:\software\anaconda\python.exe -c "import shutil, os; path = r'D:\software\anaconda\Lib\site-packages'; [shutil.rmtree(os.path.join(path, d), ignore_errors=True) for d in os.listdir(path) if d.startswith('~') and 'licco' in d.lower()]"
+
+# Step 2: Verify cleanup
+D:\software\anaconda\python.exe -m pip show ssh-licco
+# → WARNING 消失
+# → Version: 0.5.4 (from PyPI)
+
+# Step 3: Install local dev version (editable) to get latest code
+D:\software\anaconda\python.exe -m pip install -e D:\pyworkplace\ssh-mcp
+# → Successfully installed ssh-licco-0.5.5
+
+# Step 4: Verify complete import chain
+D:\software\anaconda\python.exe -c "from ssh_mcp.server import SSHMCPServer; from ssh_mcp.session_manager import SessionManager; from ssh_mcp.cli import main; print('OK')"
+# → OK ✅
+```
+
+**Key Commands Quick Reference**:
+
+| Purpose | Command |
+|---------|---------|
+| 检查包状态 | `pip show ssh-licco` |
+| 检查可执行文件 | `Get-ChildItem <Anaconda>\Scripts\ssh-licco*` |
+| 查找损坏残留 | `Get-ChildItem <Anaconda>\Lib\site-packages \| ? { $_.Name -like "~*licco*" }` |
+| 一键清理残留 | `python -c "import shutil, os; ... shutil.rmtree(...)"` |
+| 强制重装 | `<Anaconda>\python.exe -m pip install --force-reinstall ssh-licco` |
+| 安装本地开发版 | `<Anaconda>\python.exe -m pip install -e D:\path\to\ssh-mcp` |
+| 验证导入链 | `python -c "from ssh_mcp.server import SSHMCPServer; from ssh_mcp.session_manager import SessionManager; from ssh_mcp.cli import main; print('OK')"` |
+
+**Prevention**:
+- 如果要在 Anaconda 中使用，统一用 `D:\software\anaconda\python.exe -m pip install` 操作
+- 不要在安装过程中中断 pip（可能导致 `~` 前缀的残留）
+- ssh-licco 的 `npx` 方式使用独立 venv（`~/.ssh-licco-venv`），不受 Anaconda 环境影响
+- 排查同类问题时，先走 `pip show → Get-ChildItem ~* → python.exe -c "import"` 三步诊断
 
 ## Diagnostic Commands
 

@@ -7,26 +7,40 @@ description: "Local setup and configuration guide for SSH MCP. Invoke when user 
 
 ## Installation
 
-### From npm (Recommended for Windows)
+### Method 1: npx One-Click (Recommended, Zero Config)
+
+```bash
+npx ssh-licco
+```
+
+First run automatically: detect Python → create venv → install dependencies → verify integrity → start MCP server. **No manual setup needed.**
+
+This creates an isolated Python venv at `~/.ssh-licco-venv` and avoids all conflicts.
+
+### Method 2: From npm (Recommended for Windows)
+
 ```bash
 npm install -g ssh-licco
 ```
 
-This creates an isolated Python venv and avoids conflicts.
+Post-install script (`install.js`) auto-detects existing venv and performs incremental update.
 
-### From PyPI
+### Method 3: From PyPI
+
 ```bash
 pip install ssh-licco
 ```
 
-### From Source
+### Method 4: From Source
+
 ```bash
 git clone https://github.com/Echoqili/ssh-licco.git
 cd ssh-licco
-pip install -e . --user
+pip install -e .
 ```
 
 ### Update Version
+
 ```bash
 # npm
 npm update -g ssh-licco
@@ -35,33 +49,65 @@ npm update -g ssh-licco
 pip install --upgrade ssh-licco
 ```
 
+## Auto-Install System Architecture
+
+ssh-licco uses a **three-layer architecture** for zero-config startup:
+
+```
+User → npx ssh-licco
+           ↓
+    ┌──── ssh-licco.js (Node Layer) ────┐
+    │  ① Find Python 3.10+             │
+    │  ② Detect Anaconda environment   │
+    │  ③ Create/reuse ~/.ssh-licco-venv │
+    │  ④ pip install dependencies      │
+    │  ⑤ Verify dependency integrity   │
+    └──────────┬────────────────────────┘
+               ↓
+    ┌── cli.py (Python Entry) ──────┐
+    │  Only starts MCP server       │
+    └──────────┬────────────────────┘
+               ↓
+    ┌── SSHMCPServer (MCP Service) ─┐
+    │  SSH connect, execute, etc.   │
+    └───────────────────────────────┘
+```
+
+### Smart Install Features
+
+| Feature | Description |
+|---------|-------------|
+| **Anaconda Auto-Detect** | Detects conda environment, uses isolated venv to avoid conflicts |
+| **Dependency Integrity Check** | Verifies all dependencies on every startup, auto-repairs if missing |
+| **Incremental Update** | Doesn't delete existing venv, uses `pip install -e .` for incremental install |
+| **Auto-Repair** | Auto re-installs when dependencies are corrupted, no manual intervention |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `ssh-licco.js` | Node.js wrapper - environment prep, integrity check, startup |
+| `install.js` | npm postinstall script - incremental install |
+| `smart_install.py` | Standalone diagnostic install script |
+| `cli.py` | Python entry point - only starts the MCP server |
+
 ## Requirements
 
 - **Python**: >=3.10, <3.14
-- **Core dependencies**: mcp>=1.0.0, asyncssh>=2.17.0, pydantic>=2.0.0, pydantic-settings>=2.0.0
+- **Core dependencies**: mcp>=1.0.0, asyncssh>=2.17.0, paramiko>=2.0.0, pydantic>=2.0.0, pydantic-settings>=2.0.0
 - **Key management**: cryptography (for SSH key generation)
-- **Optional**: paramiko (alternative SSH client)
 
 ## Trae IDE MCP Configuration
 
-### Method 1: Via Settings UI
-1. Open Trae IDE Settings
-2. Search for "MCP"
-3. Add SSH MCP server
-4. Configure command: `ssh-licco`
-5. Add environment variables
+### Stable Configuration Pattern (Recommended)
 
-### Method 2: Via JSON Config
+The most stable approach is to use the **isolated venv** directly, bypassing Node.js wrapper and Anaconda:
 
-Find MCP config file location:
-- **Trae IDE**: `C:\Users\<YourName>\AppData\Roaming\Trae\User\mcp.json`
-
-Add configuration:
 ```json
 {
   "mcpServers": {
-    "ssh": {
-      "command": "ssh-licco",
+    "ssh-licco": {
+      "command": "C:\\Users\\<YourName>\\.ssh-licco-venv\\Scripts\\ssh-licco.exe",
       "env": {
         "SSH_HOST": "192.168.1.100",
         "SSH_USER": "root",
@@ -70,14 +116,55 @@ Add configuration:
         "SSH_TIMEOUT": "60",
         "SSH_KEEPALIVE_INTERVAL": "30",
         "SSH_SESSION_TIMEOUT": "7200",
-        "SSH_CLIENT_TYPE": "asyncssh",
         "SSH_SECURITY_LEVEL": "balanced",
-        "SSH_RATE_LIMIT": "true"
+        "SSH_EXTRA_ALLOWED_COMMANDS": "git,pip,npm,docker,sh"
       }
     }
   }
 }
 ```
+
+**Why this pattern is stable:**
+- `~/.ssh-licco-venv` is an **isolated Python environment** created by the auto-installer
+- It is **completely independent** of Anaconda, system Python, or npm
+- No Node.js wrapper layer means **no shell command parsing issues** on Windows
+- Editor directly communicates with the Python MCP server via stdio
+
+Linux/macOS equivalent:
+```json
+{
+  "command": "/home/<user>/.ssh-licco-venv/bin/ssh-licco"
+}
+```
+
+### Method 1: Via Settings UI
+1. Open Trae IDE Settings
+2. Search for "MCP"
+3. Add SSH MCP server
+4. Configure command: `C:\Users\<YourName>\.ssh-licco-venv\Scripts\ssh-licco.exe`
+5. Add environment variables
+
+### Method 2: Via JSON Config
+
+Find MCP config file location:
+- **Trae IDE**: `C:\Users\<YourName>\AppData\Roaming\Trae\User\mcp.json`
+
+### How MCP Environment Affects Stability
+
+MCP (Model Context Protocol) uses **stdio** (stdin/stdout) for JSON-RPC communication. The editor and MCP server exchange JSON messages over these pipes. This means:
+
+1. **Any non-JSON output to stdout breaks the protocol** — install logs, warnings, progress bars all corrupt the MCP handshake
+2. **stderr is safe** — it's a separate pipe for server logs
+3. **Startup must be fast** — if the server takes too long to start, the editor times out and abandons the connection
+
+**Common failure patterns and solutions:**
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| Tools not showing | Server output to stdout corrupted protocol | Use venv directly (no wrapper) |
+| `ModuleNotFoundError` | Anaconda package corrupted | Clean `~` prefix dirs, reinstall to venv |
+| Timeout on startup | Wrapper doing pip install on every start | Fix integrity check (don't use `shell: true` on Windows) |
+| `Cannot find module` | Damaged npm global package | Run `npm uninstall -g ssh-licco` |
 
 ## Environment Variables
 
@@ -94,6 +181,7 @@ Add configuration:
 | SSH_SESSION_TIMEOUT | 7200 | Session timeout (seconds) |
 | SSH_CLIENT_TYPE | asyncssh | SSH client (paramiko/asyncssh) |
 | SSH_FORCE_ENV_CONFIG | false | Force env vars as highest priority |
+| SSH_LICCO_AUTO_INSTALL | true | Enable/disable auto-install on first run |
 
 ### Security Settings
 
@@ -259,7 +347,7 @@ ssh-copy-id user@server
 
 ### Local Development
 ```bash
-pip install -e . --user
+pip install -e .
 ssh-licco --help
 python -m ssh_mcp.server
 ```
@@ -294,6 +382,24 @@ ssh-licco
 2. Check PATH: `where ssh-licco` (Windows) or `which ssh-licco` (Linux)
 3. Reinstall: `pip install --upgrade ssh-licco`
 
+### npx Cannot Find Module Error
+
+**Cause**: Damaged npm global package
+
+**Fix**:
+```bash
+npm uninstall -g ssh-licco
+# Then retry npx ssh-licco
+```
+
+### Dependency Incomplete
+
+ssh-licco auto-verifies dependencies on every startup and auto-repairs if missing. You can also run manually:
+
+```bash
+node install.js
+```
+
 ### Version Not Updating
 1. Restart Trae IDE
 2. Kill old MCP process: `Get-Process | Where-Object {$_.Name -like "*ssh-licco*"}`
@@ -325,6 +431,9 @@ ssh-mcp/
 │   ├── logging_config.py # Centralized logging
 │   ├── exceptions.py # Exception hierarchy
 │   └── clients/      # SSH clients (paramiko/asyncssh/fabric/ssh2)
+├── ssh-licco.js      # Node.js wrapper (auto-install + startup)
+├── install.js        # npm postinstall script
+├── smart_install.py  # Standalone diagnostic installer
 ├── config/           # Runtime config
 │   ├── hosts.json
 │   └── mcp.presets.json
@@ -335,7 +444,14 @@ ssh-mcp/
 ## Uninstall
 
 ```bash
+# pip installed
 pip uninstall ssh-licco
+
+# npm installed
+npm uninstall -g ssh-licco
+
+# Clean up venv if needed
+rm -rf ~/.ssh-licco-venv
 ```
 
 ## Get Version

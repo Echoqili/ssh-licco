@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
-from pathlib import Path
+import os
+import uuid
 from importlib.metadata import version as get_version
+from pathlib import Path
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
-from .connection_config import ConnectionConfig
-from .session_manager import SessionManager, SessionInfo
-from .key_manager import KeyManager
-from .config_manager import ConfigManager, SSHConfig, SSHHost
 from .audit_logger import get_audit_logger
+from .config_manager import ConfigManager, SSHConfig, SSHHost
+from .connection_config import ConnectionConfig
+from .key_manager import KeyManager
+from .session_manager import SessionManager
 
 try:
     __version__ = get_version("ssh-licco")
@@ -36,19 +38,18 @@ class SSHMCPServer:
         import os
         audit_path = os.getenv("SSH_AUDIT_LOG_PATH")
         self._audit = get_audit_logger(audit_path) if audit_path else None
-        
+
         # 🔒 频率限制：防止 DoS 攻击（环境变量配置）
         self._rate_limit_enabled = os.getenv("SSH_RATE_LIMIT", "true").lower() == "true"
         self._rate_limit_max = int(os.getenv("SSH_RATE_LIMIT_MAX", "30"))  # 每时间窗口最大请求数
         self._rate_limit_window = int(os.getenv("SSH_RATE_LIMIT_WINDOW", "60"))  # 时间窗口（秒）
         self._command_timestamps: list[float] = []  # 命令执行时间戳记录
-        
+
         self._setup_handlers()
-    
+
     def _load_env_config(self) -> dict:
         """Load SSH configuration from environment variables."""
-        import os
-        config = {}
+        config: dict[str, Any] = {}
         if os.getenv("SSH_HOST"):
             config["host"] = os.getenv("SSH_HOST", "127.0.0.1")
             config["port"] = int(os.getenv("SSH_PORT", "22"))
@@ -65,24 +66,24 @@ class SSHMCPServer:
         """🔒 频率限制检查（滑动窗口算法）"""
         if not self._rate_limit_enabled:
             return True, ""
-        
+
         import time
         now = time.time()
         window_start = now - self._rate_limit_window
-        
+
         # 清理过期的请求记录
         self._command_timestamps = [ts for ts in self._command_timestamps if ts > window_start]
-        
+
         if len(self._command_timestamps) >= self._rate_limit_max:
             return False, (
                 f"⚠️ 频率限制触发：超过 {self._rate_limit_max} 次请求/{self._rate_limit_window}秒\n"
                 f"请降低请求频率后重试。\n"
                 f"可通过环境变量 SSH_RATE_LIMIT=false 临时禁用限制。"
             )
-        
+
         self._command_timestamps.append(now)
         return True, ""
-    
+
     def _setup_handlers(self):
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
@@ -317,7 +318,7 @@ class SSHMCPServer:
             allowed, msg = self._check_rate_limit()
             if not allowed:
                 return [TextContent(type="text", text=msg)]
-            
+
             try:
                 if name == "ssh_config":
                     return await self._handle_config(arguments)
@@ -364,7 +365,7 @@ class SSHMCPServer:
         password = args.get("password")
         if not password:
             password = os.getenv("SSH_PASSWORD", "")
-        
+
         config = SSHConfig(
             host=args.get("host", "127.0.0.1"),
             port=args.get("port", 22),
@@ -384,7 +385,7 @@ class SSHMCPServer:
 
     async def _handle_login(self, args: dict) -> list[TextContent]:
         import os
-        
+
         # 优先使用环境变量配置（如果设置了 SSH_HOST）
         if os.getenv("SSH_HOST"):
             self._logger.info("🔒 使用环境变量配置进行登录")
@@ -397,36 +398,36 @@ class SSHMCPServer:
                 timeout=int(os.getenv("SSH_TIMEOUT", "60")),
                 keepalive_interval=int(os.getenv("SSH_KEEPALIVE_INTERVAL", "30")),
                 session_timeout=int(os.getenv("SSH_SESSION_TIMEOUT", "7200")),
-                client_type=os.getenv("SSH_CLIENT_TYPE", "paramiko")
+                client_type=os.getenv("SSH_CLIENT_TYPE", "paramiko"),  # type: ignore[arg-type]
             )
-            
+
             if not config.password:
                 return [TextContent(type="text", text="❌ 错误：SSH_PASSWORD 环境变量未设置")]
-            
+
             try:
                 session_info = await self.session_manager.create_session(config)
-                
-                output = f"SSH 登录成功!\n"
+
+                output = "SSH 登录成功!\n"
                 output += f"主机：{session_info.host}:{session_info.port}\n"
                 output += f"Session ID: {session_info.session_id}\n"
                 output += f"用户名：{session_info.username}\n"
                 output += f"连接时间：{session_info.connected_at.isoformat()}"
-                
-                command = args.get("command")
+
+                command = args["command"]
                 if command:
                     session = await self.session_manager.get_session(session_info.session_id)
                     result = await session.execute_command(command)
-                    output += f"\n\n--- 命令输出 ---\n"
+                    output += "\n\n--- 命令输出 ---\n"
                     output += f"Exit Code: {result['exit_code']}\n"
                     if result["stdout"]:
                         output += f"\n{result['stdout']}"
                     if result["stderr"]:
                         output += f"\n--- 错误 ---\n{result['stderr']}"
-                
+
                 return [TextContent(type="text", text=output)]
             except Exception as e:
                 return [TextContent(type="text", text=f"登录失败：{str(e)}")]
-        
+
         # 环境变量未配置，使用保存的配置
         config_data = self.config_manager.load()
         if not config_data:
@@ -434,15 +435,15 @@ class SSHMCPServer:
                 type="text",
                 text="请先使用 ssh_config 工具配置 SSH 连接信息，或在 MCP 配置中设置环境变量"
             )]
-        
+
         # 如果保存的密码为空，尝试使用环境变量
         password = config_data.password
         if not password:
             password = os.getenv("SSH_PASSWORD", "")
-        
+
         if not password:
             return [TextContent(type="text", text="密码未配置，请先使用 ssh_config 设置密码或在 MCP 配置中设置 SSH_PASSWORD 环境变量")]
-        
+
         config = ConnectionConfig(
             host=config_data.host,
             port=config_data.port,
@@ -451,34 +452,34 @@ class SSHMCPServer:
             auth_method="password",
             timeout=config_data.timeout
         )
-        
+
         session_info = await self.session_manager.create_session(config)
-        
-        output = f"SSH 登录成功!\n"
+
+        output = "SSH 登录成功!\n"
         output += f"主机：{session_info.host}:{session_info.port}\n"
         output += f"Session ID: {session_info.session_id}\n"
         output += f"用户名：{session_info.username}\n"
         output += f"连接时间：{session_info.connected_at.isoformat()}"
-        
+
         command = args.get("command")
         if command:
             session = await self.session_manager.get_session(session_info.session_id)
             result = await session.execute_command(command)
-            output += f"\n\n--- 命令输出 ---\n"
+            output += "\n\n--- 命令输出 ---\n"
             output += f"Exit Code: {result['exit_code']}\n"
             if result["stdout"]:
                 output += f"\n{result['stdout']}"
             if result["stderr"]:
                 output += f"\n--- 错误 ---\n{result['stderr']}"
-        
+
         return [TextContent(type="text", text=output)]
 
     async def _handle_connect(self, args: dict) -> list[TextContent]:
         host_config = None
-        
+
         # 检查是否启用了强制环境变量模式
         force_env = self._env_config.get("force_env_config", False)
-        
+
         if force_env:
             # 🔒 强制模式：环境变量优先级最高
             self._logger.info("🔒 Using FORCE ENV CONFIG mode")
@@ -523,14 +524,14 @@ class SSHMCPServer:
                     session_timeout=args.get("session_timeout", 7200)
                 )
                 self._logger.info(f"✅ Using user-provided host: {args['host']}")
-            
+
             # Priority 2: Try to get host from config/hosts.json by name
             if not host_config and args.get("name"):
                 host_config = self.config_manager.get_host_by_name(args["name"])
                 if not host_config:
                     return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
                 self._logger.info(f"Using config file host: {host_config.host}")
-            
+
             # Priority 3: Use environment variable config from MCP server.json (lowest priority - fallback)
             if not host_config and self._env_config and self._env_config.get("host"):
                 host_config = SSHHost(
@@ -544,7 +545,7 @@ class SSHMCPServer:
                     session_timeout=self._env_config.get("session_timeout", 7200)
                 )
                 self._logger.info(f"Using environment variable host (fallback): {host_config.host}")
-        
+
         # Debug log
         if host_config:
             self._logger.info(f"🎯 Final connection target: {host_config.host}:{host_config.port}")
@@ -552,13 +553,13 @@ class SSHMCPServer:
                 self._logger.warning("🔒 FORCE MODE: Environment config overrides user parameters")
         else:
             self._logger.warning("No host configuration found!")
-        
+
         # Get client type from args, env config, or default to paramiko
         client_type = args.get("client_type") or self._env_config.get("client_type", "paramiko")
-        
+
         # 隐藏密码显示
-        password_display = "***" if host_config.password else "未设置"
-        
+        password_display = "***" if host_config and host_config.password else "未设置"
+
         if host_config:
             config = ConnectionConfig(
                 host=host_config.host,
@@ -592,10 +593,10 @@ class SSHMCPServer:
                 known_hosts_path=args.get("known_hosts_path"),
                 accept_new_host_key=args.get("accept_new_host_key", False),
             )
-        
+
         try:
             session_info = await self.session_manager.create_session(config)
-            
+
             # 🔒 审计日志：记录连接成功
             if self._audit:
                 self._audit.log_connect(
@@ -606,7 +607,7 @@ class SSHMCPServer:
                     session_id=session_info.session_id,
                     success=True
                 )
-            
+
             return [TextContent(
                 type="text",
                 text=f"Successfully connected to {session_info.host}:{session_info.port}\n"
@@ -618,7 +619,7 @@ class SSHMCPServer:
             )]
         except Exception as e:
             self._logger.error(f"Connection failed: {e}")
-            
+
             # 🔒 审计日志：记录连接失败
             if self._audit:
                 self._audit.log_connect(
@@ -629,7 +630,7 @@ class SSHMCPServer:
                     success=False,
                     error_message=str(e)
                 )
-            
+
             return [TextContent(
                 type="text",
                 text=f"❌ 连接失败：{str(e)}\n\n"
@@ -642,16 +643,16 @@ class SSHMCPServer:
 
     async def _handle_execute(self, args: dict) -> list[TextContent]:
         """处理命令执行（带安全验证）"""
-        from .security import SecurityError, command_validator, SecurityLevel
-        
-        command = args.get("command")
-        
+        from .security import SecurityError, command_validator
+
+        command = args["command"]
+
         # 🔒 安全验证 - 防止任意命令执行
         try:
             command_validator.validate_command(command)
         except SecurityError as e:
             self._logger.error(f"Command blocked: {e}")
-            
+
             # 🛑 暂停执行，提供交互式解决方案
             return [TextContent(
                 type="text",
@@ -713,21 +714,21 @@ class SSHMCPServer:
 💡 **提示**: 修改配置后需要重启 MCP 服务器
 """
             )]
-        
+
         session = await self.session_manager.get_session(args["session_id"])
         if not session:
             return [TextContent(type="text", text=f"Session not found: {args['session_id']}")]
-        
+
         timeout = args.get("timeout", 30)
         background = args.get("background", None)
-        
+
         # 🤖 自动判断是否需要后台执行
         if background is None:
             background = self._should_run_background(command)
             self._logger.info(f"Auto-detected background={background} for command: {command[:50]}...")
-        
+
         result = await session.execute_command(args["command"], timeout=timeout, background=background)
-        
+
         # 🔒 审计日志：记录命令执行
         if self._audit:
             import time
@@ -743,7 +744,7 @@ class SSHMCPServer:
                 session_id=args["session_id"],
                 execution_time_ms=exec_time
             )
-        
+
         if background:
             output = f"✅ Command started in background\n\n{result['stdout']}"
         else:
@@ -752,9 +753,9 @@ class SSHMCPServer:
                 output += f"\n--- STDOUT ---\n{result['stdout']}"
             if result["stderr"]:
                 output += f"\n--- STDERR ---\n{result['stderr']}"
-        
+
         return [TextContent(type="text", text=output)]
-    
+
     def _should_run_background(self, command: str) -> bool:
         """自动判断命令是否应该后台执行
         
@@ -771,7 +772,7 @@ class SSHMCPServer:
             bool: True 表示需要后台执行
         """
         command_lower = command.lower()
-        
+
         # ❌ Docker 即时操作命令（不后台）
         docker_instant_commands = [
             'docker start ', 'docker stop ', 'docker restart ', 'docker rm ',
@@ -783,12 +784,12 @@ class SSHMCPServer:
             'docker network ls', 'docker volume ls', 'docker system',
             'docker exec', 'docker attach', 'docker cp',
         ]
-        
+
         # 检查是否是 Docker 即时操作命令
         for cmd in docker_instant_commands:
             if cmd in command_lower:
                 return False
-        
+
         # Web 服务器
         web_servers = [
             'python app.py', 'python main.py', 'python manage.py runserver',
@@ -801,7 +802,7 @@ class SSHMCPServer:
             'rails server', 'rails s',
             'go run', 'go build && ./',
         ]
-        
+
         # 数据库服务
         database_servers = [
             'mongod', 'mysql', 'mysqld', 'postgres', 'postgresql',
@@ -809,7 +810,7 @@ class SSHMCPServer:
             'elasticsearch', 'kibana',
             'docker-compose up', 'docker run -d',
         ]
-        
+
         # 开发服务器
         dev_servers = [
             'webpack-dev-server', 'webpack serve',
@@ -818,35 +819,35 @@ class SSHMCPServer:
             'next dev', 'nuxt dev',
             'svelte-kit dev',
         ]
-        
+
         # 监听端口的命令模式
         listen_patterns = [
             '--host', '--port', '0.0.0.0', 'localhost:',
             '-p ', '--listen', '--bind',
         ]
-        
+
         # 检查是否匹配已知的服务器命令
         for server_cmd in web_servers + database_servers + dev_servers:
             if server_cmd in command_lower:
                 return True
-        
+
         # 检查是否有监听端口的模式
         for pattern in listen_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # 检查是否包含常见的服务器启动标志
         if any(flag in command for flag in ['--reload', '--debug', '--no-reload']):
             return True
-        
+
         # 检查是否是守护进程或服务
         if 'systemctl start' in command or 'service start' in command:
             return True
-        
+
         # 检查是否是后台任务队列
         if any(cmd in command_lower for cmd in ['celery', 'rq worker', 'sidekiq', 'resque']):
             return True
-        
+
         # Java 相关命令
         java_patterns = [
             'java -jar', 'java -cp', 'java -class',
@@ -855,28 +856,28 @@ class SSHMCPServer:
             './mvnw spring-boot:run', './gradlew bootrun', './gradlew run',
             'java -server', 'java -x',
         ]
-        
+
         # Java 应用服务器
         java_servers = [
             'tomcat', 'jetty', 'jboss', 'wildfly', 'websphere', 'weblogic',
             'glassfish', 'payara', 'liberty',
         ]
-        
+
         # 检查 Java 命令
         for pattern in java_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # 检查 Java 服务器
         for server in java_servers:
             if server in command_lower and ('start' in command_lower or 'run' in command_lower):
                 return True
-        
+
         # 检查是否有 java 关键字并且是启动/运行命令
         if 'java' in command_lower:
             if any(kw in command_lower for kw in ['start', 'run', 'launch', 'boot', 'server', 'daemon']):
                 return True
-        
+
         # Go 语言相关
         go_patterns = [
             'go run', 'go build && .', 'go install && ',
@@ -884,7 +885,7 @@ class SSHMCPServer:
         for pattern in go_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # Rust 相关
         rust_patterns = [
             'cargo run', 'cargo watch -x run', 'rustc --run',
@@ -892,7 +893,7 @@ class SSHMCPServer:
         for pattern in rust_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # Ruby 相关
         ruby_patterns = [
             'ruby app.rb', 'ruby server.rb', 'ruby lib/server.rb',
@@ -903,7 +904,7 @@ class SSHMCPServer:
         for pattern in ruby_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # PHP 相关（除了 artisan）
         php_patterns = [
             'php -S', 'php -s', 'php server', 'php -t',
@@ -912,7 +913,7 @@ class SSHMCPServer:
         for pattern in php_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # .NET/C# 相关
         dotnet_patterns = [
             'dotnet run', 'dotnet watch run', 'dotnet webserver',
@@ -921,7 +922,7 @@ class SSHMCPServer:
         for pattern in dotnet_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # Scala 相关
         scala_patterns = [
             'sbt run', 'sbt ~run', 'scala -howtorun:object',
@@ -929,7 +930,7 @@ class SSHMCPServer:
         for pattern in scala_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # Elixir 相关
         elixir_patterns = [
             'mix phx.server', 'mix phx.server',
@@ -939,7 +940,7 @@ class SSHMCPServer:
         for pattern in elixir_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # Erlang 相关
         erlang_patterns = [
             'erl -sname', 'erl -name', 'rebar3 shell',
@@ -947,7 +948,7 @@ class SSHMCPServer:
         for pattern in erlang_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # Haskell 相关
         haskell_patterns = [
             'stack exec', 'cabal run', 'ghci',
@@ -955,7 +956,7 @@ class SSHMCPServer:
         for pattern in haskell_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # Clojure 相关
         clojure_patterns = [
             'lein run', 'lein ring server', 'boot run',
@@ -963,7 +964,7 @@ class SSHMCPServer:
         for pattern in clojure_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # R 语言相关
         r_patterns = [
             'rserve', 'rserver', 'shiny::runapp', 'shiny run',
@@ -971,7 +972,7 @@ class SSHMCPServer:
         for pattern in r_patterns:
             if pattern in command_lower:
                 return True
-        
+
         # 其他服务器/框架
         other_servers = [
             'nginx', 'apache', 'httpd', 'caddy',
@@ -982,7 +983,7 @@ class SSHMCPServer:
         for server in other_servers:
             if server in command_lower:
                 return True
-        
+
         return False
 
     async def _handle_disconnect(self, args: dict) -> list[TextContent]:
@@ -992,10 +993,10 @@ class SSHMCPServer:
 
     async def _handle_list_sessions(self, args: dict) -> list[TextContent]:
         sessions = self.session_manager.list_sessions()
-        
+
         if not sessions:
             return [TextContent(type="text", text="No active sessions")]
-        
+
         output = "Active Sessions:\n"
         for session in sessions:
             output += f"\n- Session ID: {session.session_id}\n"
@@ -1005,7 +1006,7 @@ class SSHMCPServer:
             output += f"  Connected: {session.connected_at.isoformat()}\n"
             output += f"  Last Activity: {session.last_activity.isoformat()}\n"
             output += f"  Last Keepalive: {session.last_keepalive.isoformat()}\n"
-        
+
         return [TextContent(type="text", text=output)]
 
     async def _handle_generate_key(self, args: dict) -> list[TextContent]:
@@ -1013,16 +1014,16 @@ class SSHMCPServer:
         key_size = args.get("key_size", 4096)
         comment = args.get("comment")
         save_path = args.get("save_path")
-        
+
         if key_type == "rsa":
             key_pair = self.key_manager.generate_rsa_key(key_size=key_size, comment=comment)
         else:
             key_pair = self.key_manager.generate_ed25519_key(comment=comment)
-        
+
         if save_path:
             key_path = Path(save_path)
             self.key_manager.save_key(key_pair, key_path)
-        
+
         return [TextContent(
             type="text",
             text=f"Generated {key_type} key pair\n"
@@ -1035,11 +1036,11 @@ class SSHMCPServer:
         session = await self.session_manager.get_session(args["session_id"])
         if not session:
             return [TextContent(type="text", text=f"Session not found: {args['session_id']}")]
-        
+
         direction = args.get("direction", "upload")
         local_path = args.get("local_path", "")
         remote_path = args.get("remote_path", "")
-        
+
         if direction == "upload":
             result = await session.upload_file(local_path, remote_path)
         elif direction == "download":
@@ -1048,7 +1049,7 @@ class SSHMCPServer:
             result = await session.list_directory(remote_path or ".")
         else:
             return [TextContent(type="text", text=f"Unknown direction: {direction}")]
-        
+
         if result.get("success"):
             output = f"✅ {result.get('message', 'Success')}"
             if "files" in result:
@@ -1057,14 +1058,14 @@ class SSHMCPServer:
                     output += f"  - {f}\n"
         else:
             output = f"❌ {result.get('message', 'Failed')}"
-        
+
         return [TextContent(type="text", text=output)]
 
     async def _handle_list_hosts(self, args: dict) -> list[TextContent]:
         hosts = self.config_manager.list_hosts()
-        
+
         output = "📋 SSH 服务器配置列表\n\n"
-        
+
         # Priority 1: Environment variable config from MCP server.json
         if self._env_config and self._env_config.get("host"):
             output += "🔹 [优先级 1] MCP 配置文件 (mcp.json)\n"
@@ -1072,30 +1073,30 @@ class SSHMCPServer:
             output += f"  用户：{self._env_config.get('username')}\n"
             output += f"  密码：{'***' if self._env_config.get('password') else '未设置'}\n"
             output += f"  超时：{self._env_config.get('timeout', 30)}s\n\n"
-            
+
             # 🔍 检测密码冲突
             output += "🔍 配置冲突检测:\n"
             env_host = self._env_config.get('host')
             env_user = self._env_config.get('username')
             env_password = self._env_config.get('password')
-            
+
             conflict_found = False
             if hosts:
                 for host in hosts:
                     if host.host == env_host and host.username == env_user:
                         if host.password and env_password and host.password != env_password:
-                            output += f"  ❌ 发现密码冲突!\n"
+                            output += "  ❌ 发现密码冲突!\n"
                             output += f"     主机：{host.host}\n"
                             output += f"     MCP 配置密码：{'已设置'} (已脱敏)\n"
                             output += f"     hosts.json 密码：{'已设置'} (已脱敏)\n"
-                            output += f"  💡 建议：统一两个配置文件中的密码，或使用 SSH_FORCE_ENV_CONFIG=true 强制使用环境变量\n"
+                            output += "  💡 建议：统一两个配置文件中的密码，或使用 SSH_FORCE_ENV_CONFIG=true 强制使用环境变量\n"
                             conflict_found = True
                             break
-            
+
             if not conflict_found:
                 output += "  ✅ 未检测到密码冲突\n"
             output += "\n"
-        
+
         # Priority 2: Hosts from config/hosts.json
         output += "🔹 [优先级 2] 本地配置文件 (config/hosts.json)\n"
         if hosts:
@@ -1108,26 +1109,25 @@ class SSHMCPServer:
         else:
             output += "  (空)\n"
             output += "  💡 提示：使用 '添加 SSH 服务器' 命令来添加新服务器\n"
-        
+
         return [TextContent(type="text", text=output)]
 
     async def _handle_background_task(self, args: dict) -> list[TextContent]:
         """Handle background task execution for long-running commands like Docker build (带安全限制)"""
         import uuid
-        import asyncio
-        import os
+
         from .security import SecurityError, command_validator, path_validator
-        
+
         session_id = args.get("session_id")
         command = args.get("command")
         workdir = args.get("workdir", "/tmp")
         log_file = args.get("log_file", "/tmp/background_task.log")
         wait = args.get("wait", False)  # ← 新增：等待任务完成
         wait_timeout = args.get("wait_timeout", 60)  # ← 新增：等待超时（秒）
-        
+
         if not session_id or not command:
             return [TextContent(type="text", text="Error: session_id and command are required")]
-        
+
         # ❌ 检查是否是不适合后台执行的命令
         instant_commands = [
             'docker start ', 'docker stop ', 'docker restart ', 'docker rm ',
@@ -1138,7 +1138,7 @@ class SSHMCPServer:
             'ls ', 'cat ', 'tail ', 'head ', 'grep ',
             'pwd', 'whoami', 'date', 'echo ',
         ]
-        
+
         for cmd in instant_commands:
             if cmd in command.lower():
                 return [TextContent(
@@ -1165,7 +1165,7 @@ ssh_execute({{
 - ✅ 长时间运行的任务：`docker-compose up`
 """
                 )]
-        
+
         # 🔒 安全验证：命令
         try:
             command_validator.validate_command(command.split()[0] if command.split() else "")
@@ -1175,7 +1175,7 @@ ssh_execute({{
                 type="text",
                 text=f"❌ 安全错误：{str(e)}"
             )]
-        
+
         # 🔒 安全验证：工作目录
         try:
             safe_workdir = str(path_validator.validate_path(workdir))
@@ -1185,7 +1185,7 @@ ssh_execute({{
                 type="text",
                 text=f"❌ 安全错误：工作目录不被允许 - {str(e)}"
             )]
-        
+
         # 🔒 安全验证：日志文件路径
         try:
             safe_log_file = str(path_validator.validate_path(log_file))
@@ -1195,7 +1195,7 @@ ssh_execute({{
                 type="text",
                 text=f"❌ 安全错误：日志文件路径不被允许 - {str(e)}"
             )]
-        
+
         # 🔒 限制：检查命令中是否包含危险操作
         dangerous_patterns = ['rm -rf /', 'mkfs', 'dd if=/dev/zero', ':(){:|:&};:', 'chmod -R 777 /']
         for pattern in dangerous_patterns:
@@ -1204,10 +1204,10 @@ ssh_execute({{
                     type="text",
                     text=f"❌ 安全错误：命令包含危险操作 '{pattern}'"
                 )]
-        
+
         # Create a unique task ID
         task_id = str(uuid.uuid4())[:8]
-        
+
         # Wrap command to run in background with logging
         # Use nohup and redirect output to log file
         background_command = f"""
@@ -1216,11 +1216,11 @@ echo $! > /tmp/task_{task_id}.pid
 echo "Task started with PID: $(cat /tmp/task_{task_id}.pid)"
 echo "Log file: {safe_log_file}"
 """
-        
+
         try:
             # 启动后台任务（使用后台模式）
             result = await self.session_manager.execute_command(session_id, background_command, timeout=30, background=True)
-            
+
             # 🤖 如果设置了 wait 参数，等待任务完成
             if wait:
                 output = await self._wait_for_task_completion(
@@ -1264,35 +1264,35 @@ ssh_execute(session_id="{session_id}", command="ps -p $(cat /tmp/task_{task_id}.
 - 请避免频繁调用检查工具，建议等待 30-60 秒后再查看日志
 - **不要使用 ssh_background_task 查看日志**，该工具仅用于启动后台任务
 """
-            
+
             return [TextContent(type="text", text=output)]
-            
+
         except Exception as e:
             return [TextContent(type="text", text=f"Error starting background task: {str(e)}")]
-    
+
     async def _wait_for_task_completion(self, session_id: str, task_id: str, log_file: str, timeout: int) -> str:
         """等待后台任务完成并返回结果"""
         import asyncio
-        
+
         pid_file = f"/tmp/task_{task_id}.pid"
         elapsed = 0
         interval = 2  # 每 2 秒检查一次
-        
+
         while elapsed < timeout:
             await asyncio.sleep(interval)
             elapsed += interval
-            
+
             # 检查进程是否还在运行
             check_cmd = f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
             result = await self.session_manager.execute_command(session_id, check_cmd, timeout=10)
             status = result.get("stdout", "").strip()
-            
+
             if status == "COMPLETED" or status == "NOT_FOUND":
                 # 任务完成，读取日志
                 log_cmd = f"if [ -f {log_file} ]; then cat {log_file}; else echo 'No log file found'; fi"
                 log_result = await self.session_manager.execute_command(session_id, log_cmd, timeout=10)
                 log_content = log_result.get("stdout", "")
-                
+
                 return f"""✅ Task Completed!
 
 📊 Task ID: {task_id}
@@ -1308,7 +1308,7 @@ ssh_execute(session_id="{session_id}", command="ps -p $(cat /tmp/task_{task_id}.
 
 💡 **提示**: 任务已完成，可以继续下一步操作
 """
-        
+
         # 超时，返回当前状态
         return f"""⏱️ Task Still Running (Timeout)
 
@@ -1326,34 +1326,34 @@ ssh_execute(session_id="{session_id}", command="cat {log_file}")
 
     async def _handle_task_status(self, args: dict) -> list[TextContent]:
         """Check status of background task"""
-        
+
         session_id = args.get("session_id")
         task_id = args.get("task_id")
-        
+
         if not session_id or not task_id:
             return [TextContent(type="text", text="Error: session_id and task_id are required")]
-        
+
         pid_file = f"/tmp/task_{task_id}.pid"
         log_file = "/tmp/background_task.log"
-        
+
         try:
             # Check if process is still running
             check_pid_cmd = f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
             result = await self.session_manager.execute_command(session_id, check_pid_cmd, timeout=10)
             status = result.get("stdout", "").strip()
-            
+
             # Get recent log output
             log_cmd = f"if [ -f {log_file} ]; then tail -20 {log_file}; else echo 'No log file yet'; fi"
             log_result = await self.session_manager.execute_command(session_id, log_cmd, timeout=10)
             log_output = log_result.get("stdout", "")
-            
+
             # Get exit code if completed
             exit_code = None
             if status == "COMPLETED":
                 exit_cmd = f"if [ -f {log_file} ]; then echo 'Exit code: 0 (check log for actual)'; else echo 'N/A'; fi"
                 exit_result = await self.session_manager.execute_command(session_id, exit_cmd, timeout=10)
                 exit_code = exit_result.get("stdout", "")
-            
+
             output = f"""📊 Task Status: {task_id}
 
 Status: {status}
@@ -1366,27 +1366,27 @@ Use this command to check again:
   查看任务状态，session_id={session_id}，task_id={task_id}
 """
             return [TextContent(type="text", text=output)]
-            
+
         except Exception as e:
             return [TextContent(type="text", text=f"Error checking task status: {str(e)}")]
 
     async def _handle_docker_build(self, args: dict) -> list[TextContent]:
         """Handle Docker build on remote server using background task"""
-        
+
         session_id = args.get("session_id")
         dockerfile_path = args.get("dockerfile_path", "./Dockerfile")
         image_name = args.get("image_name")
         context = args.get("context", ".")
-        
+
         if not session_id or not image_name:
             return [TextContent(type="text", text="Error: session_id and image_name are required")]
-        
+
         task_id = str(uuid.uuid4())[:8]
         log_file = f"/tmp/docker_build_{task_id}.log"
-        
+
         # 构建 Docker 命令
         docker_build_cmd = f"cd {context} && docker build -t {image_name} -f {dockerfile_path} ."
-        
+
         # 使用后台任务执行 Docker 构建
         background_args = {
             "session_id": session_id,
@@ -1394,63 +1394,62 @@ Use this command to check again:
             "workdir": context,
             "log_file": log_file
         }
-        
+
         # 调用后台任务处理
         return await self._handle_background_task(background_args)
 
     async def _handle_docker_status(self, args: dict) -> list[TextContent]:
         """Check Docker build and container status"""
-        from .security import SecurityError, command_validator
-        
+
         session_id = args.get("session_id")
         image_name = args.get("image_name")
-        
+
         if not session_id:
             return [TextContent(type="text", text="Error: session_id is required")]
-        
+
         try:
             # Check running containers
             containers_cmd = "docker ps --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'"
             containers_result = await self.session_manager.execute_command(session_id, containers_cmd, timeout=10)
-            
+
             output = "🐳 Docker Status\n\n"
             output += "--- Running Containers ---\n"
             output += containers_result.get("stdout", "No running containers\n")
-            
+
             # Check images if requested
             if image_name:
                 # 🔒 安全验证：镜像名称格式检查
                 import re
                 if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_./:-]*$', image_name):
                     return [TextContent(type="text", text=f"❌ 无效的镜像名称：{image_name}")]
-                
+
                 images_cmd = f"docker images {image_name} --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
                 images_result = await self.session_manager.execute_command(session_id, images_cmd, timeout=10)
                 output += "\n--- Docker Images ---\n"
                 output += images_result.get("stdout", f"No images found matching {image_name}\n")
-            
+
             # Check Docker build logs if exists
             log_files_cmd = "ls -la /tmp/docker_build_*.log 2>/dev/null | tail -5 || echo 'No build logs found'"
             log_result = await self.session_manager.execute_command(session_id, log_files_cmd, timeout=10)
             output += "\n--- Recent Build Logs ---\n"
             output += log_result.get("stdout", "")
-            
+
             return [TextContent(type="text", text=output)]
-            
+
         except Exception as e:
             return [TextContent(type="text", text=f"Error checking Docker status: {str(e)}")]
-    
+
     async def _handle_execute_wait(self, args: dict) -> list[TextContent]:
         """Execute a command and wait for completion with timeout"""
         from .security import SecurityError, command_validator
-        
+
         session_id = args.get("session_id")
         command = args.get("command")
         timeout = args.get("timeout", 60)
-        
+
         if not session_id or not command:
             return [TextContent(type="text", text="Error: session_id and command are required")]
-        
+
         # 🔒 安全验证 - 防止命令注入
         try:
             command_validator.validate_command(command)
@@ -1460,16 +1459,16 @@ Use this command to check again:
                 type="text",
                 text=f"🛑 **命令被安全策略阻止**\n\n**被阻止的命令**: `{command}`\n**原因**: {str(e)}\n\n当前安全级别：`{os.getenv('SSH_SECURITY_LEVEL', 'balanced')}`"
             )]
-        
+
         try:
             self._logger.info(f"Executing command: {command} (timeout: {timeout}s)")
             result = await self.session_manager.execute_command(session_id, command, timeout=timeout)
-            
+
             # 检查 result 是否为 None
             if result is None:
                 self._logger.error("execute_command returned None")
                 return [TextContent(type="text", text="❌ Error: Command execution returned no result")]
-            
+
             output = f"""✅ Command Completed!
 
 📝 Command: {command}
@@ -1477,49 +1476,48 @@ Use this command to check again:
 📤 Exit Code: {result.get('exit_code', 'N/A')}
 
 """
-            
+
             if result.get("stdout"):
                 output += f"""--- STDOUT ---
 {result['stdout']}
 """
-            
+
             if result.get("stderr"):
                 output += f"""--- STDERR ---
 {result['stderr']}
 """
-            
+
             return [TextContent(type="text", text=output)]
-            
+
         except Exception as e:
             self._logger.error(f"Error executing command: {str(e)}")
             return [TextContent(type="text", text=f"❌ Error executing command: {str(e)}")]
-    
+
     async def _handle_container_logs(self, args: dict) -> list[TextContent]:
         """Get Docker container logs with automatic tail"""
-        from .security import SecurityError, command_validator
-        
+
         session_id = args.get("session_id")
         container_name = args.get("container_name")
         tail = args.get("tail", 100)
         since = args.get("since")
-        
+
         if not session_id or not container_name:
             return [TextContent(type="text", text="Error: session_id and container_name are required")]
-        
+
         # 🔒 安全验证：容器名称白名单检查
         import re
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', container_name):
             return [TextContent(type="text", text=f"❌ 无效的容器名称：{container_name}")]
-        
+
         try:
             # Build the logs command
             logs_cmd = f"docker logs {container_name} --tail {tail}"
             if since:
                 logs_cmd += f" --since {since}s"
             logs_cmd += " 2>&1"
-            
+
             result = await self.session_manager.execute_command(session_id, logs_cmd, timeout=30)
-            
+
             output = f"""📋 Container Logs: {container_name}
 
 🐳 Tail: {tail} lines
@@ -1529,41 +1527,41 @@ Use this command to check again:
 {result.get('stdout', 'No logs available')}
 
 """
-            
+
             if result.get('stderr'):
                 output += f"""--- Errors/Warnings ---
 {result['stderr']}
 """
-            
+
             # Also get container status
             status_cmd = f"docker ps -a --filter \"name={container_name}\" --format '{{{{.Status}}}}'"
             status_result = await self.session_manager.execute_command(session_id, status_cmd, timeout=10)
             status = status_result.get('stdout', '').strip()
-            
+
             if status:
                 output += f"""--- Container Status ---
 {status}
 """
-            
+
             return [TextContent(type="text", text=output)]
-            
+
         except Exception as e:
             return [TextContent(type="text", text=f"Error getting container logs: {str(e)}")]
 
     async def _handle_add_host(self, args: dict) -> list[TextContent]:
         """Add a new SSH server to config/hosts.json"""
         from .config_manager import SSHHost
-        
+
         name = args.get("name")
         host = args.get("host")
         port = args.get("port", 22)
         username = args.get("username", "root")
         password = args.get("password", "")
         timeout = args.get("timeout", 60)
-        
+
         if not name or not host:
             return [TextContent(type="text", text="❌ 错误：name 和 host 是必填参数")]
-        
+
         # Create new host entry
         new_host = SSHHost(
             name=name,
@@ -1575,10 +1573,10 @@ Use this command to check again:
             keepalive_interval=30,
             session_timeout=7200
         )
-        
+
         # Add to config
         self.config_manager.add_host(new_host)
-        
+
         return [TextContent(
             type="text",
             text=f"✅ SSH 服务器已添加!\n\n"
@@ -1592,10 +1590,10 @@ Use this command to check again:
     async def _handle_remove_host(self, args: dict) -> list[TextContent]:
         """Remove an SSH server from config/hosts.json"""
         name = args.get("name")
-        
+
         if not name:
             return [TextContent(type="text", text="❌ 错误：需要提供服务器名称")]
-        
+
         # Remove from config
         if self.config_manager.remove_host(name):
             return [TextContent(
@@ -1610,22 +1608,21 @@ Use this command to check again:
 
     async def run(self):
         import signal
-        from contextlib import asynccontextmanager
-        
+
         # 设置信号处理器用于优雅关闭
         loop = asyncio.get_event_loop()
         shutdown_event = asyncio.Event()
-        
+
         def signal_handler():
             shutdown_event.set()
-        
+
         for sig in (signal.SIGTERM, signal.SIGINT):
             try:
                 loop.add_signal_handler(sig, signal_handler)
             except NotImplementedError:
                 # Windows 不支持 add_signal_handler，使用替代方案
                 pass
-        
+
         async with stdio_server() as (read_stream, write_stream):
             try:
                 await self.server.run(
@@ -1648,13 +1645,13 @@ async def main():
 def run_server():
     """Synchronous entry point for CLI"""
     import sys
-    
+
     # 检查是否在非交互模式运行（如 Docker 构建）
     if not sys.stdin.isatty():
         # 在非交互模式下，添加超时保护
         print("Warning: Running in non-interactive mode (stdin is not a TTY)", file=sys.stderr)
         print("MCP server expects to be run as part of an MCP client", file=sys.stderr)
-    
+
     asyncio.run(main())
 
 

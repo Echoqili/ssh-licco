@@ -8,24 +8,82 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的服务器，让 AI 助
 
 - ✅ SSH 密码认证登录
 - ✅ 远程命令执行
-- ✅ 多会话管理
-- ✅ SSH 密钥生成
+- ✅ 多会话管理（最大 10 个并发，每主机 3 个）
+- ✅ SSH 密钥生成（RSA / Ed25519）
 - ✅ SFTP 文件传输（上传、下载、列表）
 - 🔥 **长连接支持** - 自动保活，避免频繁连接导致账户锁定
 - 🔥 **可配置会话超时** - 默认 2 小时，最长可配置
 - 🔥 **多客户端支持** - 可选择 paramiko（默认）、asyncssh、fabric
+- 🔥 **CLI 命令行** - exec / upload / download / docker-build / list-hosts 子命令
+- 🔥 **连接池** - 高性能连接复用（PooledConnection + ConnectionPool）
+- 🔥 **批量执行** - 多主机并行命令执行（BatchExecutor + AsyncBatchExecutor）
+- 🔥 **看门狗监控** - 任务监控、心跳检测、全局异常处理
+- 🔥 **审计日志** - JSON 结构化审计记录
+- 🔥 **安全验证** - 三级安全策略（STRICT / BALANCED / RELAXED）
+
+---
+
+## 🏗️ 自动安装体系
+
+ssh-licco 采用 **三层架构** 实现零配置启动：
+
+```
+用户 → npx ssh-licco
+           ↓
+    ┌──── ssh-licco.js (Node 层) ────┐
+    │  ① 查找 Python 3.10+          │
+    │  ② 检测 Anaconda 环境         │
+    │  ③ 创建/复用 ~/.ssh-licco-venv │
+    │  ④ pip install 安装           │
+    │  ⑤ 验证依赖完整性             │
+    └──────────┬────────────────────┘
+               ↓
+    ┌── cli.py (Python 入口) ──────┐
+    │  只负责启动 MCP 服务器        │
+    └──────────┬────────────────────┘
+               ↓
+    ┌── SSHMCPServer (MCP 服务) ──┐
+    │  提供 SSH 连接、命令执行等    │
+    └────────────────────────────┘
+```
+
+### 智能安装特性
+
+| 特性 | 说明 |
+|------|------|
+| **依赖完整性检查** | 每次启动验证所有依赖可导入，缺失则自动修复 |
+| **增量更新** | 已有 venv 时不删除，直接 `pip install -e .` 增量安装 |
+| **Anaconda 检测** | 自动检测 conda 环境，使用独立 venv 避免冲突 |
+| **自动修复** | 依赖损坏时自动重新安装，无需手动干预 |
+
+### 文件说明
+
+| 文件 | 作用 |
+|------|------|
+| [ssh-licco.js](ssh-licco.js) | Node.js 包装器，环境准备 + 完整性校验 + 启动 |
+| [install.js](install.js) | npm postinstall 安装脚本，增量更新 |
+| [smart_install.py](smart_install.py) | 独立诊断安装脚本，含 SSH 连接测试 |
+| [cli.py](ssh_mcp/cli.py) | Python 入口，只负责启动服务器 |
 
 ---
 
 ## 安装
 
-### 方式一：pip 安装（推荐）
+### 方式一：npx 一键启动（推荐，零配置）
+
+```bash
+npx ssh-licco
+```
+
+首次运行自动完成：检测 Python → 创建虚拟环境 → 安装依赖 → 启动 MCP 服务器。**无需手动安装。**
+
+### 方式二：pip 安装（推荐 Python 项目）
 
 ```bash
 pip install ssh-licco
 ```
 
-### 方式二：从源码安装
+### 方式三：从源码安装
 
 ```bash
 git clone https://github.com/Echoqili/ssh-licco.git
@@ -56,7 +114,7 @@ pip install -e .
 
 ### 步骤 2：重启 Trae
 
-配置完成后，重启 Trae 使 MCP 服务器生效。
+配置完成后，重启 Trae 使 MCP 服务器生效。首次启动会自动完成安装。
 
 ### 步骤 3：使用 SSH 功能
 
@@ -576,3 +634,250 @@ SSHLogger.set_log_level("DEBUG")
 # 添加文件日志
 SSHLogger.add_file_handler("logs/app.log")
 ```
+
+---
+
+## 🖥️ CLI 命令行工具
+
+ssh-licco 提供完整的命令行接口，支持直接在终端执行 SSH 操作。
+
+### 全局选项
+
+| 选项 | 说明 |
+|------|------|
+| `--version` | 显示版本号 |
+| `--host` | SSH 主机地址（或设置 `SSH_HOST` 环境变量） |
+| `--port`, `-p` | SSH 端口（默认 22） |
+| `--username`, `-u` | SSH 用户名（或设置 `SSH_USER` 环境变量） |
+| `--password` | SSH 密码（或设置 `SSH_PASSWORD` 环境变量） |
+| `--connect-timeout` | 连接超时秒数（默认 60） |
+
+### exec - 执行远程命令
+
+```bash
+# 基本用法
+ssh-licco exec --host 192.168.1.100 -u root --password pwd "ls -la /home"
+
+# 使用环境变量配置连接
+export SSH_HOST=192.168.1.100
+export SSH_USER=root
+export SSH_PASSWORD=pwd
+ssh-licco exec "uptime"
+
+# 指定超时
+ssh-licco exec --timeout 120 "docker ps"
+```
+
+**参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `cmd` | 要执行的命令（必填） |
+| `--timeout`, `-t` | 命令超时秒数（默认 60） |
+
+### upload - 上传文件
+
+```bash
+ssh-licco upload --host 192.168.1.100 -u root --password pwd ./local.txt /remote/path.txt
+```
+
+**参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `local` | 本地文件路径（必填） |
+| `remote` | 远程文件路径（必填） |
+
+### download - 下载文件
+
+```bash
+ssh-licco download --host 192.168.1.100 -u root --password pwd /remote/log.txt ./local.log
+```
+
+**参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `remote` | 远程文件路径（必填） |
+| `local` | 本地文件路径（必填） |
+
+### docker-build - 远程 Docker 构建
+
+```bash
+ssh-licco docker-build --host 192.168.1.100 -u root --password pwd myapp:latest \
+  --context /app --dockerfile ./Dockerfile --timeout 600
+```
+
+**参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `image` | Docker 镜像名称和标签，如 `myapp:latest`（必填） |
+| `--context`, `-c` | 构建上下文目录（默认 `.`） |
+| `--dockerfile`, `-f` | Dockerfile 路径（默认 `./Dockerfile`） |
+| `--timeout`, `-t` | 构建超时秒数（默认 300） |
+
+### list-hosts - 列出已配置主机
+
+```bash
+ssh-licco list-hosts
+ssh-licco list-hosts --json
+```
+
+### serve - 启动 MCP 服务器
+
+```bash
+ssh-licco serve
+# 或直接
+ssh-licco
+```
+
+---
+
+## 🆕 新功能：连接池
+
+### 使用 ConnectionPool
+
+```python
+from ssh_mcp.connection_pool import ConnectionPool, PooledConnection
+from ssh_mcp import ConnectionConfig
+
+pool = ConnectionPool(max_size=10, max_idle_time=300)
+
+config = ConnectionConfig(host="192.168.1.100", username="root", password="pwd")
+
+# 获取连接
+conn = await pool.acquire(config)
+
+# 使用连接
+result = await conn.client.execute_command("uptime")
+
+# 归还连接
+await pool.release(conn)
+
+# 关闭池
+await pool.close()
+```
+
+---
+
+## 🆕 新功能：批量执行
+
+### BatchExecutor（同步）
+
+```python
+from ssh_mcp.batch_executor import BatchExecutor
+from ssh_mcp import ConnectionConfig
+
+configs = [
+    ConnectionConfig(host="192.168.1.100", username="root", password="pwd1"),
+    ConnectionConfig(host="192.168.1.101", username="root", password="pwd2"),
+]
+
+executor = BatchExecutor(max_workers=5)
+results = executor.execute_all(configs, "uptime")
+
+for r in results:
+    print(f"{r.host}: {r.stdout}")
+```
+
+### AsyncBatchExecutor（异步）
+
+```python
+from ssh_mcp.batch_executor import AsyncBatchExecutor
+
+executor = AsyncBatchExecutor(max_workers=5)
+results = await executor.execute_all(configs, "uptime")
+```
+
+---
+
+## 🆕 新功能：看门狗监控
+
+### Watchdog
+
+```python
+from ssh_mcp.watchdog import Watchdog, get_watchdog
+
+wd = get_watchdog()
+
+# 注册任务
+wd.register_task("deploy-1", "Deploying app")
+
+# 更新心跳
+wd.update_heartbeat("deploy-1")
+
+# 更新进度
+wd.update_progress("deploy-1", 75)
+
+# 捕获异常
+wd.capture_exception("deploy-1", ValueError("build failed"))
+
+# 注销任务
+wd.unregister_task("deploy-1")
+```
+
+### GlobalExceptionHandler
+
+```python
+from ssh_mcp.watchdog import GlobalExceptionHandler
+
+handler = GlobalExceptionHandler()
+handler.enable()   # 启用全局异常处理
+handler.disable()  # 禁用
+```
+
+---
+
+## 🆕 新功能：审计日志
+
+### AuditLogger
+
+```python
+from ssh_mcp.audit_logger import AuditLogger, get_audit_logger
+
+logger = get_audit_logger()
+
+# 记录操作
+logger.log_connect("192.168.1.100", "root")
+logger.log_command("session-1", "ls -la", success=True)
+logger.log_file_transfer("session-1", "upload", "/local.txt", "/remote.txt")
+logger.log_disconnect("192.168.1.100", "root")
+```
+
+---
+
+## 🧪 测试
+
+### 运行测试
+
+```bash
+# 运行全部测试（402 passed, 3 skipped）
+pytest tests/ -v
+
+# 运行特定模块测试
+pytest tests/test_security.py -v
+
+# 查看覆盖率
+pytest --cov=ssh_mcp --cov-report=term-missing
+```
+
+### 测试覆盖
+
+所有 17 个源模块均有完整的单元测试覆盖，包括：
+- `exceptions` - 异常层次结构
+- `connection_config` - Pydantic 连接配置模型
+- `security` - 安全验证（CommandValidator / PathValidator）
+- `logging_config` - 日志管理
+- `audit_logger` - 审计日志
+- `executor` - 线程池执行器
+- `watchdog` - 看门狗监控
+- `key_manager` - SSH 密钥管理
+- `config_manager` - 配置管理
+- `clients` - SSH 客户端（接口 / Paramiko / 工厂）
+- `session_manager` - 会话管理
+- `connection_pool` - 连接池
+- `batch_executor` - 批量执行
+- `cli` - 命令行接口
+- `server` - MCP 服务器
+- `service` - SSH 服务层

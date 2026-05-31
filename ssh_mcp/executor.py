@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import threading
 import os
-from typing import Any, Callable, Optional, TypeVar
+import threading
+from collections.abc import Callable, Coroutine
 from functools import wraps
+from typing import Any, TypeVar
+
 
 def _default_max_workers() -> int:
     """获取默认最大工作线程数（限制上限防止资源耗尽）"""
-    import os
     cpu_count = os.cpu_count() or 4
     # 限制最大线程数：CPU * 5，上限 20
     return min(cpu_count * 5, 20)
@@ -27,33 +28,33 @@ class ThreadPoolExecutor:
     - 提供装饰器简化异步调用
     - 线程安全的任务管理
     """
-    
-    _instance: Optional['ThreadPoolExecutor'] = None
+
+    _instance: ThreadPoolExecutor | None = None
     _lock: threading.Lock = threading.Lock()
-    
+
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
         return cls._instance
-    
-    def __init__(self, max_workers: Optional[int] = None):
+
+    def __init__(self, max_workers: int | None = None):
         if hasattr(self, '_initialized'):
             return
-        
+
         self._max_workers = max_workers or (_default_max_workers())
-        self._executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+        self._executor: concurrent.futures.ThreadPoolExecutor | None = None
         self._executor_lock = threading.Lock()
         self._shutdown_event = threading.Event()
         self._initialized = True
-    
+
     @property
     def executor(self) -> concurrent.futures.ThreadPoolExecutor:
         """获取线程池执行器（懒加载）"""
         if self._shutdown_event.is_set():
             raise RuntimeError("Executor has been shutdown")
-        
+
         with self._executor_lock:
             if self._executor is None:
                 self._executor = concurrent.futures.ThreadPoolExecutor(
@@ -61,8 +62,8 @@ class ThreadPoolExecutor:
                     thread_name_prefix="ssh-mcp-exec-"
                 )
         return self._executor
-    
-    async def submit(self, func: Callable[..., T], *args: Any, timeout: Optional[int] = None, **kwargs: Any) -> T:
+
+    async def submit(self, func: Callable[..., T], *args: Any, timeout: int | None = None, **kwargs: Any) -> T:
         """
         异步提交任务到线程池执行
         
@@ -80,10 +81,10 @@ class ThreadPoolExecutor:
             Exception: 函数执行异常
         """
         loop = asyncio.get_event_loop()
-        
+
         def task_wrapper():
             return func(*args, **kwargs)
-        
+
         try:
             if timeout is not None:
                 return await asyncio.wait_for(
@@ -94,8 +95,8 @@ class ThreadPoolExecutor:
                 return await loop.run_in_executor(self.executor, task_wrapper)
         except asyncio.TimeoutError:
             raise asyncio.TimeoutError(f"Task execution timed out after {timeout}s")
-    
-    async def map(self, func: Callable[..., T], *iterables: Any, timeout: Optional[int] = None) -> list[T]:
+
+    async def map(self, func: Callable[..., T], *iterables: Any, timeout: int | None = None) -> list[T]:
         """
         并行执行多个任务
         
@@ -109,10 +110,10 @@ class ThreadPoolExecutor:
         """
         loop = asyncio.get_event_loop()
         futures = []
-        
+
         for args in zip(*iterables):
             futures.append(loop.run_in_executor(self.executor, func, *args))
-        
+
         if timeout is not None:
             return await asyncio.wait_for(
                 asyncio.gather(*futures),
@@ -120,20 +121,20 @@ class ThreadPoolExecutor:
             )
         else:
             return await asyncio.gather(*futures)
-    
+
     def shutdown(self, wait: bool = True) -> None:
         """关闭线程池"""
         self._shutdown_event.set()
         if self._executor:
             self._executor.shutdown(wait=wait)
             self._executor = None
-    
+
     def running(self) -> bool:
         """检查执行器是否正在运行"""
         return not self._shutdown_event.is_set()
 
 
-def async_exec(timeout: Optional[int] = None):
+def async_exec(timeout: int | None = None):
     """
     装饰器：将同步函数转换为异步执行
     
@@ -149,7 +150,7 @@ def async_exec(timeout: Optional[int] = None):
         # 使用
         result = await blocking_operation()
     """
-    def decorator(func: Callable[..., T]) -> Callable[..., asyncio.Future[T]]:
+    def decorator(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
             executor = ThreadPoolExecutor()

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional, List
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -27,7 +28,7 @@ class SSHHost(BaseModel):
 
 
 class ServerConfig(BaseModel):
-    ssh_hosts: List[SSHHost] = []
+    ssh_hosts: list[SSHHost] = []
 
 
 class ConfigManager:
@@ -38,70 +39,70 @@ class ConfigManager:
     # 服务器配置
     DEFAULT_SERVER_CONFIG_PATH = Path(__file__).parent / "server.json"
     DEFAULT_HOSTS_CONFIG_PATH = Path(__file__).parent.parent / "config" / "hosts.json"
-    
-    def __init__(self, config_path: Optional[Path] = None, server_config_path: Optional[Path] = None):
+
+    def __init__(self, config_path: Path | None = None, server_config_path: Path | None = None):
         # 优先使用项目根目录配置
         self.config_path = config_path or self.PROJECT_CONFIG_PATH
         self.server_config_path = server_config_path or self.DEFAULT_SERVER_CONFIG_PATH
-    
-    def load(self) -> Optional[SSHConfig]:
+
+    def load(self) -> SSHConfig | None:
         # 优先加载项目根目录配置
         if self.config_path.exists():
             try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
+                with open(self.config_path, encoding='utf-8') as f:
                     data = json.load(f)
                 return SSHConfig(**data)
             except Exception:
                 pass
-        
+
         # 后备：加载用户主目录配置
         if self.USER_CONFIG_PATH.exists():
             try:
-                with open(self.USER_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                with open(self.USER_CONFIG_PATH, encoding='utf-8') as f:
                     data = json.load(f)
                 return SSHConfig(**data)
             except Exception:
                 pass
-        
+
         return None
-    
+
     def save(self, config: SSHConfig) -> None:
         # 保存到项目根目录配置
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_path, 'w', encoding='utf-8') as f:
             json.dump(config.model_dump(), f, indent=2)
-    
+
     @classmethod
     def get_default(cls) -> SSHConfig:
         config = cls().load()
         return config if config else SSHConfig()
-    
-    def load_server_config(self) -> Optional[ServerConfig]:
+
+    def load_server_config(self) -> ServerConfig | None:
         # Try server.json first
         server_config_path = self.server_config_path
         if server_config_path.exists():
             try:
-                with open(server_config_path, 'r', encoding='utf-8') as f:
+                with open(server_config_path, encoding='utf-8') as f:
                     data = json.load(f)
                 if "ssh_hosts" in data:
                     return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
             except Exception:
                 pass
-        
+
         # Fallback to config/hosts.json
         hosts_config_path = self.DEFAULT_HOSTS_CONFIG_PATH
         if hosts_config_path.exists():
             try:
-                with open(hosts_config_path, 'r', encoding='utf-8') as f:
+                with open(hosts_config_path, encoding='utf-8') as f:
                     data = json.load(f)
                 if "ssh_hosts" in data:
                     return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
             except Exception:
                 pass
-        
+
         return None
-    
-    def get_host_by_name(self, name: str) -> Optional[SSHHost]:
+
+    def get_host_by_name(self, name: str) -> SSHHost | None:
         server_config = self.load_server_config()
         if not server_config:
             return None
@@ -109,26 +110,26 @@ class ConfigManager:
             if host.name == name:
                 return host
         return None
-    
-    def list_hosts(self) -> List[SSHHost]:
+
+    def list_hosts(self) -> list[SSHHost]:
         server_config = self.load_server_config()
         if not server_config:
             return []
         return server_config.ssh_hosts
-    
+
     def add_host(self, host: SSHHost) -> None:
         """Add a new SSH host to config/hosts.json"""
         config_path = self.DEFAULT_HOSTS_CONFIG_PATH
-        
+
         # Load existing config
-        data = {"ssh_hosts": []}
+        data: dict[str, Any] = {"ssh_hosts": []}
         if config_path.exists():
             try:
-                with open(config_path, 'r', encoding='utf-8') as f:
+                with open(config_path, encoding='utf-8') as f:
                     data = json.load(f)
             except Exception:
                 pass
-        
+
         # Check if host already exists
         for i, h in enumerate(data.get("ssh_hosts", [])):
             if h.get("name") == host.name:
@@ -138,27 +139,27 @@ class ConfigManager:
         else:
             # Add new
             data.setdefault("ssh_hosts", []).append(host.model_dump())
-        
+
         # Save config
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-    
+
     def remove_host(self, name: str) -> bool:
         """Remove an SSH host from config/hosts.json by name"""
         config_path = self.DEFAULT_HOSTS_CONFIG_PATH
-        
+
         if not config_path.exists():
             return False
-        
+
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             # Find and remove host
             original_count = len(data.get("ssh_hosts", []))
             data["ssh_hosts"] = [h for h in data.get("ssh_hosts", []) if h.get("name") != name]
-            
+
             if len(data["ssh_hosts"]) < original_count:
                 with open(config_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
