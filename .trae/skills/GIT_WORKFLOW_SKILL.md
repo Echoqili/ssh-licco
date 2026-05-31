@@ -235,6 +235,52 @@ git branch -D feat/feature-name
 
 ---
 
+## 🏷️ 版本发布与 Tag 管理
+
+### 自动化发布流水线（v1.1.0+）
+
+打 tag 并 push 即可触发全自动发布：
+
+```
+git tag -a v1.1.0 -m "v1.1.0: MCP 工具精简为 7 个"
+git push github v1.1.0
+                         ↓
+                  auto-release.yml 检测到 tag push
+                         ↓
+              自动创建 GitHub Release
+                         ↓
+              release:published 事件触发
+                  ↙              ↘
+            pypi.yml      mcp-registry.yml
+```
+
+### 黄金规则
+
+| ✅ DO | ❌ DON'T |
+|------|---------|
+| `git push github v1.1.0` — 只推指定 tag | `git push github --tags` — 推送所有历史 tag |
+| 先 push master，再 push tag | 只打 tag 不 push（不触发 Actions） |
+| `git tag -a v1.1.0 -m "..."` — 带注释 | `git tag v1.1.0` — 轻量标签（无注释） |
+| `requires-python = ">=3.10"` — 不设上限 | `requires-python = ">=3.10,<3.14"` — 上限阻断未来版本 |
+
+### 为什么 `--tags` 危险
+
+```bash
+# ❌ 危险 — 所有本地 tag（包括旧 tag、测试 tag）都会推上去
+git push github --tags
+
+# ✅ 安全 — 只推送指定 tag
+git push github v1.1.0
+```
+
+如果本地有遗留的废弃 tag（如 `test-tag`、`v0.1-dev`），`--tags` 会全部推上去，可能意外触发多个 Release。
+
+### 排查：tag 已存在但 Release 没创建
+
+如果之前手动打 tag 忘了建 Release，不需要重新打 tag，直接去 [GitHub Releases](https://github.com/Echoqili/ssh-licco/releases/new) 手动选择已有 tag 创建即可。
+
+---
+
 ## 📝 完整流程示例
 
 ### 示例：开发安全增强功能
@@ -482,5 +528,5 @@ git push github master
 
 **遵循规范的 Git 分支管理流程，让团队协作更高效！** 🚀
 
-*Last updated: 2026-03-14*  
+*Last updated: 2026-06-01*  
 *Version: 1.0*
