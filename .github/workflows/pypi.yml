@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Publish to PyPI & MCP Registry
 
 on:
   release:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-publish:
+  build-and-publish-pypi:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -31,3 +31,29 @@ jobs:
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         attestations: false
+
+  publish-mcp-registry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    needs: build-and-publish-pypi  # 等待 PyPI 发布完成
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        pip install requests
+    
+    - name: Publish to MCP Registry
+      env:
+        GITHUB_TOKEN: ${{ secrets.MCP_GITHUB_TOKEN }}
+      run: |
+        python scripts/publish_mcp_registry.py
+      continue-on-error: true
