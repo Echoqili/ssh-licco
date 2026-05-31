@@ -121,6 +121,7 @@ def publish_to_registry(access_token):
         return False
     
     publish_data = {
+        "$schema": "https://registry.modelcontextprotocol.io/schema/mcp-server.json",
         "name": SERVER_NAME,
         "version": version,
         "description": pypi_info['description'],
