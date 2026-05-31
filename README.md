@@ -51,7 +51,7 @@
 - 📊 **批量执行** - 多主机并行命令执行（BatchExecutor + AsyncBatchExecutor）
 - 🐳 **Docker 支持** - Docker 构建和状态监控
 - 📋 **后台任务** - 异步任务执行和状态跟踪
-- 🖥️ **CLI 命令行** - exec / upload / download / docker-build / list-hosts 子命令
+- 🖥️ **CLI 命令行** - exec / upload / download / list-hosts 子命令
 - 🔍 **看门狗** - 任务监控、心跳检测、全局异常处理
 
 ---
@@ -241,40 +241,17 @@ npx ssh-licco
 
 ---
 
-## 🛠️ 可用工具
+## 🛠️ 可用工具（v1.1.0 精简至 7 个）
 
-### SSH 连接管理
-
-| 工具 | 描述 | 示例 |
-|------|------|------|
-| `ssh_connect` | 建立 SSH 连接 | 连接服务器 |
-| `ssh_disconnect` | 断开 SSH 连接 | 释放连接资源 |
-| `ssh_list_sessions` | 查看活动会话 | 管理多个连接 |
-
-### 命令执行
-
-| 工具 | 描述 | 示例 |
-|------|------|------|
-| `ssh_execute` | 执行 SSH 命令 | `ls -la`, `docker ps` |
-| `ssh_background_task` | 后台任务执行 | Docker 构建、长时间运行任务 |
-| `ssh_task_status` | 查看后台任务状态 | 检查任务进度 |
-
-### 文件管理
-
-| 工具 | 描述 | 示例 |
-|------|------|------|
-| `ssh_upload_file` | 上传文件 | 部署代码 |
-| `ssh_download_file` | 下载文件 | 获取日志 |
-| `ssh_list_directory` | 列出目录内容 | 查看文件结构 |
-
-### 系统管理
-
-| 工具 | 描述 | 示例 |
-|------|------|------|
-| `ssh_get_info` | 获取系统信息 | CPU、内存、磁盘 |
-| `ssh_check_service` | 检查服务状态 | PostgreSQL、Nginx |
-| `ssh_docker_build` | Docker 构建 | 构建镜像 |
-| `ssh_docker_status` | Docker 状态 | 容器状态 |
+| 工具 | 描述 | 核心能力 |
+|------|------|---------|
+| `ssh_connect` | 连接管理 | 自动读取环境变量/配置，支持密码+密钥认证，可保存配置，登录后自动执行命令 |
+| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制 |
+| `ssh_disconnect` | 会话管理 | 断开指定会话 OR 列出所有活跃会话 |
+| `ssh_file_transfer` | 文件传输 | 上传 / 下载 / 列目录 |
+| `ssh_host` | 主机管理 | `action=list/add/remove` 增删查主机配置 |
+| `ssh_docker` | Docker 管理 | `action=ps/images/build/logs` 全生命周期管理 |
+| `ssh_generate_key` | 密钥生成 | RSA / Ed25519 密钥对 |
 
 ### 📖 详细文档
 
@@ -289,7 +266,7 @@ npx ssh-licco
 
 ```
 用户：帮我查看服务器上的 Docker 容器
-AI：正在执行 `docker ps` 命令...
+AI：调用 ssh_connect → ssh_execute "docker ps"
 
 [执行结果]
 CONTAINER ID   IMAGE     COMMAND   STATUS    PORTS
@@ -300,7 +277,7 @@ abc123         nginx     "nginx"   Up 2 days 80:80
 
 ```
 用户：把这个文件上传到 /var/www/html
-AI：正在上传文件到 /var/www/html...
+AI：调用 ssh_connect → ssh_file_transfer
 
 [上传成功]
 本地：./index.html
@@ -308,25 +285,23 @@ AI：正在上传文件到 /var/www/html...
 大小：2.3 KB
 ```
 
-### 示例 3：后台任务
+### 示例 3：Docker 构建（长任务）
 
 ```
 用户：帮我构建 Docker 镜像
-AI：正在启动后台任务执行 `docker build -t myapp .`...
+AI：调用 ssh_execute(background=True) 后台执行 docker build...
 
-[任务启动]
-Task ID: a1b2c3d4
+[后台任务已启动]
+Session ID: a1b2c3d4
 命令：docker build -t myapp .
-日志：/tmp/background_task.log
-
-使用 ssh_task_status 查看进度
+使用 ssh_execute(session_id="a1b2c3d4", command="cat /tmp/build.log") 查看进度
 ```
 
 ### 示例 4：数据库检查
 
 ```
 用户：检查 PostgreSQL 是否正常运行
-AI：正在执行 `pg_isready -h localhost -p 5432`...
+AI：调用 ssh_execute "pg_isready -h localhost -p 5432"
 
 [检查结果]
 localhost:5432 - accepting connections
@@ -648,13 +623,6 @@ ssh-licco upload --host 192.168.1.100 -u root --password pwd ./local.txt /remote
 ssh-licco download --host 192.168.1.100 -u root --password pwd /remote/log.txt ./local.log
 ```
 
-### docker-build - 远程 Docker 构建
-
-```bash
-ssh-licco docker-build --host 192.168.1.100 -u root --password pwd myapp:latest \
-  --context /app --dockerfile ./Dockerfile --timeout 600
-```
-
 ### list-hosts - 列出已配置主机
 
 ```bash
@@ -718,6 +686,7 @@ pytest --cov=ssh_mcp --cov-report=term-missing
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v1.1.0 | 2026-06-01 | 🔥 精简重构！MCP 工具从 15 个合并为 7 个（ssh_connect/ssh_execute/ssh_disconnect/ssh_file_transfer/ssh_host/ssh_docker/ssh_generate_key），自动连接、智能后台检测、长任务等待 |
 | v1.0.0 | 2026-05-31 | 🎉 首个主要版本！CLI 增强（exec/upload/download/docker-build/list-hosts）、完整测试套件（402 用例）、看门狗监控、审计日志、连接池、批量执行 |
 | v0.5.5 | 2026-05 | 自动安装体系优化：依赖完整性检查、增量更新、Anaconda 检测、cli.py 精简 |
 | v0.2.3 | 2026-03-14 | 修复 `_logger` 初始化 bug |
@@ -771,4 +740,4 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 **Made with ❤️ by Echoqili**
 
-*Last updated: 2026-05-31*
+*Last updated: 2026-06-01*

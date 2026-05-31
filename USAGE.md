@@ -14,7 +14,7 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的服务器，让 AI 助
 - 🔥 **长连接支持** - 自动保活，避免频繁连接导致账户锁定
 - 🔥 **可配置会话超时** - 默认 2 小时，最长可配置
 - 🔥 **多客户端支持** - 可选择 paramiko（默认）、asyncssh、fabric
-- 🔥 **CLI 命令行** - exec / upload / download / docker-build / list-hosts 子命令
+- 🔥 **CLI 命令行** - exec / upload / download / list-hosts 子命令
 - 🔥 **连接池** - 高性能连接复用（PooledConnection + ConnectionPool）
 - 🔥 **批量执行** - 多主机并行命令执行（BatchExecutor + AsyncBatchExecutor）
 - 🔥 **看门狗监控** - 任务监控、心跳检测、全局异常处理
@@ -156,145 +156,152 @@ pip install -e .
 
 ---
 
-## 工具说明
+## 工具说明（v1.1.0 精简至 7 个）
 
-### 1. ssh_config - 配置 SSH 服务器
+### 1. ssh_connect - 连接管理
 
-配置 SSH 连接信息并保存到本地。
-
-**参数：**
-
-| 参数 | 类型 | 默认值 | 必填 | 说明 |
-|------|------|--------|------|------|
-| host | string | 127.0.0.1 | 否 | SSH 服务器 IP |
-| port | number | 22 | 否 | SSH 端口 |
-| username | string | root | 否 | SSH 用户名 |
-| password | string | - | 是 | SSH 密码 |
-| timeout | number | 30 | 否 | 连接超时（秒） |
-
-**示例：**
-```json
-{
-  "host": "192.168.1.100",
-  "port": 22,
-  "username": "root",
-  "password": "your_password",
-  "timeout": 30
-}
-```
-
----
-
-### 2. ssh_login - 登录并执行命令
-
-使用保存的配置登录 SSH 服务器。
+自动读取环境变量/配置文件，支持密码+密钥认证。无参数时自动连接，有 `host` 时直连，有 `name` 时查 hosts.json。
 
 **参数：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| command | string | 否 | 登录后执行的命令 |
-
-**示例：**
-```json
-{
-  "command": "uptime && free -h"
-}
-```
-
----
-
-### 3. ssh_connect - 直接连接
-
-不依赖配置文件，直接连接 SSH。支持从 `server.json` 读取预配置的主机。
-
-**参数：**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| name | string | 否 | server.json 中的主机名称 |
-| host | string | 否 | SSH 服务器 IP（与 name 二选一） |
+| name | string | 否 | hosts.json 中已保存的主机名称 |
+| host | string | 否 | SSH 服务器 IP（无参数时读环境变量） |
 | port | number | 否 | SSH 端口，默认 22 |
-| username | string | 是 | SSH 用户名 |
+| username | string | 否 | SSH 用户名 |
 | password | string | 否 | SSH 密码 |
 | private_key_path | string | 否 | 私钥路径 |
 | passphrase | string | 否 | 私钥密码 |
-| timeout | number | 否 | 连接超时（秒），默认 30 |
-| keepalive_interval | number | 否 | 保活间隔（秒），默认 30 |
-| session_timeout | number | 否 | 会话超时（秒），默认 7200（2 小时） |
+| save_config | boolean | 否 | 是否保存为默认配置 |
+| command | string | 否 | 登录后自动执行的命令 |
 
-**示例 1（使用预配置）：**
+**示例 1（自动连接，读环境变量）：**
+```json
+{}
+```
+
+**示例 2（使用预配置主机）：**
 ```json
 {
   "name": "我的服务器"
 }
 ```
 
-**示例 2（直接连接）：**
+**示例 3（直连 + 保存配置）：**
 ```json
 {
   "host": "192.168.1.100",
-  "port": 22,
   "username": "root",
   "password": "your_password",
-  "keepalive_interval": 30,
-  "session_timeout": 7200
+  "save_config": true
 }
 ```
 
-> 💡 **提示**：`keepalive_interval` 和 `session_timeout` 用于长连接功能，避免频繁连接导致账户锁定。
-> 
-> **SSH_CLIENT_TYPE**: 设置 SSH 客户端类型（可选）
-> - `common` - paramiko（默认，稳定可靠）⭐
-> - `performance` - asyncssh（高性能）🚀
-> - `development` - fabric（简化 API）👨‍💻
-> 
-> 详见 [CONFIG_GUIDE.md](config/CONFIG_GUIDE.md)
-
 ---
 
-### 4. ssh_execute - 执行命令
+### 2. ssh_execute - 命令执行
 
-在已连接的 SSH 会话中执行命令。
+在会话中执行命令。无 `session_id` 时自动连接。支持后台任务、长任务等待和智能检测。
 
 **参数：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| session_id | string | 是 | SSH 会话 ID |
+| session_id | string | 否 | SSH 会话 ID（不传则自动连接） |
 | command | string | 是 | 要执行的命令 |
+| timeout | number | 否 | 超时秒数，默认 30 |
+| background | boolean | 否 | 是否后台执行（长任务用） |
+| wait | boolean | 否 | 是否等待后台任务完成 |
 
-**示例：**
+**示例 1（自动连接执行）：**
 ```json
 {
-  "session_id": "your-session-id",
   "command": "df -h"
 }
 ```
 
+**示例 2（后台任务）：**
+```json
+{
+  "session_id": "your-session-id",
+  "command": "docker build -t myapp .",
+  "background": true
+}
+```
+
 ---
 
-### 5. ssh_disconnect - 断开连接
+### 3. ssh_disconnect - 会话管理
 
-关闭 SSH 会话。
+不带 `session_id` 时列出所有活跃会话，带 `session_id` 时断开指定会话。
 
 **参数：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| session_id | string | 是 | SSH 会话 ID |
+| session_id | string | 否 | SSH 会话 ID（不传则列出所有会话） |
 
 ---
 
-### 6. ssh_list_sessions - 列出会话
+### 4. ssh_file_transfer - 文件传输
 
-列出所有活跃的 SSH 会话。
+上传、下载文件或列出目录。
 
-**无需参数**
+**参数：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| session_id | string | 否 | SSH 会话 ID（不传则自动连接） |
+| direction | string | 是 | 传输方向（upload/download/list） |
+| local_path | string | 否 | 本地文件路径 |
+| remote_path | string | 是 | 远程文件路径 |
+
+**示例 1（上传）：**
+```json
+{
+  "direction": "upload",
+  "local_path": "/local/file.txt",
+  "remote_path": "/remote/file.txt"
+}
+```
 
 ---
 
-### 7. ssh_generate_key - 生成密钥
+### 5. ssh_host - 主机管理
+
+增删查主机配置。
+
+**参数：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| action | string | 是 | list / add / remove |
+| name | string | 否 | 主机名称（add/remove 时必填） |
+| host | string | 否 | 主机 IP（add 时必填） |
+| username | string | 否 | 用户名（add 时必填） |
+| password | string | 否 | 密码 |
+
+---
+
+### 6. ssh_docker - Docker 管理
+
+Docker 全生命周期管理。
+
+**参数：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| session_id | string | 否 | SSH 会话 ID（不传则自动连接） |
+| action | string | 是 | ps / images / build / logs |
+| image | string | 否 | 镜像名称（build 时必填） |
+| context | string | 否 | 构建上下文目录 |
+| dockerfile | string | 否 | Dockerfile 路径 |
+| timeout | number | 否 | 构建超时（默认 300） |
+
+---
+
+### 7. ssh_generate_key - 密钥生成
 
 生成 SSH 密钥对。
 
@@ -309,50 +316,6 @@ pip install -e .
 
 ---
 
-### 8. ssh_file_transfer - SFTP 文件传输
-
-上传、下载文件或列出目录。
-
-**参数：**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| session_id | string | 是 | SSH 会话 ID |
-| direction | string | 是 | 传输方向（upload/download/list） |
-| local_path | string | 否 | 本地文件路径 |
-| remote_path | string | 是 | 远程文件路径 |
-
-**示例 1（上传）：**
-```json
-{
-  "session_id": "your-session-id",
-  "direction": "upload",
-  "local_path": "/local/file.txt",
-  "remote_path": "/remote/file.txt"
-}
-```
-
-**示例 2（下载）：**
-```json
-{
-  "session_id": "your-session-id",
-  "direction": "download",
-  "local_path": "./file.txt",
-  "remote_path": "/remote/file.txt"
-}
-```
-
-**示例 3（列表）：**
-```json
-{
-  "session_id": "your-session-id",
-  "direction": "list",
-  "remote_path": "/home"
-}
-```
-
----
-
 ## 使用示例
 
 ### 示例 1：查看服务器状态
@@ -363,8 +326,8 @@ pip install -e .
 ```
 
 **AI 自动执行：**
-1. ssh_config - 配置服务器
-2. ssh_login - 登录并执行 "uptime && free -h && df -h"
+1. `ssh_connect` → 连接服务器（自动读环境变量）
+2. `ssh_execute` → "uptime && free -h && df -h"
 
 ---
 
@@ -377,7 +340,7 @@ pip install -e .
 
 **AI 执行：**
 ```
-ssh_connect -> ssh_file_transfer (direction: list, remote_path: /var/log)
+ssh_connect → ssh_file_transfer(direction: list, remote_path: /var/log)
 ```
 
 ---
@@ -391,7 +354,7 @@ ssh_connect -> ssh_file_transfer (direction: list, remote_path: /var/log)
 
 **AI 执行：**
 ```
-ssh_connect -> ssh_execute (command: "apt update && apt install -y nginx")
+ssh_execute(command: "apt update && apt install -y nginx")
 ```
 
 ---
@@ -405,7 +368,7 @@ ssh_connect -> ssh_execute (command: "apt update && apt install -y nginx")
 
 **AI 执行：**
 ```
-ssh_connect -> ssh_file_transfer (direction: upload, local_path: ./config.yaml, remote_path: /etc/config.yaml)
+ssh_connect → ssh_file_transfer(direction: upload, local_path: ./config.yaml, remote_path: /etc/config.yaml)
 ```
 
 ---
@@ -700,22 +663,6 @@ ssh-licco download --host 192.168.1.100 -u root --password pwd /remote/log.txt .
 |------|------|
 | `remote` | 远程文件路径（必填） |
 | `local` | 本地文件路径（必填） |
-
-### docker-build - 远程 Docker 构建
-
-```bash
-ssh-licco docker-build --host 192.168.1.100 -u root --password pwd myapp:latest \
-  --context /app --dockerfile ./Dockerfile --timeout 600
-```
-
-**参数：**
-
-| 参数 | 说明 |
-|------|------|
-| `image` | Docker 镜像名称和标签，如 `myapp:latest`（必填） |
-| `--context`, `-c` | 构建上下文目录（默认 `.`） |
-| `--dockerfile`, `-f` | Dockerfile 路径（默认 `./Dockerfile`） |
-| `--timeout`, `-t` | 构建超时秒数（默认 300） |
 
 ### list-hosts - 列出已配置主机
 
