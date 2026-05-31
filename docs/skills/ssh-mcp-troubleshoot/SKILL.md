@@ -255,7 +255,7 @@ sudo systemctl restart sshd
 ### 11. Password Conflict Detected
 
 **Symptoms**:
-- `ssh_list_hosts` shows password conflict warning
+- `ssh_host` shows password conflict warning
 - Different passwords in MCP config vs hosts.json
 
 **Solutions**:

@@ -163,27 +163,17 @@ python sync_version.py 0.5.6
 3. Upload: `python -m twine upload dist/*`
 4. Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
 
-## MCP Tools (17 tools)
+## MCP Tools (7 tools, consolidated from 17)
 
 | Tool | Description |
 |------|-------------|
-| `ssh_config` | Configure and save SSH connection settings to local config |
-| `ssh_login` | Quick login using pre-saved config or MCP env vars (optionally execute command) |
-| `ssh_connect` | Full control connection with explicit params (password/key/agent auth) |
-| `ssh_execute` | Execute command on active session (auto-detect background for long-running) |
-| `ssh_execute_wait` | Execute command with configurable timeout (5-60s range) |
-| `ssh_disconnect` | Close an active SSH session |
-| `ssh_list_hosts` | List configured hosts + password conflict detection |
-| `ssh_list_sessions` | List all active sessions with connection details |
-| `ssh_add_host` | Add new server to hosts.json |
-| `ssh_remove_host` | Remove server from hosts.json |
-| `ssh_generate_key` | Generate SSH key pair (RSA/Ed25519) |
-| `ssh_file_transfer` | Upload/download files via SFTP |
-| `ssh_background_task` | Execute long-running commands in background with status polling |
-| `ssh_task_status` | Check background task status and progress |
-| `ssh_docker_build` | Build Docker image on remote server (background mode) |
-| `ssh_docker_status` | Check Docker containers/images/build logs |
-| `ssh_container_logs` | Retrieve Docker container logs with tailing |
+| `ssh_connect` | Connect to SSH server (auto-reads env vars, saved config, or explicit params). Supports password/key/agent auth, optional save_config, and optional post-connect command. |
+| `ssh_execute` | Execute commands on remote server. Auto-connects if no session_id. Auto-detects background execution for long-running tasks. Supports `background`, `wait`, `workdir`, `log_file`, `wait_timeout` params. |
+| `ssh_disconnect` | Close a session (with session_id) or list all active sessions (without session_id). |
+| `ssh_file_transfer` | Upload/download/list files via SFTP. |
+| `ssh_host` | Manage server configs: `action=list` (view all), `action=add` (register new), `action=remove` (delete). |
+| `ssh_docker` | Docker management: `action=ps` (list containers), `action=images` (list images), `action=build` (build image in background), `action=logs` (view container logs). |
+| `ssh_generate_key` | Generate SSH key pair (RSA/Ed25519). |
 
 ## Security Features
 

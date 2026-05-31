@@ -10,7 +10,7 @@ description: "SSH MCP operations guide. Invoke when user needs to perform SSH se
 When executing server operations, tools must be called in the following priority order:
 
 ```
-1️⃣ MCP Tools (ssh_execute, ssh_login, etc.)    ← Always use first
+1️⃣ MCP Tools (ssh_connect, ssh_execute, etc.)  ← Always use first
          ↓ If MCP tools are unavailable/not loaded in current session
 2️⃣ CLI Tool (ssh-licco exec)                    ← Second choice
          │ Note: Use SSH_SECURITY_LEVEL=relaxed mode
@@ -40,101 +40,133 @@ $env:SSH_EXTRA_ALLOWED_COMMANDS="pg_isready,psql"
 ssh-licco exec --host <ip> -u <user> --password <pwd> "<command>"
 ```
 
+## 7 Core Tools
+
+| # | Tool | Description |
+|---|------|-------------|
+| 1 | `ssh_connect` | Connect to SSH server (auto-reads env vars / saved config) |
+| 2 | `ssh_execute` | Execute commands (auto-connect, background, long tasks) |
+| 3 | `ssh_disconnect` | Disconnect or list active sessions |
+| 4 | `ssh_file_transfer` | Upload/download/list files via SFTP |
+| 5 | `ssh_host` | Manage server configs (list/add/remove) |
+| 6 | `ssh_docker` | Docker management (ps/images/build/logs) |
+| 7 | `ssh_generate_key` | Generate SSH key pairs |
+
 ## Quick Reference
 
-### Quick Login (using saved config or env vars)
+### Connect (auto-login with env vars)
 
 ```
-SSH 登录
+ssh_connect
 ```
 
-Or with a command after login:
+Or with params:
 ```
-SSH 登录，command=ls -la /
-```
-
-### Connect with Full Control
-
-```
-连接 SSH，host=43.143.207.242, username=root, password=xxx
+ssh_connect, host=43.143.207.242, username=root, password=xxx
 ```
 
-Or using configured server:
+Or using saved config:
 ```
-连接 SSH，name=production
+ssh_connect, name=production
+```
+
+Connect and run a command:
+```
+ssh_connect, command=ls -la /
 ```
 
 ### Execute Command
 
 ```
-执行命令，command=ls -la /, session_id=xxx
+ssh_execute, session_id=xxx, command=ls -la /
 ```
 
-### Execute with Wait (medium tasks)
-
+No session_id (auto-connect via env vars):
 ```
-等待执行命令，command=apt update, session_id=xxx, timeout=60
-```
-
-### File Transfer
-
-```
-传输文件，local_path=/local/file.txt, remote_path=/remote/file.txt, direction=upload, session_id=xxx
+ssh_execute, command=redis-cli KEYS '*'
 ```
 
 ### Background Task
 
 ```
-后台任务，command=docker build -t myapp ., session_id=xxx
+ssh_execute, session_id=xxx, command=docker build -t myapp ., background=true
+```
+
+With wait for completion:
+```
+ssh_execute, session_id=xxx, command=python train.py, background=true, wait=true, wait_timeout=300
+```
+
+### File Transfer
+
+```
+ssh_file_transfer, session_id=xxx, local_path=/local/file.txt, remote_path=/remote/file.txt, direction=upload
 ```
 
 ### Docker Operations
 
 ```
-构建 Docker 镜像，image_name=myapp:latest, session_id=xxx
+ssh_docker, session_id=xxx, action=ps
+ssh_docker, session_id=xxx, action=images, image_name=myapp
+ssh_docker, session_id=xxx, action=build, image_name=myapp:latest
+ssh_docker, session_id=xxx, action=logs, container_name=myapp, tail=100
+```
 
-检查 Docker 状态，session_id=xxx
+### Server Management
 
-查看容器日志，container_name=myapp, session_id=xxx
+```
+ssh_host, action=list
+ssh_host, action=add, name=prod, host=43.143.207.242, username=root, password=xxx
+ssh_host, action=remove, name=prod
+```
+
+### Session Management
+
+```
+ssh_disconnect                          # List all sessions
+ssh_disconnect, session_id=xxx          # Close specific session
+```
+
+### Generate Key
+
+```
+ssh_generate_key, key_type=ed25519, comment=mykey
+ssh_generate_key, key_type=rsa, key_size=4096, save_path=~/.ssh/id_rsa
 ```
 
 ## MCP Tool Parameters
 
-### ssh_login
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| command | No | - | Optional command to execute after login |
-
 ### ssh_connect
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| host | No* | - | Server IP/hostname |
+| host | No | - | Server IP/hostname. Omit to auto-read env vars |
 | port | No | 22 | SSH port |
 | username | No | root | SSH username |
 | password | No | - | SSH password |
 | private_key_path | No | - | Path to private key |
 | passphrase | No | - | Passphrase for encrypted key |
 | auth_method | No | private_key | password/private_key/agent |
-| name | No | - | Server name from config |
-| client_type | No | asyncssh | Client type |
-| strict_host_key_checking | No | true | Enable strict host key verification |
-| known_hosts_path | No | - | Path to known_hosts file |
-| accept_new_host_key | No | false | Auto-accept new host keys (testing only) |
+| name | No | - | Server name from config/hosts.json |
+| save_config | No | false | Save to local config |
+| command | No | - | Optional command to execute after connecting |
+| accept_new_host_key | No | true | Auto-accept new host keys |
 
 ### ssh_execute
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| session_id | Yes | - | Session ID from connect/login |
+| session_id | No | - | Session ID. Omit to auto-connect via env vars |
 | command | Yes | - | Command to execute |
 | timeout | No | 30 | Command timeout in seconds |
-| background | No | auto | Run in background (auto-detected if not set) |
+| background | No | auto | Run in background (auto-detected) |
+| workdir | No | /tmp | Working directory for background tasks |
+| log_file | No | /tmp/background_task.log | Log file for background output |
+| wait | No | false | Wait for background task completion |
+| wait_timeout | No | 60 | Max wait time when wait=true |
 
-### ssh_execute_wait
+### ssh_disconnect
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| session_id | Yes | - | Session ID |
-| command | Yes | - | Command to execute |
-| timeout | No | 60 | Maximum wait time in seconds |
+| session_id | No | - | Session to close. Omit to list all sessions |
 
 ### ssh_file_transfer
 | Parameter | Required | Default | Description |
@@ -142,50 +174,37 @@ Or using configured server:
 | session_id | Yes | - | Session ID |
 | local_path | Yes | - | Local file path |
 | remote_path | Yes | - | Remote file path |
-| direction | Yes | - | upload/download |
+| direction | Yes | - | upload/download/list |
 
-### ssh_background_task
+### ssh_host
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| action | Yes | - | list/add/remove |
+| name | For add/remove | - | Server name |
+| host | For add | - | Server IP/hostname |
+| port | No | 22 | SSH port |
+| username | No | root | SSH username |
+| password | No | - | SSH password |
+| timeout | No | 60 | Connection timeout |
+
+### ssh_docker
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | session_id | Yes | - | Session ID |
-| command | Yes | - | Command to execute in background |
-| workdir | No | /tmp | Working directory |
-| log_file | No | /tmp/background_task.log | Log file path |
-| wait | No | false | Wait for task completion |
-| wait_timeout | No | 60 | Max wait time when wait=true |
-
-### ssh_task_status
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| session_id | Yes | - | Session ID |
-| task_id | Yes | - | Task ID from ssh_background_task |
-
-### ssh_docker_build
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| session_id | Yes | - | Session ID |
-| image_name | Yes | - | Docker image name:tag |
+| action | Yes | - | ps/images/build/logs |
+| image_name | For build | - | Image name (build: required, images: optional filter) |
+| container_name | For logs | - | Container name or ID |
 | dockerfile_path | No | ./Dockerfile | Dockerfile path |
 | context | No | . | Build context directory |
+| tail | No | 100 | Log lines to retrieve |
 
-### ssh_docker_status
+### ssh_generate_key
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| session_id | Yes | - | Session ID |
-| image_name | No | - | Optional image name to check |
-
-### ssh_container_logs
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| session_id | Yes | - | Session ID |
-| container_name | Yes | - | Container name or ID |
-| tail | No | 100 | Number of lines to retrieve |
-| since | No | - | Optional timestamp filter |
-
-### ssh_list_sessions
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| (none) | - | - | Lists all active sessions |
+| key_type | No | ed25519 | rsa/ed25519 |
+| key_size | No | 4096 | Key size for RSA |
+| comment | No | - | Key comment |
+| save_path | No | - | Path to save key files |
 
 ## Common Commands
 
@@ -218,45 +237,6 @@ sudo systemctl restart sshd
 sudo journalctl -u sshd -n 50
 ```
 
-## Server Management
-
-### List Servers
-```
-列出 SSH 服务器
-```
-
-### Add Server
-```
-添加 SSH 服务器，name=prod, host=43.143.207.242, username=root, password=xxx
-```
-
-### Remove Server
-```
-删除 SSH 服务器，name=prod
-```
-
-### List Active Sessions
-```
-列出 SSH 会话
-```
-
-### Disconnect Session
-```
-断开 SSH，session_id=xxx
-```
-
-## SSH Key Authentication
-
-### Generate Key
-```
-生成 SSH 密钥，key_type=ed25519, comment=mykey
-```
-
-### Connect with Key
-```
-连接 SSH，host=xxx, username=ubuntu, private_key_path=/path/to/key, auth_method=private_key
-```
-
 ## Auto Background Detection
 
 `ssh_execute` automatically detects long-running commands and runs them in background:
@@ -280,31 +260,30 @@ Instant commands like `docker ps`, `ls`, `cat`, `git status` are NOT run in back
 
 ### Web Server Deployment
 ```
-1. SSH 登录
-2. 执行命令，command=sudo apt update && sudo apt install -y nginx
-3. 执行命令，command=sudo systemctl enable nginx && sudo systemctl start nginx
-4. 执行命令，command=curl localhost
+1. ssh_connect
+2. ssh_execute, command=sudo apt update && sudo apt install -y nginx
+3. ssh_execute, command=sudo systemctl enable nginx && sudo systemctl start nginx
+4. ssh_execute, command=curl localhost
 ```
 
 ### File Backup
 ```
-1. 连接 SSH，host=xxx, username=xxx, password=xxx
-2. 传输文件，local_path=./backup.tar.gz, remote_path=/backup/backup.tar.gz, direction=upload
-3. 执行命令，command=cd /backup && tar -xzf backup.tar.gz
+1. ssh_connect, host=xxx, username=xxx, password=xxx
+2. ssh_file_transfer, local_path=./backup.tar.gz, remote_path=/backup/backup.tar.gz, direction=upload
+3. ssh_execute, command=cd /backup && tar -xzf backup.tar.gz
 ```
 
 ### Docker Deployment
 ```
-1. 连接 SSH，host=xxx, username=xxx, password=xxx
-2. 构建 Docker 镜像，image_name=myapp:latest, session_id=xxx
-3. 检查 Docker 状态，session_id=xxx
-4. 执行命令，command=docker run -d -p 8080:80 myapp:latest
-5. 查看容器日志，container_name=myapp, session_id=xxx
+1. ssh_connect, host=xxx, username=xxx, password=xxx
+2. ssh_docker, action=build, image_name=myapp:latest
+3. ssh_docker, action=ps
+4. ssh_execute, command=docker run -d -p 8080:80 myapp:latest
+5. ssh_docker, action=logs, container_name=myapp
 ```
 
 ### Background Task
 ```
-1. 连接 SSH，host=xxx, username=xxx, password=xxx
-2. 后台任务，command=python train.py, session_id=xxx, wait=true, wait_timeout=300
-3. Or check status: 查看任务状态，task_id=xxx, session_id=xxx
+1. ssh_connect
+2. ssh_execute, command=python train.py, background=true, wait=true, wait_timeout=300
 ```

@@ -2,7 +2,7 @@
 # 所有代码中的版本信息都从这里读取
 # 版本号：1.0.0
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "SSH LICCO Team"
 __email__ = "contact@ssh-licco.dev"
 __license__ = "MIT"
