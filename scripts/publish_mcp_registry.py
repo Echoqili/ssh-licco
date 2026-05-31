@@ -1,6 +1,10 @@
 """
 自动发布到 MCP Registry 的脚本
 用于 GitHub Actions 自动化
+
+参考官方文档:
+  https://modelcontextprotocol.io/tools/registry/publishing/
+  https://raw.githubusercontent.com/modelcontextprotocol/registry/refs/heads/main/docs/reference/server-json/generic-server-json.md
 """
 
 import requests
@@ -15,6 +19,7 @@ GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY', 'Echoqili/ssh-licco')
 
 REGISTRY_BASE_URL = "https://registry.modelcontextprotocol.io/v0.1"
+SCHEMA_URL = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 
 def get_version():
     """从 pyproject.toml 获取版本号"""
@@ -25,48 +30,6 @@ def get_version():
                 return version
     return None
 
-def get_pypi_info(package_name, version):
-    """获取 PyPI 包信息，重试 3 次，如果没有就用本地信息"""
-    print(f"[DEBUG] 获取 PyPI 包信息：{package_name} v{version}")
-    
-    max_retries = 3
-    retry_delay = 5
-    
-    for i in range(max_retries):
-        try:
-            print(f"[DEBUG] PyPI 查询尝试 {i+1}/{max_retries}...")
-            response = requests.get(
-                f"https://pypi.org/pypi/{package_name}/{version}/json",
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"[DEBUG] PyPI 信息获取成功！description={data['info']['summary']}")
-                return {
-                    "name": data['info']['name'],
-                    "version": data['info']['version'],
-                    "description": data['info']['summary'],
-                    "home_page": data['info'].get('home_page', ''),
-                }
-            else:
-                print(f"[DEBUG] PyPI 返回 status={response.status_code}, 重试...")
-                if i < max_retries - 1:
-                    time.sleep(retry_delay)
-        
-        except Exception as e:
-            print(f"[DEBUG] PyPI 网络错误: {e}, 重试...")
-            if i < max_retries - 1:
-                time.sleep(retry_delay)
-    
-    print(f"[DEBUG] PyPI 重试用完，使用本地 fallback 信息")
-    return {
-        "name": package_name,
-        "version": version,
-        "description": "SSH Model Context Protocol Server - Enable SSH functionality for AI models",
-        "home_page": "https://github.com/Echoqili/ssh-licco",
-    }
-
 def login_registry():
     """登录 MCP Registry"""
     print("[DEBUG] 开始登录 MCP Registry...")
@@ -75,7 +38,7 @@ def login_registry():
         print("[ERROR] GITHUB_TOKEN 环境变量为空！")
         return None
     
-    print(f"[DEBUG] GITHUB_TOKEN 长度: {len(GITHUB_TOKEN)} (前4位: {GITHUB_TOKEN[:4]}...)")
+    print(f"[DEBUG] GITHUB_TOKEN 长度: {len(GITHUB_TOKEN)}")
     
     try:
         response = requests.post(
@@ -90,41 +53,35 @@ def login_registry():
         if response.status_code == 200:
             data = response.json()
             token = data.get('registry_token') or data.get('access_token')
-            print(f"[DEBUG] 解析到 registry_token: {'有值' if token else 'None/缺失'}")
+            print(f"[DEBUG] 解析到 registry_token: {'有值' if token else 'None'}")
             if token:
                 print(f"[DEBUG] token 长度: {len(token)}")
                 print("[OK] 登录成功！")
                 return token
             else:
-                print("[ERROR] 登录响应 200 但没有 access_token 字段！完整响应:")
+                print("[ERROR] 登录响应 200 但没有有效 token！完整响应:")
                 print(json.dumps(data, indent=2))
                 return None
         else:
             print(f"[ERROR] 登录 API 返回非 200: {response.status_code}")
-            print(f"[ERROR] 响应内容: {response.text}")
             return None
             
     except Exception as e:
         print(f"[ERROR] 登录请求异常: {e}")
         return None
 
-def publish_to_registry(access_token):
-    """发布到 MCP Registry"""
-    version = get_version()
-    if not version:
-        version = "0.1.7"
+def build_publish_data(version):
+    """
+    按照 MCP Registry 官方规范构建发布数据
     
-    print(f"[DEBUG] 准备发布 {SERVER_NAME} v{version}")
-    
-    pypi_info = get_pypi_info(PYPI_PACKAGE_NAME, version)
-    if not pypi_info:
-        return False
-    
+    参考: https://raw.githubusercontent.com/modelcontextprotocol/registry/refs/heads/main/docs/reference/server-json/generic-server-json.md
+    """
     publish_data = {
-        "$schema": "https://registry.modelcontextprotocol.io/schema/mcp-server.json",
+        "$schema": SCHEMA_URL,
         "name": SERVER_NAME,
+        "description": "SSH Model Context Protocol Server - Enable SSH functionality for AI models",
+        "title": "SSH LICCO MCP Server",
         "version": version,
-        "description": pypi_info['description'],
         "repository": {
             "url": f"https://github.com/{GITHUB_REPOSITORY}.git",
             "source": "github"
@@ -132,19 +89,52 @@ def publish_to_registry(access_token):
         "packages": [
             {
                 "registryType": "pypi",
+                "registryBaseUrl": "https://pypi.org/pypi",
                 "identifier": PYPI_PACKAGE_NAME,
                 "version": version,
                 "runtimeHint": "python",
-                "transport": {"type": "stdio"},
+                "transport": {
+                    "type": "stdio"
+                },
                 "environmentVariables": [
-                    {"name": "SSH_HOST", "description": "SSH server hostname"},
-                    {"name": "SSH_USER", "description": "SSH username"},
-                    {"name": "SSH_PASSWORD", "description": "SSH password", "isSecret": True},
-                    {"name": "SSH_PORT", "description": "SSH port", "default": "22"}
+                    {
+                        "name": "SSH_HOST",
+                        "description": "SSH server hostname or IP address",
+                        "isRequired": True,
+                    },
+                    {
+                        "name": "SSH_USER",
+                        "description": "SSH username for authentication",
+                        "isRequired": True,
+                    },
+                    {
+                        "name": "SSH_PASSWORD",
+                        "description": "SSH password for authentication",
+                        "isRequired": False,
+                        "isSecret": True
+                    },
+                    {
+                        "name": "SSH_PORT",
+                        "description": "SSH port number",
+                        "isRequired": False,
+                        "default": "22"
+                    }
                 ]
             }
-        ]
+        ],
     }
+    
+    return publish_data
+
+def publish_to_registry(access_token):
+    """发布到 MCP Registry"""
+    version = get_version()
+    if not version:
+        version = "1.1.7"
+    
+    print(f"[DEBUG] 准备发布 {SERVER_NAME} v{version}")
+    
+    publish_data = build_publish_data(version)
     
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -152,6 +142,7 @@ def publish_to_registry(access_token):
     }
     
     print(f"[DEBUG] 发送发布请求到 {REGISTRY_BASE_URL}/publish")
+    print(f"[DEBUG] $schema: {publish_data['$schema']}")
     print(f"[DEBUG] 请求数据大小: {len(json.dumps(publish_data))} bytes")
     
     try:
@@ -187,14 +178,12 @@ def main():
     print("MCP Registry 自动发布")
     print("=" * 60)
     
-    # 登录
     access_token = login_registry()
     if not access_token:
         print("=" * 60)
         print("[FAIL] 发布终止 - 登录失败或无有效 token")
         exit(1)
     
-    # 发布
     success = publish_to_registry(access_token)
     
     print("=" * 60)
