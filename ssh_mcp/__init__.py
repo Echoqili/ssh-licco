@@ -8,3 +8,41 @@ __email__ = "contact@ssh-licco.dev"
 __license__ = "MIT"
 __description__ = "SSH Model Context Protocol Server - Enable SSH functionality for AI models"
 __url__ = "https://github.com/Echoqili/ssh-licco"
+
+from ssh_mcp.connection_config import ConnectionConfig
+from ssh_mcp.exceptions import (
+    SSHException,
+    ConnectionException,
+    AuthenticationException,
+    CommandExecutionException,
+    FileTransferException,
+    SessionException,
+    TimeoutException,
+    ConfigurationException,
+    ClientNotAvailableException,
+    PoolExhaustedException,
+    RetryExhaustedException,
+)
+from ssh_mcp.service import get_ssh_service
+
+__all__ = [
+    "__version__",
+    "__author__",
+    "__email__",
+    "__license__",
+    "__description__",
+    "__url__",
+    "ConnectionConfig",
+    "SSHException",
+    "ConnectionException",
+    "AuthenticationException",
+    "CommandExecutionException",
+    "FileTransferException",
+    "SessionException",
+    "TimeoutException",
+    "ConfigurationException",
+    "ClientNotAvailableException",
+    "PoolExhaustedException",
+    "RetryExhaustedException",
+    "get_ssh_service",
+]
