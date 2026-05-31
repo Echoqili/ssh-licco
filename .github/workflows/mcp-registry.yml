@@ -26,7 +26,7 @@ jobs:
     
     - name: Publish to MCP Registry
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.MCP_GITHUB_TOKEN }}
       run: |
         python scripts/publish_mcp_registry.py
       continue-on-error: true
