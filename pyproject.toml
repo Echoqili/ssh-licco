@@ -1,6 +1,6 @@
 [project]
 name = "ssh-licco"
-version = "1.1.10"
+version = "1.1.11"
 description = "SSH Model Context Protocol Server - Enable SSH functionality for AI models"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,7 +18,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-
 dependencies = [
     "mcp>=1.0.0",
     "asyncssh>=2.17.0",
@@ -26,11 +25,9 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
 ]
-
 [project.urls]
 Homepage = "https://github.com/Echoqili/ssh-licco"
 Repository = "https://github.com/Echoqili/ssh-licco"
-
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
@@ -39,31 +36,24 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.7.0",
 ]
-
 [project.scripts]
 ssh-licco = "ssh_mcp.cli:main"
-
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
-
 [tool.setuptools.packages.find]
 include = ["ssh_mcp*"]
-
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
 ignore = []
-
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
