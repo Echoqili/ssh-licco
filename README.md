@@ -698,6 +698,7 @@ pytest --cov=ssh_mcp --cov-report=term-missing
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v1.2.1 | 2026-06-03 | 📝 README 文档更新，同步到 PyPI |
 | v1.1.0 | 2026-06-01 | 🔥 精简重构！MCP 工具从 15 个合并为 7 个（ssh_connect/ssh_execute/ssh_disconnect/ssh_file_transfer/ssh_host/ssh_docker/ssh_generate_key），自动连接、智能后台检测、长任务等待 |
 | v1.0.0 | 2026-05-31 | 🎉 首个主要版本！CLI 增强（exec/upload/download/docker-build/list-hosts）、完整测试套件（402 用例）、看门狗监控、审计日志、连接池、批量执行 |
 | v0.5.5 | 2026-05 | 自动安装体系优化：依赖完整性检查、增量更新、Anaconda 检测、cli.py 精简 |
