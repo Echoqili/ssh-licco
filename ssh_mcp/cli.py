@@ -262,7 +262,7 @@ async def _cmd_exec_fallback(args):
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ssh-licco",
-        description="SSH LICCO - CLI for remote server management via SSH",
+        description="SSH-LICCO - CLI for remote server management via SSH",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 

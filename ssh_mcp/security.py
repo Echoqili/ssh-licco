@@ -1,5 +1,5 @@
 """
-SSH LICCO Security Module
+SSH-LICCO Security Module
 安全验证和防护模块 - 支持多级安全策略
 """
 
