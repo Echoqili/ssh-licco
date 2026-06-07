@@ -360,8 +360,8 @@ class SSHSession:
 
 class SessionManager:
     # 🔒 安全限制：最大并发会话数（防止资源耗尽 DoS）
-    MAX_SESSIONS = 10
-    MAX_SESSIONS_PER_HOST = 3  # 每个主机最多 3 个并发会话
+    MAX_SESSIONS = 20
+    MAX_SESSIONS_PER_HOST = 5  # 每个主机最多 5 个并发会话
 
     def __init__(self):
         self._sessions: dict[str, SSHSession] = {}
