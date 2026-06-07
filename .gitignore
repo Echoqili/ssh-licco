@@ -116,3 +116,6 @@ rewrite_history.sh
 cleanup_github.py
 publish_now.py
 sync_version.py.backup
+
+# 软著申请资料（仅本地保留，不推送到远程）
+软著申请资料/
