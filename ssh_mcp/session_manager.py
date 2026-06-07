@@ -408,8 +408,16 @@ class SessionManager:
                 except Exception as e:
                     print(f"Error cleaning up session {session_id}: {e}")
 
-    async def create_session(self, config: ConnectionConfig) -> SessionInfo:
+    async def create_session(self, config: ConnectionConfig, reuse: bool = True) -> SessionInfo:
         async with self._lock:
+            # 🔄 会话复用：优先复用同一主机的活跃会话
+            if reuse:
+                for session in self._sessions.values():
+                    if (session.config.host == config.host
+                            and session.config.username == config.username
+                            and session.is_connected):
+                        return session._get_session_info()
+
             # 🔒 安全检查：会话并发数限制
             if len(self._sessions) >= self.MAX_SESSIONS:
                 raise ConnectionException(
