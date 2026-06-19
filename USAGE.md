@@ -10,7 +10,7 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的服务器，让 AI 助
 - ✅ 远程命令执行
 - ✅ 多会话管理（最大 10 个并发，每主机 3 个）
 - ✅ SSH 密钥生成（RSA / Ed25519）
-- ✅ SFTP 文件传输（上传、下载、列表）
+- ✅ SFTP 文件传输（上传、下载、列表、**写入、追加、删除、建目录、stat**）
 - 🔥 **长连接支持** - 自动保活，避免频繁连接导致账户锁定
 - 🔥 **可配置会话超时** - 默认 2 小时，最长可配置
 - 🔥 **多客户端支持** - 可选择 paramiko（默认）、asyncssh、fabric
@@ -20,6 +20,11 @@ SSH LICCO 是一个基于 Model Context Protocol (MCP) 的服务器，让 AI 助
 - 🔥 **看门狗监控** - 任务监控、心跳检测、全局异常处理
 - 🔥 **审计日志** - JSON 结构化审计记录
 - 🔥 **安全验证** - 三级安全策略（STRICT / BALANCED / RELAXED）
+- 🆕 **可靠后台任务** - setsid + nohup 真正脱离会话，断连不消失，返回真实 PID
+- 🆕 **持久会话（screen/tmux）** - 长任务/交互式任务保持运行，断连后可重连查看
+- 🆕 **进程管理** - 启动/停止/查询后台进程，按 task_id 或 PID 操作
+- 🆕 **SSH 端口转发** - 本地端口转发（-L），访问远程数据库/服务无需公网暴露
+- 🆕 **远程文件直写** - 直接写/追加内容到远程文件，免去下载-改-上传
 
 ---
 
@@ -156,7 +161,7 @@ pip install -e .
 
 ---
 
-## 工具说明（v1.1.0 精简至 7 个）
+## 工具说明（9 个工具）
 
 ### 1. ssh_connect - 连接管理
 
@@ -244,25 +249,56 @@ pip install -e .
 
 ---
 
-### 4. ssh_file_transfer - 文件传输
+### 4. ssh_file_transfer - 文件传输与管理
 
-上传、下载文件或列出目录。
+上传、下载、列出目录，以及直接写/追加/删除/建目录/查文件信息（均走 SFTP）。
 
 **参数：**
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| session_id | string | 否 | SSH 会话 ID（不传则自动连接） |
-| direction | string | 是 | 传输方向（upload/download/list） |
-| local_path | string | 否 | 本地文件路径 |
-| remote_path | string | 是 | 远程文件路径 |
+| session_id | string | 是 | SSH 会话 ID |
+| direction | string | 是 | upload / download / list / write / append / delete / mkdir / stat |
+| local_path | string | 否 | 本地文件路径（upload/download 必填） |
+| remote_path | string | 否 | 远程文件/目录路径（除 list 外必填） |
+| content | string | 否 | 要写入/追加的内容（write/append 必填） |
 
 **示例 1（上传）：**
 ```json
 {
+  "session_id": "your-session-id",
   "direction": "upload",
   "local_path": "/local/file.txt",
   "remote_path": "/remote/file.txt"
+}
+```
+
+**示例 2（直接写内容到远程文件，免去下载-改-上传）：**
+```json
+{
+  "session_id": "your-session-id",
+  "direction": "write",
+  "remote_path": "/home/licco/config.yaml",
+  "content": "server:\n  port: 8080\n"
+}
+```
+
+**示例 3（追加公钥到 authorized_keys）：**
+```json
+{
+  "session_id": "your-session-id",
+  "direction": "append",
+  "remote_path": "/home/licco/.ssh/authorized_keys",
+  "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host\n"
+}
+```
+
+**示例 4（查文件信息）：**
+```json
+{
+  "session_id": "your-session-id",
+  "direction": "stat",
+  "remote_path": "/var/log/syslog"
 }
 ```
 
@@ -313,6 +349,137 @@ Docker 全生命周期管理。
 | key_size | number | 4096 | 否 | 密钥大小（仅 RSA） |
 | save_path | string | ~/.ssh | 否 | 保存路径 |
 | comment | string | - | 否 | 密钥注释 |
+
+---
+
+### 8. ssh_session - 持久会话管理（screen/tmux）
+
+管理 screen/tmux 持久会话，适合部署、压测、构建、REPL 等**需要保持运行的长任务**。会话真正脱离 SSH，断连后进程不消失，重连可继续查看输出。
+
+**参数：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| session_id | string | 是 | SSH 会话 ID |
+| action | string | 是 | create / send / capture / list / kill |
+| name | string | 否 | 会话名（create/send/capture/kill 必填，仅允许字母数字 `_.-`） |
+| command | string | 否 | 初始命令（create）或要发送的命令（send） |
+| session_type | string | 否 | screen（默认）或 tmux |
+| lines | integer | 否 | capture 抓取行数，默认 50 |
+
+**示例 1（创建持久会话跑 Locust）：**
+```json
+{
+  "session_id": "your-session-id",
+  "action": "create",
+  "name": "locust",
+  "command": "python3 -m locust -f locustfile.py",
+  "session_type": "screen"
+}
+```
+
+**示例 2（向会话发送命令）：**
+```json
+{
+  "session_id": "your-session-id",
+  "action": "send",
+  "name": "locust",
+  "command": "echo 'still running'"
+}
+```
+
+**示例 3（抓取当前屏幕内容）：**
+```json
+{
+  "session_id": "your-session-id",
+  "action": "capture",
+  "name": "locust"
+}
+```
+
+**示例 4（列出/杀掉会话）：**
+```json
+{ "session_id": "your-session-id", "action": "list" }
+{ "session_id": "your-session-id", "action": "kill", "name": "locust" }
+```
+
+> **screen vs tmux**：screen 更通用（多数 Linux 自带）；tmux 交互更友好。两者均已加入安全白名单。
+
+---
+
+### 9. ssh_process - 后台进程与隧道管理
+
+启动/停止/查询后台进程，以及 SSH 本地端口转发（tunnel）。
+
+**参数：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| session_id | string | 是 | SSH 会话 ID |
+| action | string | 是 | start / stop / status / list / tunnel_open / tunnel_close / tunnel_list |
+| command | string | 否 | 要运行的命令（start） |
+| pid | string | 否 | 进程 ID（stop/status） |
+| task_id | string | 否 | 任务 ID（stop/status，替代 pid） |
+| signal | string | 否 | 停止信号，默认 TERM（可用 KILL/INT 等） |
+| workdir | string | 否 | 工作目录（start），默认 /tmp |
+| log_file | string | 否 | 日志文件（start），默认 /tmp/bg_\<taskid\>.log |
+| local_port | integer | 否 | 本地监听端口（tunnel_open/tunnel_close） |
+| remote_host | string | 否 | 远程目标主机（tunnel_open） |
+| remote_port | integer | 否 | 远程目标端口（tunnel_open） |
+
+**示例 1（启动后台进程，返回真实 PID）：**
+```json
+{
+  "session_id": "your-session-id",
+  "action": "start",
+  "command": "python3 -m http.server 8000",
+  "workdir": "/tmp"
+}
+```
+
+**示例 2（查询进程状态）：**
+```json
+{
+  "session_id": "your-session-id",
+  "action": "status",
+  "pid": "12345"
+}
+```
+
+**示例 3（列出所有跟踪的后台任务）：**
+```json
+{ "session_id": "your-session-id", "action": "list" }
+```
+
+**示例 4（停止进程）：**
+```json
+{
+  "session_id": "your-session-id",
+  "action": "stop",
+  "pid": "12345",
+  "signal": "TERM"
+}
+```
+
+**示例 5（开端口转发，本地访问远程 MySQL）：**
+```json
+{
+  "session_id": "your-session-id",
+  "action": "tunnel_open",
+  "local_port": 33060,
+  "remote_host": "127.0.0.1",
+  "remote_port": 3306
+}
+```
+开好后，本地连接 `127.0.0.1:33060` 即等于访问远程 `127.0.0.1:3306`。
+
+**示例 6（列出/关闭隧道）：**
+```json
+{ "session_id": "your-session-id", "action": "tunnel_list" }
+{ "session_id": "your-session-id", "action": "tunnel_close", "local_port": 33060 }
+```
+
+> **可靠性说明**：`start` 使用 `setsid + nohup + < /dev/null + disown` 让进程真正脱离 SSH 会话，断连不会带走进程；返回的 PID 是远程真实进程 PID，可用于 `stop`/`status`。
 
 ---
 
@@ -370,6 +537,55 @@ ssh_execute(command: "apt update && apt install -y nginx")
 ```
 ssh_connect → ssh_file_transfer(direction: upload, local_path: ./config.yaml, remote_path: /etc/config.yaml)
 ```
+
+---
+
+### 示例 5：跑长时间压测并保持运行
+
+**你说：**
+```
+在服务器上用 Locust 跑压测，断开后也要继续跑
+```
+
+**AI 执行：**
+```
+ssh_connect
+  → ssh_session(action: create, name: "locust", command: "python3 -m locust -f locustfile.py")
+```
+断开重连后用 `ssh_session(action: capture, name: "locust")` 查看实时输出，用 `ssh_session(action: kill, name: "locust")` 停止。
+
+---
+
+### 示例 6：后台启动服务并管理进程
+
+**你说：**
+```
+后台启动一个 HTTP 服务，过会儿查它还活着没
+```
+
+**AI 执行：**
+```
+ssh_connect
+  → ssh_process(action: start, command: "python3 -m http.server 8000")   # 返回 PID
+  → ssh_process(action: status, pid: "<返回的PID>")                       # 查活
+  → ssh_process(action: stop, pid: "<返回的PID>")                         # 停止
+```
+
+---
+
+### 示例 7：本地访问远程数据库（端口转发）
+
+**你说：**
+```
+我想用本地的 Navicat 连远程服务器上的 MySQL（只监听 127.0.0.1:3306）
+```
+
+**AI 执行：**
+```
+ssh_connect
+  → ssh_process(action: tunnel_open, local_port: 33060, remote_host: "127.0.0.1", remote_port: 3306)
+```
+然后在 Navicat 连 `127.0.0.1:33060` 即可。用完 `tunnel_close` 关闭。
 
 ---
 
@@ -799,7 +1015,7 @@ logger.log_disconnect("192.168.1.100", "root")
 ### 运行测试
 
 ```bash
-# 运行全部测试（402 passed, 3 skipped）
+# 运行全部测试（406 passed, 3 skipped）
 pytest tests/ -v
 
 # 运行特定模块测试

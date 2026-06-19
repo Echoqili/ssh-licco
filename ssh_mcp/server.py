@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import uuid
 from importlib.metadata import version as get_version
 from pathlib import Path
@@ -26,6 +27,115 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
+class Tunnel:
+    """SSH 本地端口转发隧道（-L local_port:remote_host:remote_port）。
+
+    在本地监听 local_port，每个进入的连接通过 paramiko 的 direct-tcpip
+    通道转发到远程 remote_host:remote_port。转发在独立线程中完成，不阻塞
+    MCP 主事件循环。
+    """
+
+    def __init__(self, local_port: int, remote_host: str, remote_port: int, session_id: str):
+        self.local_port = local_port
+        self.remote_host = remote_host
+        self.remote_port = remote_port
+        self.session_id = session_id
+        self._transport = None
+        self._server_socket = None
+        self._stop = threading.Event()
+        self._accept_thread: threading.Thread | None = None
+        self._client_threads: list[threading.Thread] = []
+
+    def start(self, transport) -> None:
+        import socket
+        self._transport = transport
+        self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server_socket.bind(("127.0.0.1", self.local_port))
+        self._server_socket.listen(5)
+        self._server_socket.settimeout(0.5)
+        self._accept_thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._accept_thread.start()
+
+    def _accept_loop(self):
+        import socket
+        while not self._stop.is_set():
+            try:
+                client_sock, _ = self._server_socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            t = threading.Thread(target=self._handle_connection, args=(client_sock,), daemon=True)
+            self._client_threads.append(t)
+            t.start()
+
+    def _handle_connection(self, client_sock):
+        import socket
+        chan = None
+        try:
+            chan = self._transport.open_channel(
+                "direct-tcpip",
+                (self.remote_host, self.remote_port),
+                ("127.0.0.1", self.local_port),
+            )
+            if chan is None:
+                return
+            self._forward(client_sock, chan)
+        except Exception:
+            pass
+        finally:
+            for s in (client_sock, chan):
+                if s is None:
+                    continue
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+    def _forward(self, sock, chan):
+        """双向转发，直到任一端关闭。"""
+        import socket
+
+        def pipe(src, dst):
+            try:
+                while not self._stop.is_set():
+                    data = src.recv(4096)
+                    if not data:
+                        break
+                    dst.sendall(data)
+            except Exception:
+                pass
+            finally:
+                try:
+                    dst.shutdown(socket.SHUT_WR)
+                except Exception:
+                    pass
+
+        t1 = threading.Thread(target=pipe, args=(sock, chan), daemon=True)
+        t2 = threading.Thread(target=pipe, args=(chan, sock), daemon=True)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._server_socket:
+            try:
+                self._server_socket.close()
+            except Exception:
+                pass
+
+    def info(self) -> dict:
+        return {
+            "local_port": self.local_port,
+            "remote_host": self.remote_host,
+            "remote_port": self.remote_port,
+            "session_id": self.session_id,
+        }
+
+
 class SSHMCPServer:
     def __init__(self):
         self.server = Server("ssh-licco", __version__)
@@ -42,6 +152,9 @@ class SSHMCPServer:
         self._rate_limit_max = int(os.getenv("SSH_RATE_LIMIT_MAX", "30"))
         self._rate_limit_window = int(os.getenv("SSH_RATE_LIMIT_WINDOW", "60"))
         self._command_timestamps: list[float] = []
+
+        # 活动的 SSH 本地端口转发隧道: local_port -> Tunnel
+        self._tunnels: dict[int, "Tunnel"] = {}
 
         self._setup_handlers()
 
@@ -132,16 +245,17 @@ class SSHMCPServer:
                 ),
                 Tool(
                     name="ssh_file_transfer",
-                    description="Transfer files between local and remote server via SFTP. Supports upload, download, and directory listing.",
+                    description="Transfer and manage files between local and remote server via SFTP. Supports upload, download, list, write (write content directly to remote file), append, delete, mkdir, and stat.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
-                            "local_path": {"type": "string", "description": "Local file path (required)."},
-                            "remote_path": {"type": "string", "description": "Remote file path (required)."},
-                            "direction": {"type": "string", "enum": ["upload", "download", "list"], "description": "Transfer direction: upload, download, or list directory."}
+                            "direction": {"type": "string", "enum": ["upload", "download", "list", "write", "append", "delete", "mkdir", "stat"], "description": "Action: upload, download, list, write (content->remote file), append, delete, mkdir, stat."},
+                            "local_path": {"type": "string", "description": "Local file path. Required for upload/download."},
+                            "remote_path": {"type": "string", "description": "Remote file/directory path. Required for all directions."},
+                            "content": {"type": "string", "description": "Content to write/append to remote file. Required for write/append."}
                         },
-                        "required": ["session_id", "local_path", "remote_path", "direction"]
+                        "required": ["session_id", "direction"]
                     }
                 ),
                 Tool(
@@ -191,6 +305,43 @@ class SSHMCPServer:
                         }
                     }
                 ),
+                Tool(
+                    name="ssh_session",
+                    description="Manage persistent screen/tmux sessions on the remote server for long-running interactive tasks (deploy, build, test, REPL). Sessions survive SSH disconnect. Actions: create (new detached session running a command), send (send keys/command to a session), capture (read current screen), list (list sessions), kill (kill a session).",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
+                            "action": {"type": "string", "enum": ["create", "send", "capture", "list", "kill"], "description": "create=new detached session, send=send command/keys to a session, capture=read current screen content, list=list sessions, kill=kill a session."},
+                            "name": {"type": "string", "description": "Session name. Required for create/send/capture/kill. Only letters, digits, _, ., - allowed."},
+                            "command": {"type": "string", "description": "Command to run initially (create) or to send (send)."},
+                            "session_type": {"type": "string", "enum": ["screen", "tmux"], "default": "screen", "description": "Use screen or tmux backend."},
+                            "lines": {"type": "integer", "default": 50, "description": "Number of lines to capture (tmux capture-pane -S)."}
+                        },
+                        "required": ["session_id", "action"]
+                    }
+                ),
+                Tool(
+                    name="ssh_process",
+                    description="Manage background processes and SSH tunnels on the remote server. Actions: start (launch a detached background process, returns PID), stop (stop a process by PID), status (check if a PID is running), list (list tracked background tasks), tunnel_open (local port forward to remote host:port), tunnel_close (close a tunnel), tunnel_list (list active tunnels).",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
+                            "action": {"type": "string", "enum": ["start", "stop", "status", "list", "tunnel_open", "tunnel_close", "tunnel_list"], "description": "Process/tunnel action."},
+                            "command": {"type": "string", "description": "Command to run (start)."},
+                            "pid": {"type": "string", "description": "Process ID (stop/status)."},
+                            "task_id": {"type": "string", "description": "Task ID (stop/status, alternative to pid)."},
+                            "signal": {"type": "string", "default": "TERM", "description": "Signal to send on stop (TERM, KILL, INT, etc.)."},
+                            "workdir": {"type": "string", "default": "/tmp", "description": "Working directory (start)."},
+                            "log_file": {"type": "string", "description": "Log file path (start). Default /tmp/bg_<taskid>.log"},
+                            "local_port": {"type": "integer", "description": "Local listen port (tunnel_open)."},
+                            "remote_host": {"type": "string", "description": "Remote target host (tunnel_open)."},
+                            "remote_port": {"type": "integer", "description": "Remote target port (tunnel_open)."}
+                        },
+                        "required": ["session_id", "action"]
+                    }
+                ),
             ]
 
         @self.server.call_tool()
@@ -214,6 +365,10 @@ class SSHMCPServer:
                     return await self._handle_docker(arguments)
                 elif name == "ssh_generate_key":
                     return await self._handle_generate_key(arguments)
+                elif name == "ssh_session":
+                    return await self._handle_session(arguments)
+                elif name == "ssh_process":
+                    return await self._handle_process(arguments)
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
             except Exception as e:
@@ -429,15 +584,12 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
         except SecurityError as e:
             return [TextContent(type="text", text=f"Security error: {str(e)}")]
 
+        # workdir/log_file 是远程路径,不能用本地 path_validator(会把 /tmp 解析成 D:\tmp)
         try:
-            safe_workdir = str(path_validator.validate_path(workdir))
+            safe_workdir = self._sanitize_remote_path(workdir)
+            safe_log_file = self._sanitize_remote_path(log_file)
         except SecurityError as e:
-            return [TextContent(type="text", text=f"Workdir not allowed: {str(e)}")]
-
-        try:
-            safe_log_file = str(path_validator.validate_path(log_file))
-        except SecurityError as e:
-            return [TextContent(type="text", text=f"Log file path not allowed: {str(e)}")]
+            return [TextContent(type="text", text=f"Path not allowed: {str(e)}")]
 
         dangerous_patterns = ['rm -rf /', 'mkfs', 'dd if=/dev/zero', ':(){:|:&};:', 'chmod -R 777 /']
         for pattern in dangerous_patterns:
@@ -445,16 +597,72 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
                 return [TextContent(type="text", text=f"Dangerous operation blocked: '{pattern}'")]
 
         task_id = str(uuid.uuid4())[:8]
+        pid_file = f"/tmp/task_{task_id}.pid"
 
-        background_command = f"""
-cd {safe_workdir} && nohup {command} > {safe_log_file} 2>&1 &
-echo $! > /tmp/task_{task_id}.pid
-echo "Task started with PID: $(cat /tmp/task_{task_id}.pid)"
-echo "Log file: {safe_log_file}"
-"""
+        # setsid: 新建会话,脱离 SSH 控制终端; nohup: 忽略 SIGHUP;
+        # < /dev/null: 不占用 channel stdin(否则 channel 无法干净关闭);
+        # &: 后台; disown: 移出 shell job 表
+        # 注意: 必须用 background=True 执行,否则 paramiko 的 chan.makefile().read()
+        # 会因后台进程 & 持有 stdout 而永远等待 EOF,导致 channel 挂起。
+        background_command = (
+            f"cd {safe_workdir} && "
+            f"setsid nohup {command} > {safe_log_file} 2>&1 < /dev/null & "
+            f"echo $! > {pid_file}; disown 2>/dev/null || true"
+        )
 
         try:
-            await self.session_manager.execute_command(session_id, background_command, timeout=30, background=True)
+            # Step 1: 用 background=True 启动包装命令(立即返回,不挂起)
+            await self.session_manager.execute_command(
+                session_id, background_command, timeout=10, background=True
+            )
+
+            # Step 2: 等待 PID 文件写入
+            await asyncio.sleep(0.5)
+
+            # Step 3: 单独读取 PID 文件并检查进程是否存活
+            # 如果进程已死(命令拼写错误、权限不足等),读取日志显示启动错误
+            read_cmd = (
+                f"PID=$(cat {pid_file} 2>/dev/null); "
+                f"echo \"PID=$PID\"; "
+                f"if [ -n \"$PID\" ] && ps -p $PID > /dev/null 2>&1; then "
+                f"echo 'STATUS=RUNNING'; "
+                f"else "
+                f"echo 'STATUS=DEAD'; "
+                f"echo '--- LOG ---'; "
+                f"cat {safe_log_file} 2>&1 | tail -20; "
+                f"fi"
+            )
+            start_result = await self.session_manager.execute_command(
+                session_id, read_cmd, timeout=10
+            )
+            start_stdout = (start_result.get("stdout") or "").strip()
+            start_stderr = (start_result.get("stderr") or "").strip()
+
+            # 解析远程进程真实 PID 和状态
+            pid = ""
+            status = ""
+            log_tail = ""
+            in_log = False
+            for line in start_stdout.splitlines():
+                if line.startswith("PID="):
+                    pid = line.split("=", 1)[1].strip()
+                elif line.startswith("STATUS="):
+                    status = line.split("=", 1)[1].strip()
+                elif line == "--- LOG ---":
+                    in_log = True
+                elif in_log:
+                    log_tail += line + "\n"
+
+            # 启动失败:进程已死或没拿到 PID
+            if status == "DEAD" or not pid:
+                return [TextContent(type="text", text=(
+                    f"Background task failed to start!\n\n"
+                    f"Command: {command}\n"
+                    f"PID: {pid or '(none)'}\n"
+                    f"--- STDOUT ---\n{start_stdout}\n"
+                    f"--- STDERR ---\n{start_stderr}\n"
+                    f"--- LOG TAIL ---\n{log_tail}"
+                ))]
 
             if wait:
                 output = await self._wait_for_task_completion(
@@ -465,6 +673,7 @@ echo "Log file: {safe_log_file}"
                 output = f"""Background Task Started!
 
 Task ID: {task_id}
+PID: {pid}
 Command: {command}
 Working Directory: {safe_workdir}
 Log File: {safe_log_file}
@@ -474,6 +683,8 @@ To check progress, use:
   ssh_execute(session_id="{session_id}", command="tail -f {safe_log_file}")
 To view full log:
   ssh_execute(session_id="{session_id}", command="cat {safe_log_file}")
+To check if still running:
+  ssh_execute(session_id="{session_id}", command="ps -p {pid}")
 """
 
             return [TextContent(type="text", text=output)]
@@ -676,22 +887,56 @@ Use ssh_execute to check: cat {log_file}
         direction = args.get("direction", "upload")
         local_path = args.get("local_path", "")
         remote_path = args.get("remote_path", "")
+        content = args.get("content", "")
 
         if direction == "upload":
+            if not local_path or not remote_path:
+                return [TextContent(type="text", text="upload requires local_path and remote_path")]
             result = await session.upload_file(local_path, remote_path)
         elif direction == "download":
+            if not local_path or not remote_path:
+                return [TextContent(type="text", text="download requires local_path and remote_path")]
             result = await session.download_file(remote_path, local_path)
         elif direction == "list":
             result = await session.list_directory(remote_path or ".")
+        elif direction == "write":
+            if not remote_path:
+                return [TextContent(type="text", text="write requires remote_path")]
+            result = await session.write_file(remote_path, content, append=False)
+        elif direction == "append":
+            if not remote_path:
+                return [TextContent(type="text", text="append requires remote_path")]
+            result = await session.write_file(remote_path, content, append=True)
+        elif direction == "delete":
+            if not remote_path:
+                return [TextContent(type="text", text="delete requires remote_path")]
+            result = await session.delete_file(remote_path)
+        elif direction == "mkdir":
+            if not remote_path:
+                return [TextContent(type="text", text="mkdir requires remote_path")]
+            result = await session.make_dir(remote_path)
+        elif direction == "stat":
+            if not remote_path:
+                return [TextContent(type="text", text="stat requires remote_path")]
+            result = await session.stat_file(remote_path)
         else:
             return [TextContent(type="text", text=f"Unknown direction: {direction}")]
 
         if result.get("success"):
-            output = f"✅ {result.get('message', 'Success')}"
-            if "files" in result:
+            if direction == "stat":
+                ftype = "dir" if result.get("is_dir") else "file" if result.get("is_file") else "link" if result.get("is_link") else "unknown"
+                output = (f"📊 Stat: {result.get('path')}\n"
+                          f"  Size: {result.get('size')} bytes\n"
+                          f"  Mode: {result.get('mode')}\n"
+                          f"  Type: {ftype}\n"
+                          f"  mtime: {result.get('mtime')}\n"
+                          f"  atime: {result.get('atime')}")
+            elif "files" in result:
                 output = f"📁 Files in {result.get('path', '.')}:\n"
                 for f in result["files"]:
                     output += f"  - {f}\n"
+            else:
+                output = f"✅ {result.get('message', 'Success')}"
         else:
             output = f"❌ {result.get('message', 'Failed')}"
 
@@ -851,6 +1096,285 @@ Use ssh_execute to check: cat {log_file}
                  f"{'Saved to: ' + save_path if save_path else 'Key not saved (provide save_path to persist)'}"
         )]
 
+    @staticmethod
+    def _shell_quote(s: str) -> str:
+        """转义字符串以安全放入 shell 单引号。"""
+        return s.replace("'", "'\\''")
+
+    @staticmethod
+    def _sanitize_remote_path(path: str) -> str:
+        """净化远程路径：保留原始 Unix 路径，仅拦截 shell 注入字符。
+
+        远程路径不能用本地 path_validator（它会把 /tmp resolve 成 D:\\tmp）。
+        这里只做最小校验：非空、无 shell 元字符、无路径穿越。
+        """
+        import re
+        from .security import SecurityError
+        if not path or not path.strip():
+            raise SecurityError("远程路径不能为空")
+        # 拦截 shell 注入字符（路径本身不需要这些）
+        if re.search(r'[;|&$`\n\r]', path):
+            raise SecurityError(f"远程路径含非法字符: {path}")
+        return path.strip()
+
+    async def _handle_session(self, args: dict) -> list[TextContent]:
+        """管理 screen/tmux 持久会话。"""
+        import re
+        from .security import SecurityError, command_validator
+
+        session_id = args.get("session_id")
+        action = args.get("action")
+        name = args.get("name", "")
+        command = args.get("command", "")
+        session_type = args.get("session_type", "screen")
+        lines = args.get("lines", 50)
+
+        if not session_id:
+            return [TextContent(type="text", text="Error: session_id is required")]
+
+        # 会话名只允许安全字符，防止命令注入
+        if name and not re.match(r'^[a-zA-Z0-9_.-]+$', name):
+            return [TextContent(type="text", text=f"Invalid session name: {name}. Only letters, digits, _, ., - allowed.")]
+
+        esc = self._shell_quote
+
+        if action == "create":
+            if not name:
+                return [TextContent(type="text", text="create requires name")]
+            if not command:
+                return [TextContent(type="text", text="create requires command")]
+            try:
+                command_validator.validate_command(command)
+            except SecurityError as e:
+                return [TextContent(type="text", text=f"Command blocked: {str(e)}")]
+
+            if session_type == "tmux":
+                cmd = f"tmux new-session -d -s {name} '{esc(command)}'"
+            else:
+                cmd = f"screen -dmS {name} bash -lc '{esc(command)}'"
+            result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
+            rc = result.get("exit_code", -1)
+            if rc == 0:
+                output = (f"✅ {session_type} session '{name}' created\n"
+                          f"Command: {command}\n\n"
+                          f"---\nTo send commands: ssh_session(action='send', name='{name}')\n"
+                          f"To view screen: ssh_session(action='capture', name='{name}')")
+            else:
+                output = (f"❌ Failed to create session (exit {rc})\n"
+                          f"Is {session_type} installed? Check: which {session_type}\n"
+                          f"STDOUT: {result.get('stdout', '')}\n"
+                          f"STDERR: {result.get('stderr', '')}")
+
+        elif action == "send":
+            if not name:
+                return [TextContent(type="text", text="send requires name")]
+            if not command:
+                return [TextContent(type="text", text="send requires command")]
+            try:
+                command_validator.validate_command(command)
+            except SecurityError as e:
+                return [TextContent(type="text", text=f"Command blocked: {str(e)}")]
+
+            if session_type == "tmux":
+                cmd = f"tmux send-keys -t {name} '{esc(command)}' Enter"
+            else:
+                # 单引号内放真实换行符，screen stuff 会把它当作回车键
+                cmd = f"screen -S {name} -X stuff '{esc(command)}\n'"
+            result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
+            rc = result.get("exit_code", -1)
+            output = f"✅ Sent to '{name}': {command}" if rc == 0 else (
+                f"❌ Send failed (exit {rc}). Session may not exist.\n"
+                f"STDERR: {result.get('stderr', '')}")
+
+        elif action == "capture":
+            if not name:
+                return [TextContent(type="text", text="capture requires name")]
+            if session_type == "tmux":
+                cmd = f"tmux capture-pane -t {name} -p -S -{int(lines)}"
+                result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
+                output = f"📋 tmux pane '{name}' (last {lines} lines):\n\n{result.get('stdout', '')}"
+            else:
+                cap_file = f"/tmp/screen_cap_{name}.txt"
+                cmd = f"screen -S {name} -X hardcopy {cap_file} && sleep 0.1 && cat {cap_file}"
+                result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
+                rc = result.get("exit_code", -1)
+                if rc == 0:
+                    output = f"📋 screen '{name}' capture:\n\n{result.get('stdout', '')}"
+                else:
+                    output = f"❌ Capture failed (exit {rc}). Session may not exist.\nSTDERR: {result.get('stderr', '')}"
+
+        elif action == "list":
+            if session_type == "tmux":
+                cmd = "tmux list-sessions 2>&1"
+            else:
+                cmd = "screen -ls 2>&1"
+            result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
+            output = f"📋 {session_type} sessions:\n\n{result.get('stdout', '')}"
+
+        elif action == "kill":
+            if not name:
+                return [TextContent(type="text", text="kill requires name")]
+            if session_type == "tmux":
+                cmd = f"tmux kill-session -t {name}"
+            else:
+                cmd = f"screen -S {name} -X quit"
+            result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
+            rc = result.get("exit_code", -1)
+            output = f"✅ Killed session '{name}'" if rc == 0 else (
+                f"❌ Kill failed (exit {rc}). Session may not exist.\nSTDERR: {result.get('stderr', '')}")
+
+        else:
+            output = f"Unknown action: {action}. Use create, send, capture, list, or kill."
+
+        return [TextContent(type="text", text=output)]
+
+    async def _handle_process(self, args: dict) -> list[TextContent]:
+        """管理后台进程与 SSH 隧道。"""
+        import re
+        from .security import SecurityError, command_validator, path_validator
+
+        session_id = args.get("session_id")
+        action = args.get("action")
+
+        if not session_id:
+            return [TextContent(type="text", text="Error: session_id is required")]
+
+        if action == "start":
+            command = args.get("command", "")
+            if not command:
+                return [TextContent(type="text", text="start requires command")]
+            workdir = args.get("workdir", "/tmp")
+            task_id = str(uuid.uuid4())[:8]
+            log_file = args.get("log_file") or f"/tmp/bg_{task_id}.log"
+
+            # 复用 _execute_background 的安全校验与脱离逻辑
+            bg_args = {
+                "workdir": workdir,
+                "log_file": log_file,
+                "wait": False,
+                "wait_timeout": 0,
+            }
+            return await self._execute_background(session_id, command, bg_args, 30)
+
+        if action == "stop":
+            pid = args.get("pid", "")
+            task_id = args.get("task_id", "")
+            signal = args.get("signal", "TERM") or "TERM"
+            # 信号名只允许大写字母+数字
+            if not re.match(r'^[A-Z0-9]+$', signal):
+                return [TextContent(type="text", text=f"Invalid signal: {signal}")]
+
+            if not pid and task_id:
+                pid_file = f"/tmp/task_{task_id}.pid"
+                r = await self.session_manager.execute_command(
+                    session_id, f"cat {pid_file} 2>/dev/null", timeout=10)
+                pid = (r.get("stdout") or "").strip()
+                if not pid:
+                    return [TextContent(type="text", text=f"No PID found for task_id {task_id}")]
+
+            if not pid:
+                return [TextContent(type="text", text="stop requires pid or task_id")]
+            if not re.match(r'^[0-9]+$', str(pid)):
+                return [TextContent(type="text", text=f"Invalid pid: {pid}")]
+
+            cmd = f"kill -{signal} {pid}"
+            result = await self.session_manager.execute_command(session_id, cmd, timeout=10)
+            rc = result.get("exit_code", -1)
+            if rc == 0:
+                output = f"✅ Sent {signal} to PID {pid}"
+            else:
+                output = f"❌ kill failed (exit {rc}): {result.get('stderr', '')}"
+            return [TextContent(type="text", text=output)]
+
+        if action == "status":
+            pid = args.get("pid", "")
+            task_id = args.get("task_id", "")
+            if not pid and task_id:
+                pid_file = f"/tmp/task_{task_id}.pid"
+                r = await self.session_manager.execute_command(
+                    session_id, f"cat {pid_file} 2>/dev/null", timeout=10)
+                pid = (r.get("stdout") or "").strip()
+            if not pid:
+                return [TextContent(type="text", text="status requires pid or task_id")]
+            if not re.match(r'^[0-9]+$', str(pid)):
+                return [TextContent(type="text", text=f"Invalid pid: {pid}")]
+
+            cmd = f"ps -p {pid} -o pid,ppid,stat,etime,cmd --no-headers 2>/dev/null"
+            result = await self.session_manager.execute_command(session_id, cmd, timeout=10)
+            rc = result.get("exit_code", -1)
+            stdout = (result.get("stdout") or "").strip()
+            if rc == 0 and stdout:
+                output = f"✅ PID {pid} is RUNNING\n{stdout}"
+            else:
+                output = f"❌ PID {pid} is NOT running (or no permission)"
+            return [TextContent(type="text", text=output)]
+
+        if action == "list":
+            # 列出 /tmp/task_*.pid 跟踪的后台任务
+            cmd = (
+                "for f in /tmp/task_*.pid; do "
+                "[ -f \"$f\" ] || continue; "
+                "PID=$(cat \"$f\" 2>/dev/null); "
+                "[ -n \"$PID\" ] || continue; "
+                "if ps -p $PID > /dev/null 2>&1; then ST=RUNNING; else ST=DEAD; fi; "
+                "echo \"$f PID=$PID STATUS=$ST\"; "
+                "done 2>/dev/null"
+            )
+            result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
+            stdout = (result.get("stdout") or "").strip()
+            output = "📋 Tracked background tasks:\n\n"
+            output += stdout if stdout else "(none)"
+            return [TextContent(type="text", text=output)]
+
+        if action == "tunnel_open":
+            local_port = args.get("local_port")
+            remote_host = args.get("remote_host", "")
+            remote_port = args.get("remote_port")
+            if not local_port or not remote_host or not remote_port:
+                return [TextContent(type="text", text="tunnel_open requires local_port, remote_host, remote_port")]
+            if local_port in self._tunnels:
+                return [TextContent(type="text", text=f"Tunnel on local port {local_port} already exists")]
+
+            session = await self.session_manager.get_session(session_id)
+            if not session or not session.client:
+                return [TextContent(type="text", text=f"Session not found or not connected: {session_id}")]
+            transport = session.client.get_transport()
+            if transport is None or not transport.is_active():
+                return [TextContent(type="text", text="SSH transport is not active")]
+
+            try:
+                tunnel = Tunnel(int(local_port), remote_host, int(remote_port), session_id)
+                tunnel.start(transport)
+                self._tunnels[int(local_port)] = tunnel
+            except OSError as e:
+                return [TextContent(type="text", text=f"Failed to open tunnel: {str(e)} (port may be in use?)")]
+
+            output = (f"✅ Tunnel opened: 127.0.0.1:{local_port} -> {remote_host}:{remote_port}\n"
+                      f"Session: {session_id}\n"
+                      f"Locally, connect to 127.0.0.1:{local_port} to reach the remote service.")
+            return [TextContent(type="text", text=output)]
+
+        if action == "tunnel_close":
+            local_port = args.get("local_port")
+            if local_port is None:
+                return [TextContent(type="text", text="tunnel_close requires local_port")]
+            tunnel = self._tunnels.pop(int(local_port), None)
+            if not tunnel:
+                return [TextContent(type="text", text=f"No tunnel on local port {local_port}")]
+            tunnel.stop()
+            return [TextContent(type="text", text=f"✅ Tunnel closed on local port {local_port}")]
+
+        if action == "tunnel_list":
+            if not self._tunnels:
+                return [TextContent(type="text", text="No active tunnels")]
+            lines = ["📋 Active SSH tunnels:"]
+            for p, t in self._tunnels.items():
+                info = t.info()
+                lines.append(f"  127.0.0.1:{info['local_port']} -> {info['remote_host']}:{info['remote_port']}  (session {info['session_id']})")
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        return [TextContent(type="text", text=f"Unknown action: {action}. Use start, stop, status, list, tunnel_open, tunnel_close, tunnel_list.")]
+
     async def run(self):
         import signal
 
@@ -876,6 +1400,13 @@ Use ssh_execute to check: cat {log_file}
             except (ConnectionError, BrokenPipeError):
                 pass
             finally:
+                # 关闭所有活动隧道
+                for port, tunnel in list(self._tunnels.items()):
+                    try:
+                        tunnel.stop()
+                    except Exception:
+                        pass
+                self._tunnels.clear()
                 await self.session_manager.close_all_sessions()
 
 

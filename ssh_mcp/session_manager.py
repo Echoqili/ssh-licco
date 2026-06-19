@@ -334,6 +334,157 @@ class SSHSession:
         except Exception as e:
             return {"success": False, "message": f"List failed: {str(e)}", "session_id": self.session_id}
 
+    async def write_file(self, remote_path: str, content: str, append: bool = False) -> dict:
+        """通过 SFTP 写入或追加内容到远程文件"""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to SSH server")
+        async with self._connect_lock:
+            self._last_activity = datetime.now()
+            return await self._executor.submit(
+                self._write_file_sync, remote_path, content, append,
+                timeout=60
+            )
+
+    def _write_file_sync(self, remote_path: str, content: str, append: bool = False) -> dict:
+        assert self.client is not None
+        sftp = None
+        try:
+            sftp = self.client.open_sftp()
+            mode = "a" if append else "w"
+            with sftp.open(remote_path, mode) as f:
+                f.write(content)
+            return {
+                "success": True,
+                "message": f"File {'appended' if append else 'written'}: {remote_path} ({len(content)} bytes)",
+                "bytes_transferred": len(content),
+                "session_id": self.session_id,
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Write failed: {str(e)}", "session_id": self.session_id}
+        finally:
+            if sftp:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+
+    async def stat_file(self, remote_path: str) -> dict:
+        """通过 SFTP 获取远程文件元信息"""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to SSH server")
+        async with self._connect_lock:
+            self._last_activity = datetime.now()
+            return await self._executor.submit(
+                self._stat_file_sync, remote_path,
+                timeout=30
+            )
+
+    def _stat_file_sync(self, remote_path: str) -> dict:
+        assert self.client is not None
+        sftp = None
+        try:
+            sftp = self.client.open_sftp()
+            st = sftp.stat(remote_path)
+            import stat as stat_mod
+            is_dir = stat_mod.S_ISDIR(st.st_mode)
+            is_link = stat_mod.S_ISLNK(st.st_mode)
+            return {
+                "success": True,
+                "path": remote_path,
+                "size": st.st_size,
+                "mode": oct(st.st_mode),
+                "is_dir": is_dir,
+                "is_file": stat_mod.S_ISREG(st.st_mode),
+                "is_link": is_link,
+                "mtime": st.st_mtime,
+                "atime": st.st_atime,
+                "session_id": self.session_id,
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Stat failed: {str(e)}", "session_id": self.session_id}
+        finally:
+            if sftp:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+
+    async def delete_file(self, remote_path: str) -> dict:
+        """通过 SFTP 删除远程文件"""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to SSH server")
+        async with self._connect_lock:
+            self._last_activity = datetime.now()
+            return await self._executor.submit(
+                self._delete_file_sync, remote_path,
+                timeout=30
+            )
+
+    def _delete_file_sync(self, remote_path: str) -> dict:
+        assert self.client is not None
+        sftp = None
+        try:
+            sftp = self.client.open_sftp()
+            sftp.remove(remote_path)
+            return {"success": True, "message": f"Deleted: {remote_path}", "session_id": self.session_id}
+        except Exception as e:
+            return {"success": False, "message": f"Delete failed: {str(e)}", "session_id": self.session_id}
+        finally:
+            if sftp:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+
+    async def make_dir(self, remote_path: str) -> dict:
+        """通过 SFTP 创建远程目录"""
+        if not self.is_connected:
+            raise ConnectionError("Not connected to SSH server")
+        async with self._connect_lock:
+            self._last_activity = datetime.now()
+            return await self._executor.submit(
+                self._make_dir_sync, remote_path,
+                timeout=30
+            )
+
+    def _make_dir_sync(self, remote_path: str) -> dict:
+        assert self.client is not None
+        sftp = None
+        try:
+            sftp = self.client.open_sftp()
+            try:
+                sftp.mkdir(remote_path)
+            except OSError:
+                # 目录已存在时 SFTP 会抛 OSError,检查确认后视为成功(幂等)
+                try:
+                    st = sftp.stat(remote_path)
+                    import stat as _stat
+                    if not _stat.S_ISDIR(st.st_mode):
+                        return {
+                            "success": False,
+                            "message": f"Not a directory: {remote_path}",
+                            "session_id": self.session_id,
+                        }
+                except OSError:
+                    raise
+            return {
+                "success": True,
+                "message": f"Directory created: {remote_path}",
+                "session_id": self.session_id,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Mkdir failed: {str(e)}",
+                "session_id": self.session_id,
+            }
+        finally:
+            if sftp:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+
     async def disconnect(self) -> None:
         async with self._connect_lock:
             self._shutdown_event.set()
@@ -491,3 +642,27 @@ class SessionManager:
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
         return await session.list_directory(remote_path)
+
+    async def write_file(self, session_id: str, remote_path: str, content: str, append: bool = False) -> dict:
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.write_file(remote_path, content, append)
+
+    async def stat_file(self, session_id: str, remote_path: str) -> dict:
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.stat_file(remote_path)
+
+    async def delete_file(self, session_id: str, remote_path: str) -> dict:
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.delete_file(remote_path)
+
+    async def make_dir(self, session_id: str, remote_path: str) -> dict:
+        session = await self.get_session(session_id)
+        if not session:
+            raise ConnectionError(f"Session {session_id} not found")
+        return await session.make_dir(remote_path)

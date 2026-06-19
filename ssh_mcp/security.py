@@ -75,6 +75,12 @@ class CommandValidator:
         # 进程管理
         'kill', 'pkill', 'killall', 'nice', 'renice', 'bg', 'fg', 'jobs',
 
+        # 后台/会话/等待（部署、压测、构建等长任务必需）
+        'sleep', 'nohup', 'setsid', 'disown', 'wait',
+        'screen', 'tmux', 'byobu',
+        'timeout', 'watch', 'time',
+        'true', 'false', 'test', '[', 'eval',
+
         # 安全工具
         'chpasswd', 'passwd', 'openssl', 'gpg', 'ssh-keygen', 'ssh-agent',
 
