@@ -192,30 +192,91 @@ sudo systemctl restart sshd
    }
    ```
 
-### 8. Docker Build Failed
+### 8. Docker Build Failed — 分层排查指南
 
-**Symptoms**:
-- "Docker build failed"
-- "Cannot connect to Docker daemon"
+当本地运行 `docker build` 失败时，先看返回信息定位故障层，再针对性解决。
 
-**Solutions**:
-1. Check Docker is installed:
-   ```bash
-   docker --version
-   ```
-2. Check Docker service:
-   ```bash
-   sudo systemctl status docker
-   sudo systemctl start docker
-   ```
-3. Add user to docker group:
-   ```bash
-   sudo usermod -aG docker $USER
-   ```
-4. Check Docker socket permissions:
-   ```bash
-   ls -la /var/run/docker.sock
-   ```
+#### 8.1 定位故障层
+
+根据返回信息判断问题出在哪一层：
+
+| 返回特征 | 故障层 | 排查方向 |
+|----------|--------|----------|
+| `Background task failed to start! PID=DEAD` | 环境配置 | Docker 守护进程/磁盘/内存 |
+| `Background Task Started! PID=xxx STATUS=RUNNING` 但最终失败 | 代码逻辑 | Dockerfile 或 build 参数 |
+| `Security error: 命令 'xxx' 不在允许列表中` | 安全白名单 | `SSH_SECURITY_LEVEL` / `SSH_EXTRA_ALLOWED_COMMANDS` |
+| `Command blocked by security policy` | 安全策略 | 命令含有 `\|` `;` 等危险字符 |
+
+#### 8.2 环境配置排查（现象：PID=DEAD）
+
+`_execute_background`（server.py#L574）后台启动机制：
+1. `nohup bash -c 'docker build ...'` 启动 build
+2. `sleep 1` 等进程跑起来
+3. `ps -p $PID` 检查进程存活
+
+**PID=DEAD 意味着进程启动后 1 秒内被杀**，常见原因：
+
+```bash
+# 1. Docker 守护进程未运行
+sudo systemctl status docker
+sudo systemctl start docker
+
+# 2. 磁盘空间满
+df -h
+
+# 3. 内存不足
+free -h
+
+# 4. Docker 权限问题（当前用户不在 docker 组）
+sudo usermod -aG docker $USER
+# 退出重新登录后生效
+
+# 5. Docker socket 权限
+ls -la /var/run/docker.sock
+
+# 6. 直接前台跑一次（看真实错误）
+docker build -t test:latest .
+```
+
+#### 8.3 代码逻辑排查（现象：PID=RUNNING 但 build 失败）
+
+后台机制正常，问题出在 Dockerfile 或 build 参数：
+
+```bash
+# 查看 build 日志
+ssh_execute command="cat /tmp/docker_build_xxxx.log"
+
+# 看最后 50 行（通常错误在末尾）
+ssh_execute command="tail -50 /tmp/docker_build_xxxx.log"
+
+# 手动前台重跑验证
+docker build -t test:latest -f ./Dockerfile .
+```
+
+常见 Dockerfile 问题：
+- 基础镜像不存在或无法拉取（网络/镜像源）
+- Dockerfile 语法错误
+- COPY/ADD 的源路径不存在
+- RUN 命令返回非零退出码
+- 缓存冲突（尝试 `--no-cache`）
+
+#### 8.4 快速诊断命令
+
+一次性排查所有环境问题：
+
+```bash
+ssh_execute command="echo '=== DOCKER INFO ===' && docker info 2>&1 | grep -E 'Server Version|Storage Driver|Docker Root Dir' && echo '=== DISK ===' && df -h / && echo '=== MEM ===' && free -h && echo '=== DOCKERFILE ===' && test -f ./Dockerfile && echo 'OK' || echo 'MISSING'"
+```
+
+#### 8.5 一键诊断矩阵
+
+| 输出特征 | 前台 `docker build` 结果 | 结论 |
+|----------|-------------------------|------|
+| `PID=DEAD` | 成功 ✅ | 后台机制问题（`_execute_background`） |
+| `PID=DEAD` | 也失败 ❌ | 环境问题（Docker 未运行/磁盘满/权限） |
+| `PID=RUNNING` | 成功 ✅ | Dockerfile 或 build 参数问题 |
+| `PID=RUNNING` | 也失败 ❌ | 并发问题（资源竞争、锁冲突） |
+| 安全错误 | 同上 | 安全白名单配置问题 |
 
 ### 9. File Transfer Failed
 
