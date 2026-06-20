@@ -23,7 +23,11 @@ jobs:
     - name: Install dependencies
       run: |
         pip install build twine
-    
+        pip install -e ".[dev]"
+
+    - name: Sync docs
+      run: python scripts/sync_docs.py
+
     - name: Build package
       run: python -m build
     

@@ -9,10 +9,14 @@ This script updates the version in:
     - pyproject.toml        (version field)
     - VERSION               (plain text)
     - package.json          (version field)
+
+After version files are updated, it also runs scripts/sync_docs.py
+to synchronize version info and test statistics in documentation.
 """
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -127,7 +131,24 @@ def main():
 
     version = sys.argv[1].strip()
     success = sync_version(version)
-    sys.exit(0 if success else 1)
+    if not success:
+        sys.exit(1)
+
+    # 同步文档中的版本号和测试统计
+    print("\nSyncing documentation ...")
+    docs_script = ROOT / "scripts" / "sync_docs.py"
+    if docs_script.exists():
+        result = subprocess.run(
+            [sys.executable, str(docs_script)],
+            cwd=ROOT,
+        )
+        if result.returncode != 0:
+            print("[WARN] Documentation sync failed")
+            sys.exit(1)
+    else:
+        print(f"[WARN] Docs sync script not found: {docs_script}")
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":
