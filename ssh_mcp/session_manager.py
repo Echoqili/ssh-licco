@@ -155,7 +155,7 @@ class SSHSession:
 
         self._keepalive_task = asyncio.create_task(keepalive_loop())
 
-    async def execute_command(self, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None) -> dict:
+    async def execute_command(self, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None, get_pty: bool = False) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
 
@@ -164,17 +164,19 @@ class SSHSession:
             self._last_activity = datetime.now()
             try:
                 result = await self._executor.submit(
-                    self._execute_command_sync, command, timeout, background, stdin_data,
+                    self._execute_command_sync, command, timeout, background, stdin_data, get_pty,
                     timeout=timeout + 5
                 )
                 return result
             finally:
                 self._state = SessionState.CONNECTED
 
-    def _execute_command_sync(self, command: str, timeout: int, background: bool = False, stdin_data: str | None = None) -> dict:
+    def _execute_command_sync(self, command: str, timeout: int, background: bool = False, stdin_data: str | None = None, get_pty: bool = False) -> dict:
         assert self.client is not None
 
-        stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
+        # get_pty=True 时分配伪终端，sudo -S 在 requiretty 配置下需要
+        # 注意：get_pty=True 会将 stderr 合并到 stdout，stderr channel 为空
+        stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout, get_pty=get_pty)
 
         # 通过 stdin 传递数据（如 sudo 密码），避免出现在进程列表中
         if stdin_data is not None and not background:
@@ -583,10 +585,12 @@ class SessionManager:
 
     async def create_session(self, config: ConnectionConfig, reuse: bool = True) -> SessionInfo:
         async with self._lock:
-            # 🔄 会话复用：优先复用同一主机的活跃会话
+            # 🔄 会话复用：优先复用同一主机+端口+用户的活跃会话
+            # 注意：必须比较 port，否则同 host 不同端口（如跳板机多端口）会复用错误 session
             if reuse:
                 for session in self._sessions.values():
                     if (session.config.host == config.host
+                            and session.config.port == config.port
                             and session.config.username == config.username
                             and session.is_connected):
                         return session._get_session_info()
@@ -615,7 +619,15 @@ class SessionManager:
 
     async def get_session(self, session_id: str) -> SSHSession | None:
         async with self._lock:
-            return self._sessions.get(session_id)
+            session = self._sessions.get(session_id)
+            # 🧹 自动清理失效 session：连接已断开时从字典移除，避免后续误用
+            if session and not session.is_connected:
+                self._logger.warning(
+                    f"Session {session_id} 已断开，自动清理（host={session.config.host}）"
+                )
+                del self._sessions[session_id]
+                return None
+            return session
 
     async def close_session(self, session_id: str) -> None:
         async with self._lock:
@@ -641,11 +653,11 @@ class SessionManager:
             self._timeout_cleanup_task.cancel()
         await self.close_all_sessions()
 
-    async def execute_command(self, session_id: str, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None) -> dict:
+    async def execute_command(self, session_id: str, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None, get_pty: bool = False) -> dict:
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
-        return await session.execute_command(command, timeout, background, stdin_data=stdin_data)
+        return await session.execute_command(command, timeout, background, stdin_data=stdin_data, get_pty=get_pty)
 
     async def upload_file(self, session_id: str, local_path: str, remote_path: str) -> dict:
         session = await self.get_session(session_id)

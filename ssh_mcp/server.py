@@ -226,14 +226,15 @@ class SSHMCPServer:
                         "properties": {
                             "session_id": {"type": "string", "description": "Session ID from ssh_connect. If omitted, auto-connects via env vars."},
                             "command": {"type": "string", "description": "Shell command to execute on the remote server (required)."},
-                            "timeout": {"type": "integer", "description": "Command timeout in seconds.", "default": 30},
+                            "timeout": {"type": "integer", "description": "Command timeout in seconds. Default 120s. For long tasks (docker pull, pg_basebackup), set higher or use background=true.", "default": 120},
                             "background": {"type": "boolean", "description": "Run in background for long-running tasks. Auto-detected if not specified."},
                             "workdir": {"type": "string", "description": "Working directory for background tasks.", "default": "/tmp"},
                             "log_file": {"type": "string", "description": "Log file path for background task output.", "default": "/tmp/background_task.log"},
                             "wait": {"type": "boolean", "description": "Wait for background task to complete.", "default": False},
                             "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True.", "default": 60},
                             "session_type": {"type": "string", "enum": ["nohup", "screen", "tmux"], "default": "nohup", "description": "Background session type: nohup (default), screen, or tmux (persistent)."},
-                            "use_sudo": {"type": "boolean", "default": False, "description": "Wrap command with sudo -S using sudo_password from ssh_connect. Password is passed via stdin, not visible in process list."}
+                            "use_sudo": {"type": "boolean", "default": False, "description": "Wrap command with sudo -S using sudo_password from ssh_connect. Password is passed via stdin, not visible in process list."},
+                            "confirm_dangerous": {"type": "boolean", "default": False, "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform."}
                         },
                         "required": ["command"]
                     }
@@ -520,7 +521,7 @@ class SSHMCPServer:
 
         command = args["command"]
         session_id = args.get("session_id")
-        timeout = args.get("timeout", 30)
+        timeout = args.get("timeout", 120)  # 默认 120s，避免 docker pull/pg_basebackup 等长任务超时
         background = args.get("background", None)
 
         # Auto-connect if no session_id (fallback mode)
@@ -537,13 +538,16 @@ class SSHMCPServer:
                 return [TextContent(type="text", text="Auto-connect failed.")]
 
         # Security validation
-        try:
-            command_validator.validate_command(command)
-        except SecurityError as e:
-            self._logger.error(f"Command blocked: {e}")
-            return [TextContent(
-                type="text",
-                text=f"""Command blocked by security policy
+        # confirm_dangerous=True 时跳过安全检查（用户明确确认执行危险操作）
+        confirm_dangerous = args.get("confirm_dangerous", False)
+        if not confirm_dangerous:
+            try:
+                command_validator.validate_command(command)
+            except SecurityError as e:
+                self._logger.error(f"Command blocked: {e}")
+                return [TextContent(
+                    type="text",
+                    text=f"""Command blocked by security policy
 
 Blocked command: `{command}`
 Reason: {str(e)}
@@ -551,9 +555,12 @@ Reason: {str(e)}
 Solutions:
 1. Set SSH_SECURITY_LEVEL=relaxed in MCP env config
 2. Add SSH_EXTRA_ALLOWED_COMMANDS with the blocked command
+3. Set confirm_dangerous=true in ssh_execute args to bypass (use with caution!)
 
 Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
-            )]
+                )]
+        else:
+            self._logger.warning(f"Dangerous command bypassed (confirm_dangerous=True): {command}")
 
         # Auto-detect background if not specified
         if background is None:
@@ -568,7 +575,9 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
             return [TextContent(type="text", text=f"Session not found: {session_id}")]
 
         # Sudo 包装：use_sudo=True 时用 sudo -S 执行，密码通过 stdin 传递
+        # get_pty=True 分配伪终端，解决远端 sudoers 配置 requiretty 的问题
         stdin_data = None
+        get_pty = False
         use_sudo = args.get("use_sudo", False)
         if use_sudo:
             sudo_pwd = getattr(session.config, 'sudo_password', None)
@@ -580,8 +589,9 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
             # sudo -S 从 stdin 读密码，-p '' 抑制提示符，bash -c 包装原始命令
             command = f"sudo -S -p '' bash -c {shlex.quote(command)}"
             stdin_data = sudo_pwd + "\n"
+            get_pty = True
 
-        result = await session.execute_command(command, timeout=timeout, stdin_data=stdin_data)
+        result = await session.execute_command(command, timeout=timeout, stdin_data=stdin_data, get_pty=get_pty)
 
         if self._audit:
             import time
@@ -597,7 +607,10 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
                 execution_time_ms=0
             )
 
+        # 统一输出格式：包含 session 标识，便于确认命令在哪个主机执行
+        # 格式：Exit Code / Session / STDOUT / STDERR，各区块用 --- 分隔
         output = f"Exit Code: {result['exit_code']}\n"
+        output += f"Session: {session_id} ({session.config.host}:{session.config.port})\n"
         if result["stdout"]:
             output += f"\n--- STDOUT ---\n{result['stdout']}"
         if result["stderr"]:
@@ -720,15 +733,22 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
         if status == "COMPLETED":
             exit_code = int(exit_code_str) if exit_code_str.lstrip('-').isdigit() else -1
 
+            # 统一头部信息：包含 session 标识，便于确认命令在哪个主机执行
+            header = (
+                f"Command: {command}\n"
+                f"Session: {session_id}\n"
+                f"PID: {pid}\n"
+                f"Exit Code: {exit_code}\n"
+                f"Working Directory: {safe_workdir}\n"
+            )
+            # LOG 说明：nohup 用 > log 2>&1 合并了 stdout 和 stderr
+            log_section = f"--- LOG (stdout+stderr) ---\n{log_tail or '(no output)'}"
+
             if exit_code == 0:
                 # ✅ 情况 1：命令执行成功
                 return [TextContent(type="text", text=(
                     f"✅ Background Task Completed Successfully!\n\n"
-                    f"Command: {command}\n"
-                    f"PID: {pid}\n"
-                    f"Exit Code: {exit_code}\n"
-                    f"Working Directory: {safe_workdir}\n"
-                    f"--- LOG ---\n{log_tail or '(no output)'}"
+                    f"{header}{log_section}"
                 ))]
 
             elif exit_code > 0:
@@ -737,13 +757,9 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
                 hint = self._diagnose_exit_code(exit_code, log_tail, start_stderr)
                 return [TextContent(type="text", text=(
                     f"❌ Background Task Failed (exit code {exit_code})!\n\n"
-                    f"Command: {command}\n"
-                    f"PID: {pid}\n"
-                    f"Exit Code: {exit_code}\n"
-                    f"Working Directory: {safe_workdir}\n"
-                    f"{hint}"
-                    f"--- STDERR ---\n{start_stderr or '(none)'}\n"
-                    f"--- LOG ---\n{log_tail or '(no output)'}"
+                    f"{header}{hint}"
+                    f"--- TASK START STDERR ---\n{start_stderr or '(none)'}\n"
+                    f"{log_section}"
                 ))]
 
             else:
@@ -751,17 +767,14 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
                 # 常见原因：被 SIGKILL/SIGTERM 杀死、OOM Killer、段错误
                 return [TextContent(type="text", text=(
                     f"⚠️ Background Task Terminated Abnormally!\n\n"
-                    f"Command: {command}\n"
-                    f"PID: {pid}\n"
-                    f"Exit Code: unknown (process killed before exit code was recorded)\n"
-                    f"Working Directory: {safe_workdir}\n"
+                    f"{header}"
                     f"\n可能原因：\n"
                     f"  - 被 SIGKILL/SIGTERM 信号终止（如 systemctl stop、kill -9）\n"
                     f"  - OOM Killer 杀死（内存不足，检查 dmesg | grep -i oom）\n"
                     f"  - 段错误/总线错误（程序 bug，检查 core dump）\n"
                     f"  - 父进程退出导致子进程被终止\n"
-                    f"\n--- STDERR ---\n{start_stderr or '(none)'}\n"
-                    f"--- LOG ---\n{log_tail or '(no output)'}"
+                    f"\n--- TASK START STDERR ---\n{start_stderr or '(none)'}\n"
+                    f"{log_section}"
                 ))]
 
         # 🟢 情况 4：仍在运行
