@@ -130,6 +130,28 @@ class CommandValidator:
         r'`',           # 命令替换
     ]
 
+    # relaxed 模式黑名单：即使宽松模式也必须阻止的高危命令模式
+    # relaxed 不再使用白名单，改为黑名单机制——只阻止已知高危操作
+    RELAXED_BLOCKED_PATTERNS = [
+        r'rm\s+-rf\s+/(?:\s|$)',          # rm -rf /  (根目录递归删除)
+        r'rm\s+-rf\s+/\*',                # rm -rf /*
+        r'rm\s+-fr\s+/(?:\s|$)',          # rm -fr /
+        r'mkfs\.\w+',                      # mkfs.*  (格式化文件系统)
+        r'dd\s+if=/dev/(?:zero|random|urandom)\s+of=/dev/sd',  # dd 覆写磁盘
+        r'dd\s+if=/dev/(?:zero|random|urandom)\s+of=/dev/nvm', # dd 覆写 NVMe
+        r':\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;',  # fork bomb :(){ :|:& };:
+        r'chmod\s+-R\s+777\s+/(?:\s|$)',  # chmod -R 777 /
+        r'chmod\s+-R\s+000\s+/(?:\s|$)',  # chmod -R 000 /
+        r'>\s*/dev/sd[a-z]',              # 写裸磁盘设备
+        r'>\s*/dev/nvme',                 # 写裸 NVMe 设备
+        r'shutdown\s+now',                # 立即关机
+        r'poweroff\s+-f',                 # 强制关机
+        r'reboot\s+-f',                   # 强制重启
+        r'init\s+0',                      # 关机
+        r'killall\s+-9\s+',               # killall -9 (批量强杀)
+        r'pkill\s+-9\s+',                 # pkill -9 (批量强杀)
+    ]
+
     # 危险关键字
     DANGEROUS_KEYWORDS = ['passwd', 'shadow', '/etc/shadow', '/root/.ssh']
 
@@ -161,12 +183,16 @@ class CommandValidator:
 
         self.allowed_commands = self._build_allowed_commands()
         self._compile_patterns()
+        # relaxed 模式黑名单正则（独立编译，与白名单模式的 dangerous_regex 区分）
+        self._relaxed_blocked_regex = [
+            re.compile(pattern) for pattern in self.RELAXED_BLOCKED_PATTERNS
+        ]
 
     def _build_allowed_commands(self) -> set[str]:
         """构建允许的命令集合"""
         allowed = self.BASE_ALLOWED_COMMANDS.copy()
 
-        # 在 relaxed 模式添加扩展命令
+        # 在 relaxed 模式添加扩展命令（兼容性保留，relaxed 实际用黑名单）
         if self.security_level == SecurityLevel.RELAXED:
             allowed.update(self.EXTENDED_COMMANDS)
 
@@ -208,7 +234,23 @@ class CommandValidator:
 
         base_command = cmd_parts[0]
 
-        # 1. 检查白名单
+        # 1. relaxed 模式：黑名单机制（不检查白名单，只阻止高危命令）
+        if self.security_level == SecurityLevel.RELAXED:
+            for regex in self._relaxed_blocked_regex:
+                if regex.search(command):
+                    raise SecurityError(
+                        f"命令匹配高危模式黑名单，已被阻止。\n"
+                        f"被阻止的命令：{command}\n"
+                        f"当前安全级别：relaxed（黑名单模式）\n"
+                        f"如确需执行，请手动登录服务器操作。"
+                    )
+            # relaxed 模式跳过白名单和危险字符检查，直接通过
+            # 仍检查命令长度
+            if len(command) > 4096:
+                raise SecurityError("命令过长（最大 4096 字符）")
+            return True
+
+        # 2. strict / balanced 模式：白名单机制
         if base_command not in self.allowed_commands:
             # 提供友好提示
             similar_cmds = self._find_similar_commands(base_command)
@@ -222,7 +264,7 @@ class CommandValidator:
                 f"如需使用该命令，请设置环境变量：SSH_EXTRA_ALLOWED_COMMANDS={base_command}"
             )
 
-        # 2. 严格模式下检查危险字符
+        # 3. 严格模式下检查危险字符
         if self.strict_mode:
             for regex in self.dangerous_regex:
                 if regex.search(command):
@@ -231,11 +273,11 @@ class CommandValidator:
                         f"被阻止的命令：{command}"
                     )
 
-        # 3. 检查命令长度
+        # 4. 检查命令长度
         if len(command) > 4096:
             raise SecurityError("命令过长（最大 4096 字符）")
 
-        # 4. 检查特殊关键字
+        # 5. 检查特殊关键字
         for keyword in self.DANGEROUS_KEYWORDS:
             if keyword in command.lower():
                 raise SecurityError(

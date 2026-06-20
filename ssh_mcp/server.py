@@ -171,6 +171,7 @@ class SSHMCPServer:
             config["session_timeout"] = int(os.getenv("SSH_SESSION_TIMEOUT", "7200"))
             config["client_type"] = os.getenv("SSH_CLIENT_TYPE", "paramiko")
             config["force_env_config"] = os.getenv("SSH_FORCE_ENV_CONFIG", "false").lower() == "true"
+            config["sudo_password"] = os.getenv("SSH_SUDO_PASSWORD", "")
         return config
 
     def _check_rate_limit(self) -> tuple[bool, str]:
@@ -212,7 +213,8 @@ class SSHMCPServer:
                             "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name."},
                             "save_config": {"type": "boolean", "description": "Save connection settings to local config file for future use.", "default": False},
                             "command": {"type": "string", "description": "Optional command to execute immediately after connecting."},
-                            "accept_new_host_key": {"type": "boolean", "default": True, "description": "Auto-accept new host keys."}
+                            "accept_new_host_key": {"type": "boolean", "default": True, "description": "Auto-accept new host keys."},
+                            "sudo_password": {"type": "string", "description": "Sudo password (optional). When set, ssh_execute with use_sudo=true will auto-wrap commands with sudo -S, avoiding plaintext password in process list."}
                         }
                     }
                 ),
@@ -230,7 +232,8 @@ class SSHMCPServer:
                             "log_file": {"type": "string", "description": "Log file path for background task output.", "default": "/tmp/background_task.log"},
                             "wait": {"type": "boolean", "description": "Wait for background task to complete.", "default": False},
                             "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True.", "default": 60},
-                            "session_type": {"type": "string", "enum": ["nohup", "screen", "tmux"], "default": "nohup", "description": "Background session type: nohup (default), screen, or tmux (persistent)."}
+                            "session_type": {"type": "string", "enum": ["nohup", "screen", "tmux"], "default": "nohup", "description": "Background session type: nohup (default), screen, or tmux (persistent)."},
+                            "use_sudo": {"type": "boolean", "default": False, "description": "Wrap command with sudo -S using sudo_password from ssh_connect. Password is passed via stdin, not visible in process list."}
                         },
                         "required": ["command"]
                     }
@@ -247,15 +250,21 @@ class SSHMCPServer:
                 ),
                 Tool(
                     name="ssh_file_transfer",
-                    description="Transfer and manage files between local and remote server via SFTP. Supports upload, download, list, write (write content directly to remote file), append, delete, mkdir, and stat.",
+                    description="Transfer and manage files between local and remote server via SFTP. Supports upload, download, list, write (write content directly to remote file), append, delete, mkdir, stat, and remote_copy (server-to-server direct transfer via scp/rsync, avoiding local relay).",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
-                            "direction": {"type": "string", "enum": ["upload", "download", "list", "write", "append", "delete", "mkdir", "stat"], "description": "Action: upload, download, list, write (content->remote file), append, delete, mkdir, stat."},
+                            "direction": {"type": "string", "enum": ["upload", "download", "list", "write", "append", "delete", "mkdir", "stat", "remote_copy"], "description": "Action: upload, download, list, write (content->remote file), append, delete, mkdir, stat, remote_copy (server-to-server direct transfer)."},
                             "local_path": {"type": "string", "description": "Local file path. Required for upload/download."},
-                            "remote_path": {"type": "string", "description": "Remote file/directory path. Required for all directions."},
-                            "content": {"type": "string", "description": "Content to write/append to remote file. Required for write/append."}
+                            "remote_path": {"type": "string", "description": "Remote file/directory path. Required for all directions. For remote_copy, this is the source path on the connected server."},
+                            "content": {"type": "string", "description": "Content to write/append to remote file. Required for write/append."},
+                            "target_host": {"type": "string", "description": "remote_copy: Target server hostname/IP."},
+                            "target_port": {"type": "integer", "description": "remote_copy: Target SSH port.", "default": 22},
+                            "target_user": {"type": "string", "description": "remote_copy: Target SSH username.", "default": "root"},
+                            "target_path": {"type": "string", "description": "remote_copy: Destination path on target server."},
+                            "target_password": {"type": "string", "description": "remote_copy: Target server password (uses sshpass). If omitted, assumes key-based auth is configured."},
+                            "use_rsync": {"type": "boolean", "default": False, "description": "remote_copy: Use rsync instead of scp (better for large directories, supports resume)."}
                         },
                         "required": ["session_id", "direction"]
                     }
@@ -411,7 +420,8 @@ class SSHMCPServer:
                 password=self._env_config.get("password", ""),
                 timeout=self._env_config.get("timeout", 30),
                 keepalive_interval=self._env_config.get("keepalive_interval", 30),
-                session_timeout=self._env_config.get("session_timeout", 7200)
+                session_timeout=self._env_config.get("session_timeout", 7200),
+                sudo_password=self._env_config.get("sudo_password", ""),
             )
             self._logger.info(f"Using environment variable host: {host_config.host}")
 
@@ -433,6 +443,14 @@ class SSHMCPServer:
 
         client_type = self._env_config.get("client_type", "paramiko")
 
+        # sudo_password: 优先用 ssh_connect 参数，其次 hosts.json 配置，最后环境变量
+        sudo_password = (
+            args.get("sudo_password")
+            or getattr(host_config, 'sudo_password', '')
+            or os.getenv("SSH_SUDO_PASSWORD", "")
+            or None
+        )
+
         config = ConnectionConfig(
             host=host_config.host,
             port=host_config.port,
@@ -448,6 +466,7 @@ class SSHMCPServer:
             accept_new_host_key=args.get("accept_new_host_key", True),
             private_key_path=Path(args["private_key_path"]) if args.get("private_key_path") else None,
             passphrase=args.get("passphrase"),
+            sudo_password=sudo_password,
         )
 
         try:
@@ -548,7 +567,21 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
         if not session:
             return [TextContent(type="text", text=f"Session not found: {session_id}")]
 
-        result = await session.execute_command(command, timeout=timeout)
+        # Sudo 包装：use_sudo=True 时用 sudo -S 执行，密码通过 stdin 传递
+        stdin_data = None
+        use_sudo = args.get("use_sudo", False)
+        if use_sudo:
+            sudo_pwd = getattr(session.config, 'sudo_password', None)
+            if not sudo_pwd:
+                return [TextContent(type="text", text=(
+                    "use_sudo=True but no sudo_password configured.\n"
+                    "Please set sudo_password in ssh_connect or SSH_SUDO_PASSWORD env var."
+                ))]
+            # sudo -S 从 stdin 读密码，-p '' 抑制提示符，bash -c 包装原始命令
+            command = f"sudo -S -p '' bash -c {shlex.quote(command)}"
+            stdin_data = sudo_pwd + "\n"
+
+        result = await session.execute_command(command, timeout=timeout, stdin_data=stdin_data)
 
         if self._audit:
             import time
@@ -603,9 +636,15 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
 
         task_id = str(uuid.uuid4())[:8]
         pid_file = f"/tmp/task_{task_id}.pid"
+        # 元数据文件：记录命令、日志路径、工作目录，便于跨 session 追踪
+        meta_file = f"/tmp/task_{task_id}.meta"
 
         # ── screen / tmux session support ──
         if session_type in ("screen", "tmux"):
+            # 写入元数据（异步，不阻塞）
+            meta_content = f"command={command}\nlog_file={safe_log_file}\nworkdir={safe_workdir}\nsession_type={session_type}\n"
+            await self.session_manager.execute_command(
+                session_id, f"echo {shlex.quote(meta_content)} > {shlex.quote(meta_file)}", timeout=5)
             return await self._execute_background_session(
                 session_id, command, safe_workdir, safe_log_file,
                 session_type, task_id, wait, wait_timeout
@@ -613,10 +652,15 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
 
         # ── nohup mode (default): single SSH call, no race condition ──
         # Use shlex.quote() to safely escape the command and paths for bash -c.
-        # The wrapper: cd → nohup bash -c '...' → capture PID → sleep → check alive.
+        # The wrapper: 写元数据 → cd → nohup bash -c '...' → capture PID → sleep → check alive.
+        # 内层命令结束后写入 exit_file，外层读取以区分"已完成"和"仍在运行"。
+        exit_file = f"/tmp/task_{task_id}.exit"
+        wrapped_command = f"{command}; echo $? > {shlex.quote(exit_file)}"
+        meta_content = f"command={command}\nlog_file={safe_log_file}\nworkdir={safe_workdir}\nsession_type=nohup\n"
         check_cmd = (
+            f"echo {shlex.quote(meta_content)} > {shlex.quote(meta_file)} && "
             f"cd {shlex.quote(safe_workdir)} && "
-            f"nohup bash -c {shlex.quote(command)} "
+            f"nohup bash -c {shlex.quote(wrapped_command)} "
             f"> {shlex.quote(safe_log_file)} 2>&1 < /dev/null & "
             f"PID=$! && "
             f"echo $PID > {shlex.quote(pid_file)} && "
@@ -624,7 +668,8 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
             f"if ps -p $PID > /dev/null 2>&1; then "
             f"echo 'PID='$PID' STATUS=RUNNING'; "
             f"else "
-            f"echo 'PID='$PID' STATUS=DEAD'; "
+            f"EXIT=$(cat {shlex.quote(exit_file)} 2>/dev/null || echo -1); "
+            f"echo 'PID='$PID' STATUS=COMPLETED EXIT='$EXIT; "
             f"echo '--- LOG ---'; "
             f"cat {shlex.quote(safe_log_file)} 2>/dev/null || echo '(no output)'; "
             f"fi"
@@ -642,41 +687,59 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
         start_stdout = (result.get("stdout") or "").strip()
         start_stderr = (result.get("stderr") or "").strip()
 
-        # Parse output: PID=xxx STATUS=RUNNING|DEAD
+        # Parse output: PID=xxx STATUS=RUNNING|COMPLETED EXIT=0
         pid = ""
         status = ""
+        exit_code_str = ""
         log_tail = ""
         in_log = False
         for line in start_stdout.splitlines():
             if line.startswith("PID="):
-                parts = line.split(None, 1)
-                pid = parts[0].split("=", 1)[1].strip() if len(parts) >= 1 else ""
-                if len(parts) >= 2 and parts[1].startswith("STATUS="):
-                    status = parts[1].split("=", 1)[1].strip()
+                # 格式: PID=12345 STATUS=RUNNING  或  PID=12345 STATUS=COMPLETED EXIT=0
+                for part in line.split():
+                    if part.startswith("PID="):
+                        pid = part.split("=", 1)[1].strip()
+                    elif part.startswith("STATUS="):
+                        status = part.split("=", 1)[1].strip()
+                    elif part.startswith("EXIT="):
+                        exit_code_str = part.split("=", 1)[1].strip()
             elif line == "--- LOG ---":
                 in_log = True
             elif in_log:
                 log_tail += line + "\n"
 
-        # Startup failed
-        if status == "DEAD" or not pid:
-            return [TextContent(type="text", text=(
-                f"Background task failed to start!\n\n"
-                f"Command: {command}\n"
-                f"PID: {pid or '(none)'}\n"
-                f"Workdir: {safe_workdir}\n"
-                f"--- STDOUT ---\n{start_stdout}\n"
-                f"--- STDERR ---\n{start_stderr}\n"
-                f"--- LOG TAIL ---\n{log_tail or '(no log output)'}"
-            ))]
+        # 任务已完成（不是失败！DEAD 只代表"已退出"）
+        if status == "COMPLETED":
+            exit_code = int(exit_code_str) if exit_code_str.lstrip('-').isdigit() else -1
+            if exit_code == 0:
+                return [TextContent(type="text", text=(
+                    f"Background Task Completed Successfully!\n\n"
+                    f"Command: {command}\n"
+                    f"PID: {pid}\n"
+                    f"Exit Code: {exit_code}\n"
+                    f"Working Directory: {safe_workdir}\n"
+                    f"--- LOG ---\n{log_tail or '(no output)'}"
+                ))]
+            else:
+                return [TextContent(type="text", text=(
+                    f"Background Task Failed (exit code {exit_code})!\n\n"
+                    f"Command: {command}\n"
+                    f"PID: {pid}\n"
+                    f"Exit Code: {exit_code}\n"
+                    f"Working Directory: {safe_workdir}\n"
+                    f"--- STDERR ---\n{start_stderr}\n"
+                    f"--- LOG ---\n{log_tail or '(no output)'}"
+                ))]
 
-        if wait:
-            output = await self._wait_for_task_completion(
-                session_id=session_id, task_id=task_id,
-                log_file=safe_log_file, timeout=wait_timeout
-            )
-        else:
-            output = f"""Background Task Started!
+        # 仍在运行
+        if status == "RUNNING" and pid:
+            if wait:
+                output = await self._wait_for_task_completion(
+                    session_id=session_id, task_id=task_id,
+                    log_file=safe_log_file, timeout=wait_timeout
+                )
+            else:
+                output = f"""Background Task Started!
 
 Task ID: {task_id}
 PID: {pid}
@@ -691,9 +754,22 @@ To view full log:
   ssh_execute(session_id="{session_id}", command="cat {safe_log_file}")
 To check if still running:
   ssh_execute(session_id="{session_id}", command="ps -p {pid}")
+After SSH reconnect, list all tasks:
+  ssh_process(action="list", session_id="<new_session_id>")
+  ssh_process(action="status", session_id="<new_session_id>", task_id="{task_id}")
 """
+            return [TextContent(type="text", text=output)]
 
-        return [TextContent(type="text", text=output)]
+        # 真正启动失败（无 PID 或无状态）
+        return [TextContent(type="text", text=(
+            f"Background task failed to start!\n\n"
+            f"Command: {command}\n"
+            f"PID: {pid or '(none)'}\n"
+            f"Working Directory: {safe_workdir}\n"
+            f"--- STDOUT ---\n{start_stdout}\n"
+            f"--- STDERR ---\n{start_stderr}\n"
+            f"--- LOG TAIL ---\n{log_tail or '(no log output)'}"
+        ))]
 
     async def _execute_background_session(
         self, session_id: str, command: str, workdir: str,
@@ -760,6 +836,7 @@ To kill session:
 
     async def _wait_for_task_completion(self, session_id: str, task_id: str, log_file: str, timeout: int) -> str:
         pid_file = f"/tmp/task_{task_id}.pid"
+        exit_file = f"/tmp/task_{task_id}.exit"
         elapsed = 0
         interval = 2
 
@@ -772,13 +849,21 @@ To kill session:
             status = result.get("stdout", "").strip()
 
             if status == "COMPLETED" or status == "NOT_FOUND":
+                # 读取退出码
+                exit_result = await self.session_manager.execute_command(
+                    session_id, f"cat {exit_file} 2>/dev/null || echo -1", timeout=10)
+                exit_code_str = (exit_result.get("stdout") or "-1").strip()
+                exit_code = int(exit_code_str) if exit_code_str.lstrip('-').isdigit() else -1
+
                 log_cmd = f"if [ -f {log_file} ]; then cat {log_file}; else echo 'No log file found'; fi"
                 log_result = await self.session_manager.execute_command(session_id, log_cmd, timeout=10)
                 log_content = log_result.get("stdout", "")
 
-                return f"""Task Completed!
+                status_label = "Completed Successfully" if exit_code == 0 else f"Failed (exit code {exit_code})"
+                return f"""Task {status_label}!
 
 Task ID: {task_id}
+Exit Code: {exit_code}
 Execution Time: ~{elapsed} seconds
 Log File: {log_file}
 
@@ -798,7 +883,32 @@ Use ssh_execute to check: cat {log_file}
 """
 
     def _should_run_background(self, command: str) -> bool:
+        import re
         command_lower = command.lower()
+
+        # 瞬时命令（毫秒级完成）——绝不进后台，否则会被误报为 "DEAD/失败"
+        instant_patterns = [
+            r'\bnginx\s+(-t|--test|-T|-v|-V|-h|--help|-s\s+(reload|stop|quit|reopen))\b',
+            r'\bapache2ctl\s+(configtest|status|graceful|stop|fullstatus)\b',
+            r'\bhttpd\s+(-t|--test|-v|-V|-h|--help|-k\s+(stop|graceful))\b',
+            r'\bsystemctl\s+(status|is-active|is-enabled|show|list-units|list-unit-files|cat|edit)\b',
+            r'\bservice\s+\S+\s+status\b',
+            r'\bwhich\s+',
+            r'\bwhereis\s+',
+            r'\bcommand\s+-v\s+',
+            r'\bpython\d*\s+(-V|--version)\b',
+            r'\bnode\s+(-v|--version)\b',
+            r'\bnpm\s+(-v|--version)\b',
+            r'\bpip\d*\s+(-V|--version)\b',
+            r'\bjava\s+(-version|--version)\b',
+            r'\bgit\s+(--version|version)\b',
+            r'\bgo\s+version\b',
+            r'\brustc\s+--version\b',
+            r'\bcargo\s+--version\b',
+        ]
+        for pattern in instant_patterns:
+            if re.search(pattern, command_lower):
+                return False
 
         docker_instant_commands = [
             'docker start ', 'docker stop ', 'docker restart ', 'docker rm ',
@@ -988,6 +1098,58 @@ Use ssh_execute to check: cat {log_file}
             if not remote_path:
                 return [TextContent(type="text", text="stat requires remote_path")]
             result = await session.stat_file(remote_path)
+        elif direction == "remote_copy":
+            # 服务器到服务器直接传输，避免本地中转
+            import re
+            target_host = args.get("target_host", "")
+            target_port = args.get("target_port", 22)
+            target_user = args.get("target_user", "root")
+            target_path = args.get("target_path", "")
+            target_password = args.get("target_password", "")
+            use_rsync = args.get("use_rsync", False)
+
+            if not target_host or not target_path or not remote_path:
+                return [TextContent(type="text", text="remote_copy requires remote_path, target_host, and target_path")]
+
+            # 校验 host/user 不含 shell 元字符
+            if not re.match(r'^[a-zA-Z0-9._-]+$', str(target_host)):
+                return [TextContent(type="text", text=f"Invalid target_host: {target_host}")]
+            if not re.match(r'^[a-zA-Z0-9._-]+$', str(target_user)):
+                return [TextContent(type="text", text=f"Invalid target_user: {target_user}")]
+
+            source = shlex.quote(remote_path)
+            target = f"{target_user}@{target_host}:{shlex.quote(target_path)}"
+
+            if use_rsync:
+                base_cmd = f"rsync -avz --progress -e 'ssh -p {target_port} -o StrictHostKeyChecking=no'"
+            else:
+                base_cmd = f"scp -P {target_port} -o StrictHostKeyChecking=no -r"
+
+            if target_password:
+                transfer_cmd = f"sshpass -p {shlex.quote(target_password)} {base_cmd} {source} {target}"
+            else:
+                transfer_cmd = f"{base_cmd} {source} {target}"
+
+            # 在远端执行传输命令，超时 5 分钟
+            result = await session.execute_command(transfer_cmd, timeout=300)
+
+            output = f"Remote Copy: {remote_path} -> {target_host}:{target_path}\n\n"
+            output += f"Exit Code: {result.get('exit_code', -1)}\n"
+            if result.get("stdout"):
+                output += f"--- STDOUT ---\n{result['stdout']}\n"
+            if result.get("stderr"):
+                output += f"--- STDERR ---\n{result['stderr']}\n"
+
+            if result.get("exit_code") == 0:
+                output = "✅ " + output
+            else:
+                output = "❌ " + output
+                if "sshpass: command not found" in result.get("stderr", ""):
+                    output += "\n💡 Install sshpass on the remote server: apt install sshpass"
+                if "Permission denied" in result.get("stderr", ""):
+                    output += "\n💡 Ensure SSH key is configured or provide target_password."
+
+            return [TextContent(type="text", text=output)]
         else:
             return [TextContent(type="text", text=f"Unknown direction: {direction}")]
 
@@ -1379,21 +1541,49 @@ Use ssh_execute to check: cat {log_file}
             return [TextContent(type="text", text=output)]
 
         if action == "list":
-            # 列出 /tmp/task_*.pid 跟踪的后台任务
+            # 列出 /tmp/task_*.pid 跟踪的后台任务，并读取 .meta 元数据
             cmd = (
-                "for f in /tmp/task_*.pid; do "
-                "[ -f \"$f\" ] || continue; "
-                "PID=$(cat \"$f\" 2>/dev/null); "
-                "[ -n \"$PID\" ] || continue; "
-                "if ps -p $PID > /dev/null 2>&1; then ST=RUNNING; else ST=DEAD; fi; "
-                "echo \"$f PID=$PID STATUS=$ST\"; "
-                "done 2>/dev/null"
+                'for f in /tmp/task_*.pid; do '
+                '[ -f "$f" ] || continue; '
+                'PID=$(cat "$f" 2>/dev/null); '
+                '[ -n "$PID" ] || continue; '
+                'if ps -p $PID > /dev/null 2>&1; then ST=RUNNING; else ST=DEAD; fi; '
+                'TASK_ID=$(echo "$f" | sed "s|/tmp/task_||;s|\\.pid||"); '
+                'META_FILE="/tmp/task_${TASK_ID}.meta"; '
+                'CMD=""; LOG=""; '
+                'if [ -f "$META_FILE" ]; then '
+                '  CMD=$(grep "^command=" "$META_FILE" 2>/dev/null | cut -d= -f2-); '
+                '  LOG=$(grep "^log_file=" "$META_FILE" 2>/dev/null | cut -d= -f2-); '
+                'fi; '
+                'echo "TASK=$TASK_ID PID=$PID STATUS=$ST CMD=$CMD LOG=$LOG"; '
+                'done 2>/dev/null'
             )
             result = await self.session_manager.execute_command(session_id, cmd, timeout=15)
             stdout = (result.get("stdout") or "").strip()
+            if not stdout:
+                return [TextContent(type="text", text="📋 Tracked background tasks:\n\n(none)")]
+
             output = "📋 Tracked background tasks:\n\n"
-            output += stdout if stdout else "(none)"
-            return [TextContent(type="text", text=output)]
+            for line in stdout.splitlines():
+                # 解析: TASK=abc123 PID=12345 STATUS=RUNNING CMD=... LOG=...
+                parts = {}
+                for part in line.split(None, 4):  # 最多分5段，CMD 可能含空格
+                    if '=' in part:
+                        key, val = part.split('=', 1)
+                        parts[key] = val
+                task_id = parts.get('TASK', '?')
+                pid = parts.get('PID', '?')
+                status = parts.get('STATUS', '?')
+                cmd_str = parts.get('CMD', '')
+                log = parts.get('LOG', '')
+                status_icon = "🟢" if status == "RUNNING" else "⚫"
+                output += f"{status_icon} Task: {task_id} | PID: {pid} | {status}\n"
+                if cmd_str:
+                    output += f"   Command: {cmd_str}\n"
+                if log:
+                    output += f"   Log: {log}\n"
+                output += "\n"
+            return [TextContent(type="text", text=output.rstrip())]
 
         if action == "tunnel_open":
             local_port = args.get("local_port")

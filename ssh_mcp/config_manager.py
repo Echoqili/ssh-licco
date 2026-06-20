@@ -25,6 +25,7 @@ class SSHHost(BaseModel):
     keepalive_interval: int = 30
     session_timeout: int = 7200
     banner_timeout: int = 60
+    sudo_password: str = ""
 
 
 class ServerConfig(BaseModel):

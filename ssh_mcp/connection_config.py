@@ -61,6 +61,13 @@ class ConnectionConfig(BaseModel):
         description="⚠️ 危险：是否自动接受新主机密钥 (默认 False). 仅测试环境使用"
     )
 
+    # Sudo 密码（可选）：设置后 ssh_execute(use_sudo=True) 会自动用 sudo -S 包装命令
+    # 密码通过 stdin 传递，不出现在进程列表（ps）中
+    sudo_password: str | None = Field(
+        default=None,
+        description="sudo 密码（可选）。设置后配合 use_sudo 参数自动包装 sudo -S，避免明文暴露密码"
+    )
+
     @field_validator("port")
     @classmethod
     def validate_port(cls, v: int) -> int:

@@ -155,7 +155,7 @@ class SSHSession:
 
         self._keepalive_task = asyncio.create_task(keepalive_loop())
 
-    async def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> dict:
+    async def execute_command(self, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
 
@@ -164,17 +164,23 @@ class SSHSession:
             self._last_activity = datetime.now()
             try:
                 result = await self._executor.submit(
-                    self._execute_command_sync, command, timeout, background,
+                    self._execute_command_sync, command, timeout, background, stdin_data,
                     timeout=timeout + 5
                 )
                 return result
             finally:
                 self._state = SessionState.CONNECTED
 
-    def _execute_command_sync(self, command: str, timeout: int, background: bool = False) -> dict:
+    def _execute_command_sync(self, command: str, timeout: int, background: bool = False, stdin_data: str | None = None) -> dict:
         assert self.client is not None
 
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
+
+        # 通过 stdin 传递数据（如 sudo 密码），避免出现在进程列表中
+        if stdin_data is not None and not background:
+            stdin.write(stdin_data)
+            stdin.flush()
+            stdin.channel.shutdown_write()
 
         if background:
             # Keep channel references alive to prevent GC from closing the
@@ -635,11 +641,11 @@ class SessionManager:
             self._timeout_cleanup_task.cancel()
         await self.close_all_sessions()
 
-    async def execute_command(self, session_id: str, command: str, timeout: int = 30, background: bool = False) -> dict:
+    async def execute_command(self, session_id: str, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None) -> dict:
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
-        return await session.execute_command(command, timeout, background)
+        return await session.execute_command(command, timeout, background, stdin_data=stdin_data)
 
     async def upload_file(self, session_id: str, local_path: str, remote_path: str) -> dict:
         session = await self.get_session(session_id)
