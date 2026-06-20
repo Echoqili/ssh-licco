@@ -20,7 +20,6 @@
 
 ### 核心功能
 - **[🔐 安全配置](#-安全配置)** - 多级安全策略
-- **[🐍 Anaconda 指南](ANACONDA_GUIDE.md)** - conda 环境兼容
 - **[🛠️ 可用工具](#-可用工具)** - 完整功能列表
 - **[💡 使用示例](#-使用示例)** - 实际应用场景
 
@@ -46,12 +45,15 @@
 - 🛡️ **完善的异常处理** - 统一的错误处理机制（7 层异常层次）
 - 📊 **会话管理** - 支持多个并发 SSH 会话（最大 10 个，每主机 3 个）
 - 📁 **SFTP 文件传输** - 上传、下载、目录管理
+- 🖊️ **远程文件编辑** - 直接写入/追加文件内容，无需下载再上传
 - 🔑 **密钥管理** - 生成和管理 SSH 密钥对（RSA/Ed25519）
 - 📝 **审计日志** - 完整的操作审计记录（JSON 结构化日志）
 - 🚀 **连接池** - 高性能连接复用（PooledConnection + ConnectionPool）
 - 📊 **批量执行** - 多主机并行命令执行（BatchExecutor + AsyncBatchExecutor）
 - 🐳 **Docker 支持** - Docker 构建和状态监控
-- 📋 **后台任务** - 异步任务执行和状态跟踪
+- 📋 **后台任务** - 可靠的后台进程启动（nohup + bash -c 包装，单次 SSH 调用无竞态）
+- 🖥️ **screen/tmux 会话** - 持久化远程会话，SSH 断开后进程依然存活
+- 🔍 **进程管理** - 启动/停止/查询远程进程、SSH 端口转发（tunnel）
 - 🖥️ **CLI 命令行** - exec / upload / download / list-hosts 子命令
 - 🔍 **看门狗** - 任务监控、心跳检测、全局异常处理
 
@@ -72,8 +74,6 @@ npx ssh-licco
 ```bash
 pip install ssh-licco
 ```
-
-> ⚠️ **Anaconda 用户注意**：如果使用 conda 环境，推荐用 `npx` 方式安装（完全隔离），或创建专用 conda 环境安装。直接在 base 环境 `pip install` 可能导致依赖冲突。详见 [Anaconda 环境指南](ANACONDA_GUIDE.md)。
 
 ### 方式三：从源码安装
 
@@ -244,17 +244,19 @@ npx ssh-licco
 
 ---
 
-## 🛠️ 可用工具（v1.1.0 精简至 7 个）
+## 🛠️ 可用工具（v1.3.0 扩充至 11 个）
 
 | 工具 | 描述 | 核心能力 |
 |------|------|---------|
 | `ssh_connect` | 连接管理 | 自动读取环境变量/配置，支持密码+密钥认证，可保存配置，登录后自动执行命令 |
-| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制 |
+| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式 |
 | `ssh_disconnect` | 会话管理 | 断开指定会话 OR 列出所有活跃会话 |
-| `ssh_file_transfer` | 文件传输 | 上传 / 下载 / 列目录 |
+| `ssh_file_transfer` | 文件传输 | 上传/下载/列表/写入/追加/删除/创建目录/查看元信息（8 种操作） |
 | `ssh_host` | 主机管理 | `action=list/add/remove` 增删查主机配置 |
 | `ssh_docker` | Docker 管理 | `action=ps/images/build/logs` 全生命周期管理 |
 | `ssh_generate_key` | 密钥生成 | RSA / Ed25519 密钥对 |
+| `ssh_session` | screen/tmux 会话 | 持久化远程会话管理（create/send/capture/list/kill），SSH 断开后进程依然存活 |
+| `ssh_process` | 进程管理 | 启动/停止/查询远程进程，SSH 端口转发（tunnel_open/tunnel_close/tunnel_list） |
 
 ### 📖 详细文档
 
@@ -698,6 +700,8 @@ pytest --cov=ssh_mcp --cov-report=term-missing
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v1.3.3 | 2026-06-19 | 🛠️ 后台任务可靠性修复：单次 SSH 调用 + nohup bash -c 包装消除竞态；新增 screen/tmux 会话支持（session_type 参数）；channel 引用保持防止进程被 GC 回收；docker build 不再被误判为后台任务；新增 ssh_session/ssh_process 工具 |
+| v1.3.2 | 2026-06-19 | 🔧 修复 MCP_GITHUB_TOKEN 配置，Auto Release 工作流修复 |
 | v1.2.1 | 2026-06-03 | 📝 README 文档更新，同步到 PyPI |
 | v1.1.0 | 2026-06-01 | 🔥 精简重构！MCP 工具从 15 个合并为 7 个（ssh_connect/ssh_execute/ssh_disconnect/ssh_file_transfer/ssh_host/ssh_docker/ssh_generate_key），自动连接、智能后台检测、长任务等待 |
 | v1.0.0 | 2026-05-31 | 🎉 首个主要版本！CLI 增强（exec/upload/download/docker-build/list-hosts）、完整测试套件（402 用例）、看门狗监控、审计日志、连接池、批量执行 |
@@ -753,4 +757,4 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 **Made with ❤️ by Echoqili**
 
-*Last updated: 2026-06-01*
+*Last updated: 2026-06-19*

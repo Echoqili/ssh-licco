@@ -119,3 +119,10 @@ sync_version.py.backup
 
 # 软著申请资料（仅本地保留，不推送到远程）
 软著申请资料/
+
+# Deleted docs (cleanup v1.3.3)
+ANACONDA_GUIDE.md
+QUICKSTART.md
+USAGE.md
+TEST_REPORT.md
+smart_install.py

@@ -1180,5 +1180,4 @@ ssh-licco 提供以下 CLI 子命令：
 
 - [GitHub 仓库](https://github.com/Echoqili/ssh-licco)
 - [PyPI 页面](https://pypi.org/project/ssh-licco/)
-- [使用指南](../USAGE.md)
-- [配置指南](../CONFIG_GUIDE.md)
+- [README](../README.md)
