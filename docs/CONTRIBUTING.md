@@ -122,7 +122,7 @@ pip install -r requirements-dev.txt
 ### 4. 运行测试
 
 ```bash
-# 运行所有测试（402 passed, 3 skipped）
+# 运行所有测试（409 passed, 0 skipped）
 pytest tests/ -v
 
 # 运行特定测试

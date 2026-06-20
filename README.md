@@ -244,7 +244,7 @@ npx ssh-licco
 
 ---
 
-## 🛠️ 可用工具（v1.3.3 扩充至 9 个）
+## 🛠️ 可用工具（v1.5.0 扩充至 9 个）
 
 | 工具 | 描述 | 核心能力 |
 |------|------|---------|
@@ -654,7 +654,7 @@ ssh-licco list-hosts --json
 
 | 指标 | 状态 |
 |------|------|
-| **测试用例** | 402 passed, 3 skipped |
+| **测试用例** | 409 passed, 0 skipped |
 | **覆盖率** | 17 个源模块全覆盖 |
 | **测试框架** | pytest + pytest-asyncio |
 
@@ -700,6 +700,8 @@ pytest --cov=ssh_mcp --cov-report=term-missing
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v1.5.0 | 2026-06-20 | 🎉 白名单配置与日志诊断增强：新增 `config/allowed_commands.example.json` 白名单配置示例，`nginx`/`systemctl`/`curl` 等常用命令加入内置白名单，支持 `SSH_ALLOWED_COMMANDS_FILE` 环境变量；后台任务日志状态细化为 5 种（成功/命令失败/异常终止/运行中/启动失败），附退出码诊断和启动失败诊断；测试全部通过（409 passed, 0 skipped） |
+| v1.4.0 | 2026-06-20 | 🛡️ 安全策略 `relaxed` 改为黑名单机制，修复后台任务"假失败"误报，新增 `sudo_password`/`use_sudo` 支持，新增 `remote_copy` 服务器间直传，新增任务元数据便于跨 session 追踪 |
 | v1.3.3 | 2026-06-19 | 🛠️ 后台任务可靠性修复：单次 SSH 调用 + nohup bash -c 包装消除竞态；新增 screen/tmux 会话支持（session_type 参数）；channel 引用保持防止进程被 GC 回收；docker build 不再被误判为后台任务；新增 ssh_session/ssh_process 工具 |
 | v1.3.2 | 2026-06-19 | 🔧 修复 MCP_GITHUB_TOKEN 配置，Auto Release 工作流修复 |
 | v1.2.1 | 2026-06-03 | 📝 README 文档更新，同步到 PyPI |
