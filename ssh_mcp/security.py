@@ -7,7 +7,7 @@ import os
 import re
 import shlex
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 class SecurityLevel(Enum):
@@ -326,11 +326,13 @@ class PathValidator:
         
         Args:
             security_level: 安全级别
-            base_dir: 基础目录
+            base_dir: 基础目录（远程 Unix 路径）
             extra_allowed_paths: 额外允许的路径
         """
         self.security_level = security_level
-        self.base_dir = Path(base_dir).resolve()
+        # 使用 PurePosixPath 而非 Path，因为路径始终是远程 Unix 服务器的路径
+        # Path 在 Windows 上会变成 WindowsPath，导致路径比较失败
+        self.base_dir = self._normalize_posix_path(PurePosixPath(base_dir))
         self.extra_allowed_paths = extra_allowed_paths or []
 
         # 在 relaxed 模式扩展允许的路径
@@ -339,7 +341,28 @@ class PathValidator:
         else:
             self.forbidden_paths = self.FORBIDDEN_PATHS.copy()
 
-    def validate_path(self, user_path: str) -> Path:
+    @staticmethod
+    def _normalize_posix_path(path: PurePosixPath) -> PurePosixPath:
+        """规范化 POSIX 路径，解析 . 和 .. 组件（PurePosixPath 无 resolve 方法）"""
+        parts = []
+        for part in path.parts:
+            if part in ('/', ''):
+                continue
+            elif part == '.':
+                continue
+            elif part == '..':
+                if parts:
+                    parts.pop()
+            else:
+                parts.append(part)
+        if not parts:
+            return PurePosixPath('/')
+        result = PurePosixPath('/')
+        for part in parts:
+            result = result / part
+        return result
+
+    def validate_path(self, user_path: str) -> PurePosixPath:
         """
         验证用户提供的路径
         
@@ -347,7 +370,7 @@ class PathValidator:
             user_path: 用户提供的路径
             
         Returns:
-            Path: 验证后的安全路径
+            PurePosixPath: 验证后的安全路径
             
         Raises:
             SecurityError: 如果路径不安全
@@ -355,8 +378,8 @@ class PathValidator:
         if not user_path or not user_path.strip():
             raise SecurityError("路径不能为空")
 
-        # 转换为绝对路径
-        full_path = (self.base_dir / user_path).resolve()
+        # 转换为绝对路径（使用 PurePosixPath，因为路径是远程 Unix 路径）
+        full_path = self._normalize_posix_path(self.base_dir / user_path)
 
         # 1. 检查路径遍历（strict 和 balanced 模式）
         if self.security_level in [SecurityLevel.STRICT, SecurityLevel.BALANCED]:

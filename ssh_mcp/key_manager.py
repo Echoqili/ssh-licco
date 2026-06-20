@@ -77,11 +77,26 @@ class KeyManager:
         else:
             passphrase_bytes = None
 
-        private_key = serialization.load_pem_private_key(
-            private_pem,
-            password=passphrase_bytes,
-            backend=default_backend()
-        )
+        # 密钥可能以 OpenSSH 格式 (-----BEGIN OPENSSH PRIVATE KEY-----) 或传统 PEM 格式保存
+        # load_ssh_private_key 支持 OpenSSH 格式 (cryptography >= 3.1)
+        # load_pem_private_key 支持传统 PKCS 格式
+        private_key = None
+        if hasattr(serialization, 'load_ssh_private_key'):
+            try:
+                private_key = serialization.load_ssh_private_key(
+                    private_pem,
+                    password=passphrase_bytes,
+                    backend=default_backend()
+                )
+            except (ValueError, TypeError):
+                pass  # 不是 OpenSSH 格式，尝试传统 PEM
+
+        if private_key is None:
+            private_key = serialization.load_pem_private_key(
+                private_pem,
+                password=passphrase_bytes,
+                backend=default_backend()
+            )
 
         if isinstance(private_key, rsa.RSAPrivateKey):
             key_type = "rsa"
