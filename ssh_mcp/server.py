@@ -708,30 +708,63 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
             elif in_log:
                 log_tail += line + "\n"
 
-        # 任务已完成（不是失败！DEAD 只代表"已退出"）
+        # ── 状态判定：区分 5 种情况 ──
+        #
+        # 1. ✅ SUCCESS         — STATUS=COMPLETED, EXIT=0   命令执行成功
+        # 2. ❌ COMMAND_FAILED  — STATUS=COMPLETED, EXIT>0    命令执行失败（非零退出码）
+        # 3. ⚠️ STATUS_ABNORMAL — STATUS=COMPLETED, EXIT=-1   进程异常终止（被信号杀死/OOM，未写 exit 文件）
+        # 4. 🟢 RUNNING         — STATUS=RUNNING              后台任务仍在运行
+        # 5. 🔴 STARTUP_FAILED  — 无 PID 或无 STATUS          任务启动失败（nohup/shell 错误）
+
+        # 情况 1-3：命令已执行完毕（有 STATUS=COMPLETED）
         if status == "COMPLETED":
             exit_code = int(exit_code_str) if exit_code_str.lstrip('-').isdigit() else -1
+
             if exit_code == 0:
+                # ✅ 情况 1：命令执行成功
                 return [TextContent(type="text", text=(
-                    f"Background Task Completed Successfully!\n\n"
+                    f"✅ Background Task Completed Successfully!\n\n"
                     f"Command: {command}\n"
                     f"PID: {pid}\n"
                     f"Exit Code: {exit_code}\n"
                     f"Working Directory: {safe_workdir}\n"
-                    f"--- LOG ---\n{log_tail or '(no output)'}"
-                ))]
-            else:
-                return [TextContent(type="text", text=(
-                    f"Background Task Failed (exit code {exit_code})!\n\n"
-                    f"Command: {command}\n"
-                    f"PID: {pid}\n"
-                    f"Exit Code: {exit_code}\n"
-                    f"Working Directory: {safe_workdir}\n"
-                    f"--- STDERR ---\n{start_stderr}\n"
                     f"--- LOG ---\n{log_tail or '(no output)'}"
                 ))]
 
-        # 仍在运行
+            elif exit_code > 0:
+                # ❌ 情况 2：命令执行失败（非零退出码）
+                # 常见原因：命令语法错误、文件不存在、权限不足、依赖缺失
+                hint = self._diagnose_exit_code(exit_code, log_tail, start_stderr)
+                return [TextContent(type="text", text=(
+                    f"❌ Background Task Failed (exit code {exit_code})!\n\n"
+                    f"Command: {command}\n"
+                    f"PID: {pid}\n"
+                    f"Exit Code: {exit_code}\n"
+                    f"Working Directory: {safe_workdir}\n"
+                    f"{hint}"
+                    f"--- STDERR ---\n{start_stderr or '(none)'}\n"
+                    f"--- LOG ---\n{log_tail or '(no output)'}"
+                ))]
+
+            else:
+                # ⚠️ 情况 3：进程异常终止（exit_code == -1，未写入 exit 文件）
+                # 常见原因：被 SIGKILL/SIGTERM 杀死、OOM Killer、段错误
+                return [TextContent(type="text", text=(
+                    f"⚠️ Background Task Terminated Abnormally!\n\n"
+                    f"Command: {command}\n"
+                    f"PID: {pid}\n"
+                    f"Exit Code: unknown (process killed before exit code was recorded)\n"
+                    f"Working Directory: {safe_workdir}\n"
+                    f"\n可能原因：\n"
+                    f"  - 被 SIGKILL/SIGTERM 信号终止（如 systemctl stop、kill -9）\n"
+                    f"  - OOM Killer 杀死（内存不足，检查 dmesg | grep -i oom）\n"
+                    f"  - 段错误/总线错误（程序 bug，检查 core dump）\n"
+                    f"  - 父进程退出导致子进程被终止\n"
+                    f"\n--- STDERR ---\n{start_stderr or '(none)'}\n"
+                    f"--- LOG ---\n{log_tail or '(no output)'}"
+                ))]
+
+        # 🟢 情况 4：仍在运行
         if status == "RUNNING" and pid:
             if wait:
                 output = await self._wait_for_task_completion(
@@ -739,7 +772,7 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
                     log_file=safe_log_file, timeout=wait_timeout
                 )
             else:
-                output = f"""Background Task Started!
+                output = f"""🟢 Background Task Started!
 
 Task ID: {task_id}
 PID: {pid}
@@ -760,16 +793,69 @@ After SSH reconnect, list all tasks:
 """
             return [TextContent(type="text", text=output)]
 
-        # 真正启动失败（无 PID 或无状态）
+        # 🔴 情况 5：任务启动失败（无 PID 或无 STATUS）
+        # 常见原因：工作目录不存在、bash 不可用、SSH 连接异常、权限拒绝
+        startup_hint = self._diagnose_startup_failure(start_stdout, start_stderr, safe_workdir)
         return [TextContent(type="text", text=(
-            f"Background task failed to start!\n\n"
+            f"🔴 Background Task Failed to Start!\n\n"
             f"Command: {command}\n"
             f"PID: {pid or '(none)'}\n"
             f"Working Directory: {safe_workdir}\n"
-            f"--- STDOUT ---\n{start_stdout}\n"
-            f"--- STDERR ---\n{start_stderr}\n"
+            f"{startup_hint}"
+            f"--- STDOUT ---\n{start_stdout or '(none)'}\n"
+            f"--- STDERR ---\n{start_stderr or '(none)'}\n"
             f"--- LOG TAIL ---\n{log_tail or '(no log output)'}"
         ))]
+
+    @staticmethod
+    def _diagnose_exit_code(exit_code: int, log_tail: str, stderr: str) -> str:
+        """根据退出码和日志输出诊断命令失败原因"""
+        combined = (log_tail + " " + stderr).lower()
+        hints = []
+
+        if exit_code == 127:
+            hints.append("命令未找到 (command not found)，请检查命令拼写和 PATH 环境变量")
+        elif exit_code == 126:
+            hints.append("命令不可执行 (permission denied)，请检查文件权限或使用 chmod +x")
+        elif exit_code == 130:
+            hints.append("命令被 Ctrl+C 中断")
+        elif exit_code == 137:
+            hints.append("进程被 SIGKILL 杀死（可能是 OOM Killer 或超时终止）")
+        elif exit_code == 139:
+            hints.append("段错误 (segfault)，程序存在内存访问 bug")
+
+        # 根据日志内容补充诊断
+        if "no such file or directory" in combined:
+            hints.append("文件或目录不存在，请检查路径")
+        elif "permission denied" in combined:
+            hints.append("权限不足，尝试使用 use_sudo=True 或检查文件权限")
+        elif "connection refused" in combined:
+            hints.append("连接被拒绝，目标服务可能未启动")
+        elif "address already in use" in combined:
+            hints.append("端口已被占用，使用 'lsof -i :端口' 查看占用进程")
+
+        if hints:
+            return "\n诊断提示：\n  - " + "\n  - ".join(hints) + "\n"
+        return ""
+
+    @staticmethod
+    def _diagnose_startup_failure(stdout: str, stderr: str, workdir: str) -> str:
+        """诊断任务启动失败的原因"""
+        combined = (stdout + " " + stderr).lower()
+        hints = []
+
+        if "no such file or directory" in combined and workdir in combined:
+            hints.append(f"工作目录不存在: {workdir}，请先创建或更换 workdir")
+        elif "permission denied" in combined:
+            hints.append("权限拒绝，检查工作目录和日志文件的写权限")
+        elif "command not found" in combined or "bash:" in combined:
+            hints.append("bash 不可用或命令路径错误")
+        elif not stdout.strip() and not stderr.strip():
+            hints.append("无任何输出，可能是 SSH 连接异常或 nohup 执行失败")
+
+        if hints:
+            return "\n诊断提示：\n  - " + "\n  - ".join(hints) + "\n"
+        return ""
 
     async def _execute_background_session(
         self, session_id: str, command: str, workdir: str,

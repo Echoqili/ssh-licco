@@ -1,0 +1,63 @@
+{
+  "_comment": "SSH MCP 命令白名单配置文件。通过 SSH_ALLOWED_COMMANDS_FILE 环境变量指定路径加载。",
+  "_usage": "设置环境变量 SSH_ALLOWED_COMMANDS_FILE=config/allowed_commands.json 即可启用",
+  "_levels": {
+    "base": "所有安全级别都允许的命令（strict/balanced/relaxed）",
+    "extended": "仅 relaxed 级别允许的扩展命令",
+    "extra": "用户自定义额外命令，叠加在 base 之上"
+  },
+
+  "base": {
+    "_comment": "基础命令白名单 — 所有安全级别都允许",
+
+    "shell": ["bash", "sh", "zsh", "csh", "tcsh", "ksh", "dash"],
+
+    "basic": ["ls", "dir", "cd", "pwd", "cat", "head", "tail", "less", "more", "grep", "egrep", "fgrep", "find", "which", "whereis", "type"],
+
+    "system_info": ["uname", "hostname", "whoami", "id", "uptime", "date", "cal", "top", "htop", "ps", "free", "df", "du", "vmstat", "iostat", "mpstat", "lscpu", "lsblk", "lspci", "lsusb"],
+
+    "network": ["ping", "ping6", "netstat", "ss", "dig", "nslookup", "host", "nc", "telnet", "traceroute", "mtr", "ip", "ifconfig", "route", "arp", "curl", "wget", "httpie"],
+
+    "file_ops": ["cp", "mv", "rm", "mkdir", "rmdir", "touch", "chmod", "chown", "chgrp", "ln", "tar", "gzip", "gunzip", "bzip2", "bzcat", "zip", "unzip", "rsync", "scp", "sftp"],
+
+    "text_processing": ["echo", "printf", "sed", "awk", "cut", "sort", "uniq", "wc", "tr", "nl", "fmt", "fold", "paste", "join", "jq", "xargs"],
+
+    "docker": ["docker", "docker-compose", "docker-compose-v2", "podman", "containerd", "runc"],
+
+    "system_admin": ["systemctl", "journalctl", "service", "init"],
+
+    "dev_tools": ["git", "git-lfs", "svn", "hg", "make", "cmake", "autoconf", "automake", "gcc", "g++", "clang", "rustc", "cargo", "go", "npm", "yarn", "npx", "pnpm", "python", "python3", "pip", "pip3", "node", "nodejs", "java", "javac", "mvn", "gradle", "dotnet", "ruby", "rails", "bundle"],
+
+    "package_mgmt": ["apt-get", "apt", "apt-cache", "apt-key", "dpkg", "dpkg-deb", "yum", "dnf", "rpm", "pacman", "makepkg", "brew", "port", "snap"],
+
+    "editors": ["vim", "vi", "nano", "emacs", "pico", "joe"],
+
+    "process_mgmt": ["kill", "pkill", "killall", "nice", "renice", "bg", "fg", "jobs"],
+
+    "session": ["sleep", "nohup", "setsid", "disown", "wait", "screen", "tmux", "byobu", "timeout", "watch", "time", "true", "false", "test", "[", "eval"],
+
+    "security": ["chpasswd", "passwd", "openssl", "gpg", "ssh-keygen", "ssh-agent"],
+
+    "database": ["mysql", "mysqladmin", "mysqldump", "psql", "pg_dump", "pg_restore", "mongosh", "mongodump", "mongorestore", "redis-cli", "redis-server"],
+
+    "web_servers": ["nginx", "nginx-debug", "apache2", "apache2ctl", "httpd", "caddy", "haproxy", "traefik", "envoy", "openresty", "tengine"],
+
+    "monitoring": ["prometheus", "grafana-server", "telegraf", "influxd", "zabbix", "nagios"],
+
+    "nodejs_runtime": ["pm2", "forever", "nodemon", "strapi", "nuxt", "next"]
+  },
+
+  "extended": {
+    "_comment": "扩展命令 — 仅 relaxed 级别允许",
+    "privilege": ["sudo", "su", "doas"],
+    "dangerous": ["mount", "umount", "fsck", "mkfs", "dd", "fdisk", "parted", "lvcreate", "vgcreate"],
+    "user_mgmt": ["useradd", "userdel", "groupadd", "groupdel"],
+    "acl": ["setfacl", "getfacl", "chcon", "restorecon"],
+    "firewall": ["iptables", "ip6tables", "firewalld", "ufw"]
+  },
+
+  "extra": {
+    "_comment": "用户自定义额外命令 — 叠加在 base 之上，所有级别生效。按需添加。",
+    "custom": []
+  }
+}

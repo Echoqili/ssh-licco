@@ -93,6 +93,25 @@ class CommandValidator:
 
         # 监控工具
         'prometheus', 'grafana-server', 'telegraf', 'influxd', 'zabbix', 'nagios',
+
+        # Web 服务器（运维常用，之前遗漏导致 relaxed 之外的模式被拦截）
+        'nginx', 'nginx-debug', 'apache2', 'apache2ctl', 'httpd',
+        'caddy', 'haproxy', 'traefik', 'envoy', 'openresty', 'tengine',
+
+        # Node.js 进程管理
+        'pm2', 'forever', 'nodemon',
+
+        # 系统硬件信息
+        'lscpu', 'lsblk', 'lspci', 'lsusb',
+
+        # 网络配置
+        'ip', 'ifconfig', 'route', 'arp',
+
+        # 包管理（补充）
+        'snap',
+
+        # 文本处理（补充）
+        'xargs',
     }
 
     # 扩展命令（仅在 relaxed 模式允许）
@@ -162,7 +181,7 @@ class CommandValidator:
     ):
         """
         初始化命令验证器
-        
+
         Args:
             security_level: 安全级别
             extra_allowed_commands: 额外允许的命令
@@ -187,6 +206,48 @@ class CommandValidator:
         self._relaxed_blocked_regex = [
             re.compile(pattern) for pattern in self.RELAXED_BLOCKED_PATTERNS
         ]
+
+    @classmethod
+    def from_config_file(
+        cls,
+        config_path: str,
+        security_level: SecurityLevel = SecurityLevel.BALANCED,
+    ) -> "CommandValidator":
+        """从 JSON 配置文件加载命令白名单
+
+        配置文件格式见 config/allowed_commands.example.json
+        支持 base / extended / extra 三个分区，命令合并到内置白名单之上。
+
+        Args:
+            config_path: JSON 配置文件路径
+            security_level: 安全级别
+        """
+        import json
+        from pathlib import Path
+
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(f"命令白名单配置文件不存在: {config_path}")
+
+        with open(path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        # 收集所有 extra 命令（用户自定义，叠加在 base 之上）
+        extra_commands: set[str] = set()
+        for section in ("base", "extended", "extra"):
+            section_data = config.get(section, {})
+            if isinstance(section_data, dict):
+                # 按分类组织的命令
+                for category_cmds in section_data.values():
+                    if isinstance(category_cmds, list):
+                        extra_commands.update(cmd for cmd in category_cmds if isinstance(cmd, str) and not cmd.startswith("_"))
+            elif isinstance(section_data, list):
+                extra_commands.update(cmd for cmd in section_data if isinstance(cmd, str))
+
+        return cls(
+            security_level=security_level,
+            extra_allowed_commands=extra_commands,
+        )
 
     def _build_allowed_commands(self) -> set[str]:
         """构建允许的命令集合"""
@@ -406,8 +467,14 @@ class PathValidator:
 
 # 全局验证器实例（从环境变量读取配置）
 def create_validators_from_env():
-    """从环境变量创建验证器实例"""
+    """从环境变量创建验证器实例
 
+    支持的环境变量：
+    - SSH_SECURITY_LEVEL: 安全级别 (strict/balanced/relaxed)
+    - SSH_EXTRA_ALLOWED_COMMANDS: 逗号分隔的额外允许命令
+    - SSH_ALLOWED_COMMANDS_FILE: JSON 白名单配置文件路径（优先级高于 SSH_EXTRA_ALLOWED_COMMANDS）
+    - SSH_BASE_DIR: 基础目录
+    """
     # 读取安全级别
     level_str = os.getenv('SSH_SECURITY_LEVEL', 'balanced').lower()
     try:
@@ -416,20 +483,42 @@ def create_validators_from_env():
         security_level = SecurityLevel.BALANCED
         print(f"⚠️  未知的安全级别 '{level_str}'，使用默认值 'balanced'")
 
-    # 读取额外允许的命令
-    extra_commands_str = os.getenv('SSH_EXTRA_ALLOWED_COMMANDS', '')
-    extra_commands = set()
-    if extra_commands_str:
-        extra_commands = set(cmd.strip() for cmd in extra_commands_str.split(',') if cmd.strip())
+    # 读取额外允许的命令（两种方式：配置文件 > 环境变量）
+    config_file = os.getenv('SSH_ALLOWED_COMMANDS_FILE', '')
+    extra_commands: set[str] = set()
+
+    if config_file and os.path.exists(config_file):
+        # 方式 1：从 JSON 配置文件加载（结构化，推荐）
+        try:
+            command_validator = CommandValidator.from_config_file(
+                config_file, security_level=security_level
+            )
+        except Exception as e:
+            print(f"⚠️  加载白名单配置文件失败: {e}，回退到环境变量方式")
+            command_validator = None
+        else:
+            # 同时读取环境变量中的额外命令，叠加到配置文件之上
+            extra_commands_str = os.getenv('SSH_EXTRA_ALLOWED_COMMANDS', '')
+            if extra_commands_str:
+                extra_commands = set(cmd.strip() for cmd in extra_commands_str.split(',') if cmd.strip())
+                command_validator.extra_allowed_commands |= extra_commands
+                command_validator.allowed_commands = command_validator._build_allowed_commands()
+    else:
+        command_validator = None
+
+    if command_validator is None:
+        # 方式 2：从环境变量加载（简单，逗号分隔）
+        extra_commands_str = os.getenv('SSH_EXTRA_ALLOWED_COMMANDS', '')
+        if extra_commands_str:
+            extra_commands = set(cmd.strip() for cmd in extra_commands_str.split(',') if cmd.strip())
+
+        command_validator = CommandValidator(
+            security_level=security_level,
+            extra_allowed_commands=extra_commands
+        )
 
     # 读取基础目录
     base_dir = os.getenv('SSH_BASE_DIR', '/home')
-
-    # 创建验证器
-    command_validator = CommandValidator(
-        security_level=security_level,
-        extra_allowed_commands=extra_commands
-    )
 
     path_validator = PathValidator(
         security_level=security_level,
