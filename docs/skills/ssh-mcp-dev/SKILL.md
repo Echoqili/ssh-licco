@@ -361,8 +361,7 @@ Passwords with special characters work fine in JSON - no escaping needed.
 
 | Document | Purpose |
 |----------|---------|
-| `README.md` | Project overview and quick start |
-| `USAGE.md` | Detailed usage guide |
+| `README.md` | Project overview, quick start, and full usage guide |
 | `docs/API_REFERENCE.md` | API documentation |
 | `docs/CONTRIBUTING.md` | Contribution guidelines |
 

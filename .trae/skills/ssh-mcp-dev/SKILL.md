@@ -10,7 +10,7 @@ description: "SSH MCP server development guide. Invoke when working on ssh-licco
 - **Project Name**: ssh-licco
 - **Description**: SSH Model Context Protocol Server - Enable SSH functionality for AI models
 - **Repository**: https://github.com/Echoqili/ssh-licco
-- **Current Version**: 0.5.5 (stored in `ssh_mcp/__init__.py`)
+- **Current Version**: 1.3.3 (stored in `ssh_mcp/__init__.py`)
 - **Python**: >=3.10, <3.14
 - **License**: MIT
 
@@ -59,8 +59,7 @@ ssh-mcp/
 │   ├── CONTRIBUTING.md
 │   └── skills/                # Skill documentation copies
 ├── pyproject.toml              # Package configuration
-├── sync_version.py            # Version sync script
-├── Dockerfile                 # Docker image build (multi-stage)
+├── sync_version.py            # Version sync script (syncs all version files)
 └── .trae/skills/              # Trae IDE skills
 ```
 
@@ -149,19 +148,28 @@ python -c "from ssh_mcp import __version__; print(__version__)"
 ## Version Management
 
 ```bash
-python sync_version.py 0.5.6
+python sync_version.py x.x.x
 ```
 
 ### Version Files (sync automatically)
-- `ssh_mcp/__init__.py` - Main version file
-- `pyproject.toml` - Auto-synced
-- `VERSION` - Backup
+- `ssh_mcp/__init__.py` - Main version file (source of truth)
+- `pyproject.toml` - PyPI package version
+- `VERSION` - Plain text backup
+- `package.json` - npm package version
 
 ### Release Process
-1. Update version: `python sync_version.py x.x.x`
+1. Update version: `python sync_version.py x.x.x` (syncs ALL files at once)
 2. Build: `python -m build`
 3. Upload: `python -m twine upload dist/*`
 4. Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
+
+### Version Files Reference
+| File | Synced By sync_version.py |
+|------|---------------------------|
+| `ssh_mcp/__init__.py` | Yes (__version__ + version comment) |
+| `pyproject.toml` | Yes (version field) |
+| `VERSION` | Yes (plain text) |
+| `package.json` | Yes (version field) |
 
 ## MCP Tools (7 tools, consolidated from 17)
 
@@ -272,31 +280,6 @@ Default client type in `ConnectionConfig`: `asyncssh`
 | `clients/factory.py` | SSHClientFactory, ClientConfig, dynamic registration |
 | `clients/paramiko_client.py` | ParamikoClient implementation |
 
-## Docker Configuration
-
-### Build Docker Image
-
-```bash
-docker build -t ssh-licco:latest .
-docker build -t ssh-licco:0.5.5 .
-docker build --build-arg DOCKER_MIRRORS='["https://docker.mirrors.sjtug.sjtu.edu.cn"]' -t ssh-licco:latest .
-```
-
-### Run Docker Container
-
-```bash
-docker run -d \
-  -e SSH_HOST=192.168.1.100 \
-  -e SSH_USER=root \
-  -e SSH_PASSWORD=your_password \
-  -e SSH_SECURITY_LEVEL=balanced \
-  ssh-licco:latest
-```
-
-### Multi-stage Build
-1. **Builder stage**: Install dependencies in venv
-2. **Runtime stage**: Minimal runtime (~150MB)
-
 ## Common Issues
 
 ### Password Special Characters
@@ -354,8 +337,7 @@ Passwords with special characters work fine in JSON - no escaping needed.
 | `ssh_mcp/cli.py` | Python entry point |
 | `config/hosts.json` | Saved SSH hosts |
 | `pyproject.toml` | Package config |
-| `Dockerfile` | Docker image build |
-| `sync_version.py` | Version sync script |
+| `sync_version.py` | Version sync script (syncs all version files) |
 
 ## Documentation Reference
 
