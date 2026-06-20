@@ -572,12 +572,56 @@ mkdocs build
 
 ### 版本号规范
 
-遵循 [Semantic Versioning](https://semver.org/)：
+遵循 [Semantic Versioning](https://semver.org/)，格式为 `MAJOR.MINOR.PATCH`（如 `1.2.3`）：
 
-- `MAJOR.MINOR.PATCH` (如 1.2.3)
-- `MAJOR`: 不兼容的 API 更改
-- `MINOR`: 向后兼容的功能添加
-- `PATCH`: 向后兼容的 Bug 修复
+| 位置 | 含义 | 升级时机 | 本项目的典型示例 |
+|------|------|----------|------------------|
+| **MAJOR (x)** | 主版本号 | 破坏性变更、不兼容的 API 或协议修改 | 如改变 `run_mcp` 顶层参数结构、删除工具参数、会话 ID 格式变更 |
+| **MINOR (y)** | 次版本号 | 向后兼容的新功能、新配置项、新工具、能力扩展 | 新增安全策略黑名单、新增白名单配置文件、新增 `ssh_file_transfer` 的 `remote_copy`、新增 `use_sudo` 参数 |
+| **PATCH (z)** | 修订号 | 向后兼容的问题修复，不改变外部行为 | 修复后台任务"假失败"误报、修复 `PathValidator` Windows 路径问题、修复 `KeyManager` OpenSSH 格式加载、修正日志输出 |
+
+#### 版本升级判断规则
+
+一次发布涉及多种变更时，按**最高级别**升级版本号：
+
+```text
+同时包含 bug 修复 + 新功能 → 升 MINOR
+同时包含新功能 + 破坏性变更 → 升 MAJOR
+仅修复测试或内部逻辑 → 升 PATCH
+```
+
+#### 实际发布示例
+
+| 版本 | 变更内容 | 升级理由 |
+|------|----------|----------|
+| `v1.4.0` | 安全策略 `relaxed` 改为黑名单、修复后台任务假失败、新增 sudo 密码支持、新增远程直传 | 包含新功能，升 MINOR |
+| `v1.4.0 → 应发 v1.4.1` | 修复 3 个跳过的测试（`PathValidator` 跨平台、`KeyManager` OpenSSH 支持） | 纯测试修复，应升 PATCH |
+| `v1.5.0` | 新增白名单配置文件 `allowed_commands.example.json`、后台任务日志状态细化 | 包含新功能，升 MINOR |
+
+#### 版本号更新位置
+
+发布前必须同步更新以下文件：
+
+1. `ssh_mcp/__init__.py` 中的 `__version__`
+2. `pyproject.toml` 中的 `version`
+3. `ssh_mcp/__init__.py` 顶部注释中的版本号说明
+
+#### 提交和打标签规范
+
+```bash
+# 1. 更新版本号并提交
+git add ssh_mcp/__init__.py pyproject.toml
+git commit -m "chore: bump version to 1.5.0"
+
+# 2. 推送版本提交
+git push github master
+
+# 3. 打 annotated tag
+git tag -a v1.5.0 -m "v1.5.0 — 后台任务日志优化 + 白名单配置文件"
+
+# 4. 推送标签（触发 GitHub Actions 自动构建 Docker 镜像）
+git push github v1.5.0
+```
 
 ### 发布检查清单
 
