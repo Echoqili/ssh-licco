@@ -54,6 +54,7 @@ class SSHSession:
         self._executor = get_executor()
         self._connect_lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
+        self._background_channels: list = []  # 保持 background channel 引用，防止 GC 关闭 channel
 
     @property
     def state(self) -> SessionState:
@@ -176,6 +177,14 @@ class SSHSession:
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
 
         if background:
+            # Keep channel references alive to prevent GC from closing the
+            # channel while the background process is still starting up.
+            # The channel will be cleaned up when the session disconnects.
+            self._background_channels.append((stdin, stdout, stderr))
+            # Limit stored channels to prevent memory leak
+            if len(self._background_channels) > 10:
+                self._background_channels = self._background_channels[-5:]
+
             try:
                 pid = stdout.channel.pid  # type: ignore[attr-defined]
                 pid_msg = f"PID: {pid}"
@@ -491,6 +500,13 @@ class SSHSession:
             if self._keepalive_task:
                 self._keepalive_task.cancel()
                 self._keepalive_task = None
+            # Close any lingering background channels
+            for stdin, stdout, stderr in self._background_channels:
+                try:
+                    stdout.channel.close()
+                except Exception:
+                    pass
+            self._background_channels.clear()
             if self.client:
                 await self._executor.submit(self.client.close)
                 self.client = None

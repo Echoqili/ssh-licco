@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shlex
 import threading
 import uuid
 from importlib.metadata import version as get_version
@@ -217,7 +218,7 @@ class SSHMCPServer:
                 ),
                 Tool(
                     name="ssh_execute",
-                    description="Execute a command on a remote server. If session_id is omitted, auto-connects using environment variables. Supports background execution for long-running tasks (auto-detected or manual). Use background=True for web servers, Docker builds, compilations, etc.",
+                    description="Execute a command on a remote server. If session_id is omitted, auto-connects using environment variables. Supports background execution for long-running tasks (auto-detected or manual). Use session_type='screen' or 'tmux' for persistent sessions that survive SSH disconnect.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -228,7 +229,8 @@ class SSHMCPServer:
                             "workdir": {"type": "string", "description": "Working directory for background tasks.", "default": "/tmp"},
                             "log_file": {"type": "string", "description": "Log file path for background task output.", "default": "/tmp/background_task.log"},
                             "wait": {"type": "boolean", "description": "Wait for background task to complete.", "default": False},
-                            "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True.", "default": 60}
+                            "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True.", "default": 60},
+                            "session_type": {"type": "string", "enum": ["nohup", "screen", "tmux"], "default": "nohup", "description": "Background session type: nohup (default), screen, or tmux (persistent)."}
                         },
                         "required": ["command"]
                     }
@@ -571,26 +573,29 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
         return [TextContent(type="text", text=output)]
 
     async def _execute_background(self, session_id: str, command: str, args: dict, timeout: int) -> list[TextContent]:
-        """Execute a command as a background task"""
+        """Execute a command as a background task with proper nohup + bash -c wrapping"""
         from .security import SecurityError, command_validator, path_validator
 
         workdir = args.get("workdir", "/tmp")
         log_file = args.get("log_file", "/tmp/background_task.log")
         wait = args.get("wait", False)
         wait_timeout = args.get("wait_timeout", 60)
+        session_type = args.get("session_type", "nohup")  # "nohup" | "screen" | "tmux"
 
+        # Validate the base command
         try:
             command_validator.validate_command(command.split()[0] if command.split() else "")
         except SecurityError as e:
             return [TextContent(type="text", text=f"Security error: {str(e)}")]
 
-        # workdir/log_file 是远程路径,不能用本地 path_validator(会把 /tmp 解析成 D:\tmp)
+        # workdir/log_file are remote paths, don't use local path_validator
         try:
             safe_workdir = self._sanitize_remote_path(workdir)
             safe_log_file = self._sanitize_remote_path(log_file)
         except SecurityError as e:
             return [TextContent(type="text", text=f"Path not allowed: {str(e)}")]
 
+        # Block dangerous patterns
         dangerous_patterns = ['rm -rf /', 'mkfs', 'dd if=/dev/zero', ':(){:|:&};:', 'chmod -R 777 /']
         for pattern in dangerous_patterns:
             if pattern in command:
@@ -599,78 +604,79 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
         task_id = str(uuid.uuid4())[:8]
         pid_file = f"/tmp/task_{task_id}.pid"
 
-        # setsid: 新建会话,脱离 SSH 控制终端; nohup: 忽略 SIGHUP;
-        # < /dev/null: 不占用 channel stdin(否则 channel 无法干净关闭);
-        # &: 后台; disown: 移出 shell job 表
-        # 注意: 必须用 background=True 执行,否则 paramiko 的 chan.makefile().read()
-        # 会因后台进程 & 持有 stdout 而永远等待 EOF,导致 channel 挂起。
-        background_command = (
-            f"cd {safe_workdir} && "
-            f"setsid nohup {command} > {safe_log_file} 2>&1 < /dev/null & "
-            f"echo $! > {pid_file}; disown 2>/dev/null || true"
+        # ── screen / tmux session support ──
+        if session_type in ("screen", "tmux"):
+            return await self._execute_background_session(
+                session_id, command, safe_workdir, safe_log_file,
+                session_type, task_id, wait, wait_timeout
+            )
+
+        # ── nohup mode (default): single SSH call, no race condition ──
+        # Use shlex.quote() to safely escape the command and paths for bash -c.
+        # The wrapper: cd → nohup bash -c '...' → capture PID → sleep → check alive.
+        check_cmd = (
+            f"cd {shlex.quote(safe_workdir)} && "
+            f"nohup bash -c {shlex.quote(command)} "
+            f"> {shlex.quote(safe_log_file)} 2>&1 < /dev/null & "
+            f"PID=$! && "
+            f"echo $PID > {shlex.quote(pid_file)} && "
+            f"sleep 1 && "
+            f"if ps -p $PID > /dev/null 2>&1; then "
+            f"echo 'PID='$PID' STATUS=RUNNING'; "
+            f"else "
+            f"echo 'PID='$PID' STATUS=DEAD'; "
+            f"echo '--- LOG ---'; "
+            f"cat {shlex.quote(safe_log_file)} 2>/dev/null || echo '(no output)'; "
+            f"fi"
         )
 
         try:
-            # Step 1: 用 background=True 启动包装命令(立即返回,不挂起)
-            await self.session_manager.execute_command(
-                session_id, background_command, timeout=10, background=True
+            # Execute as a single command (background=False) — the wrapper
+            # includes sleep + status check, so it returns in ~1 second.
+            result = await self.session_manager.execute_command(
+                session_id, check_cmd, timeout=timeout + 5, background=False
             )
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error starting background task: {str(e)}")]
 
-            # Step 2: 等待 PID 文件写入
-            await asyncio.sleep(0.5)
+        start_stdout = (result.get("stdout") or "").strip()
+        start_stderr = (result.get("stderr") or "").strip()
 
-            # Step 3: 单独读取 PID 文件并检查进程是否存活
-            # 如果进程已死(命令拼写错误、权限不足等),读取日志显示启动错误
-            read_cmd = (
-                f"PID=$(cat {pid_file} 2>/dev/null); "
-                f"echo \"PID=$PID\"; "
-                f"if [ -n \"$PID\" ] && ps -p $PID > /dev/null 2>&1; then "
-                f"echo 'STATUS=RUNNING'; "
-                f"else "
-                f"echo 'STATUS=DEAD'; "
-                f"echo '--- LOG ---'; "
-                f"cat {safe_log_file} 2>&1 | tail -20; "
-                f"fi"
+        # Parse output: PID=xxx STATUS=RUNNING|DEAD
+        pid = ""
+        status = ""
+        log_tail = ""
+        in_log = False
+        for line in start_stdout.splitlines():
+            if line.startswith("PID="):
+                parts = line.split(None, 1)
+                pid = parts[0].split("=", 1)[1].strip() if len(parts) >= 1 else ""
+                if len(parts) >= 2 and parts[1].startswith("STATUS="):
+                    status = parts[1].split("=", 1)[1].strip()
+            elif line == "--- LOG ---":
+                in_log = True
+            elif in_log:
+                log_tail += line + "\n"
+
+        # Startup failed
+        if status == "DEAD" or not pid:
+            return [TextContent(type="text", text=(
+                f"Background task failed to start!\n\n"
+                f"Command: {command}\n"
+                f"PID: {pid or '(none)'}\n"
+                f"Workdir: {safe_workdir}\n"
+                f"--- STDOUT ---\n{start_stdout}\n"
+                f"--- STDERR ---\n{start_stderr}\n"
+                f"--- LOG TAIL ---\n{log_tail or '(no log output)'}"
+            ))]
+
+        if wait:
+            output = await self._wait_for_task_completion(
+                session_id=session_id, task_id=task_id,
+                log_file=safe_log_file, timeout=wait_timeout
             )
-            start_result = await self.session_manager.execute_command(
-                session_id, read_cmd, timeout=10
-            )
-            start_stdout = (start_result.get("stdout") or "").strip()
-            start_stderr = (start_result.get("stderr") or "").strip()
-
-            # 解析远程进程真实 PID 和状态
-            pid = ""
-            status = ""
-            log_tail = ""
-            in_log = False
-            for line in start_stdout.splitlines():
-                if line.startswith("PID="):
-                    pid = line.split("=", 1)[1].strip()
-                elif line.startswith("STATUS="):
-                    status = line.split("=", 1)[1].strip()
-                elif line == "--- LOG ---":
-                    in_log = True
-                elif in_log:
-                    log_tail += line + "\n"
-
-            # 启动失败:进程已死或没拿到 PID
-            if status == "DEAD" or not pid:
-                return [TextContent(type="text", text=(
-                    f"Background task failed to start!\n\n"
-                    f"Command: {command}\n"
-                    f"PID: {pid or '(none)'}\n"
-                    f"--- STDOUT ---\n{start_stdout}\n"
-                    f"--- STDERR ---\n{start_stderr}\n"
-                    f"--- LOG TAIL ---\n{log_tail}"
-                ))]
-
-            if wait:
-                output = await self._wait_for_task_completion(
-                    session_id=session_id, task_id=task_id,
-                    log_file=safe_log_file, timeout=wait_timeout
-                )
-            else:
-                output = f"""Background Task Started!
+        else:
+            output = f"""Background Task Started!
 
 Task ID: {task_id}
 PID: {pid}
@@ -687,9 +693,70 @@ To check if still running:
   ssh_execute(session_id="{session_id}", command="ps -p {pid}")
 """
 
-            return [TextContent(type="text", text=output)]
+        return [TextContent(type="text", text=output)]
+
+    async def _execute_background_session(
+        self, session_id: str, command: str, workdir: str,
+        log_file: str, session_type: str, task_id: str,
+        wait: bool, wait_timeout: int
+    ) -> list[TextContent]:
+        """Execute a command inside a screen/tmux session for persistent long-running tasks"""
+        session_name = f"ssh_mcp_{task_id}"
+        escaped_cmd = command.replace("'", "'\\''")
+
+        if session_type == "screen":
+            # screen -dmS <name> bash -c 'cd <dir> && <cmd> > <log> 2>&1'
+            launch_cmd = (
+                f"screen -dmS {shlex.quote(session_name)} bash -c "
+                f"'cd {shlex.quote(workdir)} && {escaped_cmd} > {shlex.quote(log_file)} 2>&1'"
+            )
+        else:  # tmux
+            launch_cmd = (
+                f"tmux new-session -d -s {shlex.quote(session_name)} "
+                f"'cd {shlex.quote(workdir)} && {escaped_cmd} > {shlex.quote(log_file)} 2>&1'"
+            )
+
+        try:
+            result = await self.session_manager.execute_command(
+                session_id, launch_cmd, timeout=10, background=False
+            )
         except Exception as e:
-            return [TextContent(type="text", text=f"Error starting background task: {str(e)}")]
+            return [TextContent(type="text", text=f"Error starting {session_type} session: {str(e)}")]
+
+        stderr = (result.get("stderr") or "").strip()
+        if stderr:
+            return [TextContent(type="text", text=(
+                f"Failed to start {session_type} session!\n\n"
+                f"Session: {session_name}\n"
+                f"Command: {command}\n"
+                f"Error: {stderr}"
+            ))]
+
+        if wait:
+            output = await self._wait_for_task_completion(
+                session_id=session_id, task_id=task_id,
+                log_file=log_file, timeout=wait_timeout
+            )
+        else:
+            attach_cmd = f"screen -r {session_name}" if session_type == "screen" else f"tmux attach -t {session_name}"
+            output = f"""{session_type.upper()} Session Started!
+
+Task ID: {task_id}
+Session Name: {session_name}
+Command: {command}
+Working Directory: {workdir}
+Log File: {log_file}
+
+---
+To attach to session:
+  ssh_execute(session_id="{session_id}", command="{attach_cmd}")
+To view log:
+  ssh_execute(session_id="{session_id}", command="cat {log_file}")
+To kill session:
+  ssh_execute(session_id="{session_id}", command="{'screen -XS ' + session_name + ' quit' if session_type == 'screen' else 'tmux kill-session -t ' + session_name}")
+"""
+
+        return [TextContent(type="text", text=output)]
 
     async def _wait_for_task_completion(self, session_id: str, task_id: str, log_file: str, timeout: int) -> str:
         pid_file = f"/tmp/task_{task_id}.pid"
@@ -742,6 +809,8 @@ Use ssh_execute to check: cat {log_file}
             'docker pull', 'docker push', 'docker save', 'docker load',
             'docker network ls', 'docker volume ls', 'docker system',
             'docker exec', 'docker attach', 'docker cp',
+            'docker build', 'docker buildx', 'docker compose build',
+            'docker-compose build', 'docker tag', 'docker login', 'docker logout',
         ]
         for cmd in docker_instant_commands:
             if cmd in command_lower:
