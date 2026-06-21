@@ -38,13 +38,11 @@ class ConfigManager:
     # 用户主目录配置（后备）
     USER_CONFIG_PATH = Path.home() / ".ssh" / "mcp_config.json"
     # 服务器配置
-    DEFAULT_SERVER_CONFIG_PATH = Path(__file__).parent / "server.json"
     DEFAULT_HOSTS_CONFIG_PATH = Path(__file__).parent.parent / "config" / "hosts.json"
 
-    def __init__(self, config_path: Path | None = None, server_config_path: Path | None = None):
+    def __init__(self, config_path: Path | None = None):
         # 优先使用项目根目录配置
         self.config_path = config_path or self.PROJECT_CONFIG_PATH
-        self.server_config_path = server_config_path or self.DEFAULT_SERVER_CONFIG_PATH
 
     def load(self) -> SSHConfig | None:
         # 优先加载项目根目录配置
@@ -79,18 +77,7 @@ class ConfigManager:
         return config if config else SSHConfig()
 
     def load_server_config(self) -> ServerConfig | None:
-        # Try server.json first
-        server_config_path = self.server_config_path
-        if server_config_path.exists():
-            try:
-                with open(server_config_path, encoding='utf-8') as f:
-                    data = json.load(f)
-                if "ssh_hosts" in data:
-                    return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
-            except Exception:
-                pass
-
-        # Fallback to config/hosts.json
+        # 加载 config/hosts.json
         hosts_config_path = self.DEFAULT_HOSTS_CONFIG_PATH
         if hosts_config_path.exists():
             try:
