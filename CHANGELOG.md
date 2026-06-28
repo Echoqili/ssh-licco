@@ -4,6 +4,40 @@
 
 ---
 
+## [1.7.0] - 2026-06-28
+
+### 重大变更
+
+- **移除 CLI 接口**：完全移除命令行工具接口，专注于 MCP 工具集
+  - 删除 `ssh_mcp/cli.py` - CLI 主入口
+  - 删除 `ssh_mcp/fallback_executor.py` - CLI 回退执行器
+  - 删除 `ssh-licco.js` - Node.js 包装脚本
+  - 删除 `install.js` - 自动安装脚本
+  - 删除 `package.json` - npm 包配置
+  - 移除 `pyproject.toml` 中的 `[project.scripts]` 配置
+
+### 安全增强
+
+- **强制安全确认**：所有危险操作必须通过 MCP 工具的 `confirm_dangerous` 参数明确确认
+- **移除旁路风险**：不再有 CLI 可以直接调用，所有操作都受安全机制保护
+- **审计更完整**：所有操作都通过 MCP 层，有完整的审计日志
+
+### 使用方式变更
+
+| 配置项 | 之前 | 现在 |
+|-------|------|------|
+| MCP 命令 | `"command": "ssh-licco"` | `"command": "python -m ssh_mcp.server"` |
+| npx 启动 | `npx ssh-licco` | ❌ 已移除 |
+
+### 保留的核心功能
+
+- ✅ 完整的 MCP 工具集（9 个工具）
+- ✅ 多级安全策略（STRICT/BALANCED/RELAXED）
+- ✅ 所有 SSH 功能（连接、执行、文件传输、Docker、screen/tmux 等）
+- ✅ Python 包安装（`pip install ssh-licco`）
+
+---
+
 ## [1.6.5] - 2026-06-28
 
 ### 修复

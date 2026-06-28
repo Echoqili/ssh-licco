@@ -8,7 +8,6 @@ This script updates the version in:
     - ssh_mcp/__init__.py   (__version__ and comment)
     - pyproject.toml        (version field)
     - VERSION               (plain text)
-    - package.json          (version field)
 
 After version files are updated, it also runs scripts/sync_docs.py
 to synchronize version info and test statistics in documentation.
@@ -44,10 +43,6 @@ FILES = {
     },
     "VERSION": {
         "type": "version",
-    },
-    "package.json": {
-        "type": "json",
-        "key": "version",
     },
 }
 
@@ -171,11 +166,6 @@ def sync_version(version: str, dry_run: bool = False) -> bool:
     path = ROOT / "VERSION"
     print(f"Updating {path.relative_to(ROOT)} ...")
     all_ok &= update_plain(path, version, dry_run)
-
-    # 4. package.json
-    path = ROOT / "package.json"
-    print(f"Updating {path.relative_to(ROOT)} ...")
-    all_ok &= update_json(path, version, "version", dry_run)
 
     if all_ok:
         print(f"\n[OK] All version files updated to {version}")
