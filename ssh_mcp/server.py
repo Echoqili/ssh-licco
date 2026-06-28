@@ -1365,8 +1365,8 @@ Use ssh_execute to check: cat {log_file}
 
         elif action == "images":
             image_name = args.get("image_name", "")
-            image_filter = f"'{image_name}'" if image_name else ""
-            cmd = f"docker images {image_filter} --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
+            image_filter = "'{}'".format(image_name) if image_name else ""
+            cmd = "docker images " + image_filter + " --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
             result = await self.session_manager.execute_command(session_id, cmd, timeout=10)
             output = "Docker Images\n\n"
             output += result.get("stdout", "No images found")
