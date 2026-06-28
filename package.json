@@ -1,0 +1,26 @@
+{
+  "name": "ssh-licco",
+  "version": "1.9.7",
+  "description": "SSH MCP Server - Remote server management via SSH protocol",
+  "main": "ssh-licco.js",
+  "bin": {
+    "ssh-licco": "./ssh-licco.js"
+  },
+  "scripts": {
+    "postinstall": "node ./install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Echoqili/ssh-licco.git"
+  },
+  "keywords": [
+    "ssh",
+    "mcp",
+    "server",
+    "remote"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
