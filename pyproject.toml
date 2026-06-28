@@ -37,8 +37,6 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.7.0",
 ]
-[project.scripts]
-ssh-licco = "ssh_mcp.cli:main"
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]
 build-backend = "setuptools.build_meta"

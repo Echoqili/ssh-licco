@@ -14,7 +14,7 @@
 ## 📚 文档导航
 
 ### 快速开始
-- **[⬇️ 安装指南](#-快速安装)** - 3 种安装方式
+- **[⬇️ 安装指南](#-快速安装)** - 2 种安装方式
 - **[🚀 快速开始](#-快速开始)** - 5 分钟上手
 - **[📋 配置模板](#-完整配置示例)** - 开箱即用的配置
 
@@ -54,28 +54,19 @@
 - 📋 **后台任务** - 可靠的后台进程启动（nohup + bash -c 包装，单次 SSH 调用无竞态）
 - 🖥️ **screen/tmux 会话** - 持久化远程会话，SSH 断开后进程依然存活
 - 🔍 **进程管理** - 启动/停止/查询远程进程、SSH 端口转发（tunnel）
-- 🖥️ **CLI 命令行** - exec / upload / download / list-hosts 子命令
 - 🔍 **看门狗** - 任务监控、心跳检测、全局异常处理
 
 ---
 
 ## 📦 快速安装
 
-### 方式一：npx 一键启动（推荐，零配置）
-
-```bash
-npx ssh-licco
-```
-
-首次运行自动完成：检测 Python → 创建虚拟环境 → 安装依赖 → 启动 MCP 服务器。**无需手动安装任何东西。**
-
-### 方式二：pip 安装（推荐 Python 项目）
+### 方式一：pip 安装（推荐）
 
 ```bash
 pip install ssh-licco
 ```
 
-### 方式三：从源码安装
+### 方式二：从源码安装
 
 ```bash
 git clone https://github.com/Echoqili/ssh-licco.git
@@ -84,42 +75,6 @@ pip install -e .
 ```
 
 **Python 版本要求：** Python 3.10+
-
----
-
-## 🏗️ 自动安装体系
-
-ssh-licco 采用 **三层架构** 实现零配置启动：
-
-```
-用户 → npx ssh-licco
-           ↓
-    ┌──── ssh-licco.js (Node 层) ────┐
-    │  ① 查找 Python 3.10+          │
-    │  ② 检测 Anaconda 环境         │
-    │  ③ 创建/复用 ~/.ssh-licco-venv │
-    │  ④ pip install 安装           │
-    │  ⑤ 验证依赖完整性             │
-    └──────────┬────────────────────┘
-               ↓
-    ┌── cli.py (Python 入口) ──────┐
-    │  只负责启动 MCP 服务器        │
-    └──────────┬────────────────────┘
-               ↓
-    ┌── SSHMCPServer (MCP 服务) ──┐
-    │  提供 SSH 连接、命令执行等    │
-    └────────────────────────────┘
-```
-
-### 智能安装特性
-
-| 特性 | 说明 |
-|------|------|
-| **Anaconda 自动检测** | 检测 conda 环境，使用独立 venv 避免冲突 |
-| **依赖完整性检查** | 每次启动验证所有依赖可导入，缺失则自动修复 |
-| **增量更新** | 已有 venv 时不删除，直接 `pip install -e .` 增量安装 |
-| **自动修复** | 依赖损坏时自动重新安装，无需手动干预 |
-| **npm postinstall** | `install.js` 自动检测已有 venv，跳过删除重建 |
 
 ---
 
@@ -135,13 +90,11 @@ ssh-licco 采用 **三层架构** 实现零配置启动：
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco"
+      "command": "python -m ssh_mcp.server"
     }
   }
 }
 ```
-
-首次启动会自动安装所有依赖，稍等片刻即可使用。
 
 ### 2️⃣ 配置 SSH 连接（可选但推荐）
 
@@ -151,7 +104,7 @@ ssh-licco 采用 **三层架构** 实现零配置启动：
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco",
+      "command": "python -m ssh_mcp.server",
       "env": {
         "SSH_HOST": "192.168.1.100",
         "SSH_USER": "root",
@@ -180,14 +133,6 @@ ssh-licco 采用 **三层架构** 实现零配置启动：
   - `performance` - asyncssh（高性能，适合高并发）🚀
   - `development` - fabric（简化 API，适合快速开发）👨‍💻
 
-#### 方式 B：交互式配置
-
-启动后，系统会提示输入连接信息：
-
-```bash
-python -m ssh_mcp.server
-```
-
 ---
 
 ## 🔐 安全配置
@@ -210,14 +155,12 @@ python -m ssh_mcp.server
 ```powershell
 $env:SSH_SECURITY_LEVEL = "balanced"
 $env:SSH_EXTRA_ALLOWED_COMMANDS = "git,pip,npm"
-npx ssh-licco
 ```
 
 **Linux/Mac**:
 ```bash
 export SSH_SECURITY_LEVEL="balanced"
 export SSH_EXTRA_ALLOWED_COMMANDS="git,pip,npm"
-npx ssh-licco
 ```
 
 #### 方式 2：MCP 配置文件
@@ -226,7 +169,7 @@ npx ssh-licco
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco",
+      "command": "python -m ssh_mcp.server",
       "env": {
         "SSH_SECURITY_LEVEL": "balanced",
         "SSH_EXTRA_ALLOWED_COMMANDS": "git,pip,npm",
@@ -274,7 +217,7 @@ npx ssh-licco
 AI：调用 ssh_connect → ssh_execute "docker ps"
 
 [执行结果]
-CONTAINER ID   IMAGE     COMMAND   STATUS    PORTS
+CONTAINER ID   IMAGE     COMMAND   STATUS   PORTS
 abc123         nginx     "nginx"   Up 2 days 80:80
 ```
 
@@ -328,7 +271,7 @@ localhost:5432 - accepting connections
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco",
+      "command": "python -m ssh_mcp.server",
       "env": {
         "SSH_SECURITY_LEVEL": "balanced",
         "SSH_EXTRA_ALLOWED_COMMANDS": "git,npm,docker,composer,pm2",
@@ -348,7 +291,7 @@ localhost:5432 - accepting connections
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco",
+      "command": "python -m ssh_mcp.server",
       "env": {
         "SSH_SECURITY_LEVEL": "balanced",
         "SSH_EXTRA_ALLOWED_COMMANDS": "pip,poetry,python3,pytest,black",
@@ -367,7 +310,7 @@ localhost:5432 - accepting connections
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco",
+      "command": "python -m ssh_mcp.server",
       "env": {
         "SSH_SECURITY_LEVEL": "balanced",
         "SSH_EXTRA_ALLOWED_COMMANDS": "psql,mysql,mongosh,pg_isready",
@@ -386,7 +329,7 @@ localhost:5432 - accepting connections
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco",
+      "command": "python -m ssh_mcp.server",
       "env": {
         "SSH_SECURITY_LEVEL": "relaxed",
         "SSH_EXTRA_ALLOWED_COMMANDS": "sudo,apt,yum,systemctl,journalctl,docker,kubectl",
@@ -405,7 +348,7 @@ localhost:5432 - accepting connections
 {
   "mcpServers": {
     "ssh": {
-      "command": "ssh-licco",
+      "command": "python -m ssh_mcp.server",
       "env": {
         "SSH_SECURITY_LEVEL": "strict",
         "SSH_HOST": "192.168.1.100",
@@ -496,19 +439,7 @@ ssh-licco 的核心依赖是：
 
 ### 常见问题
 
-#### 1. npx `Cannot find module` 错误
-
-**错误**: `Cannot find module '.../node_modules/ssh-licco/bin/ssh-licco.js'`
-
-**原因**: npm 全局目录存在损坏的 ssh-licco 包
-
-**解决**:
-```bash
-npm uninstall -g ssh-licco
-# 卸载后 npx 会重新从 npm registry 下载完整包
-```
-
-#### 2. 连接失败
+#### 1. 连接失败
 
 **错误**: `Connection refused`
 
@@ -517,7 +448,7 @@ npm uninstall -g ssh-licco
 - 检查防火墙设置：`ufw status`
 - 确认端口正确：默认 22
 
-#### 3. 认证失败
+#### 2. 认证失败
 
 **错误**: `Authentication failed`
 
@@ -526,7 +457,7 @@ npm uninstall -g ssh-licco
 - 尝试使用密钥认证
 - 查看 SSH 日志：`/var/log/auth.log`
 
-#### 4. 命令被阻止
+#### 3. 命令被阻止
 
 **错误**: `命令 'xxx' 不在允许列表中`
 
@@ -536,23 +467,6 @@ npm uninstall -g ssh-licco
   "SSH_SECURITY_LEVEL": "balanced",
   "SSH_EXTRA_ALLOWED_COMMANDS": "被阻止的命令"
 }
-```
-
-#### 5. Anaconda 环境冲突
-
-**错误**: `pip install` 后在 conda 环境中出现依赖冲突
-
-**解决**:
-- 推荐用 `npx ssh-licco` 代替 `pip install`（完全隔离，不影响 conda 环境）
-- 或创建专用 conda 环境：`conda create -n ssh-licco python=3.10 && conda activate ssh-licco && pip install ssh-licco`
-- 不要在 base 环境中 `pip install`
-
-#### 6. 自动修复依赖
-
-如果遇到 `ModuleNotFoundError` 之类的问题，ssh-licco 每次启动会自动验证依赖完整性并修复。你也可以手动运行：
-
-```bash
-node install.js
 ```
 
 ### 📖 详细文档
@@ -605,57 +519,14 @@ node install.js
 
 ---
 
-## 🖥️ CLI 命令行工具
-
-ssh-licco 提供命令行接口，支持直接在终端执行 SSH 操作：
-
-### 基本用法
-
-```bash
-# 启动 MCP 服务器（默认模式）
-ssh-licco
-ssh-licco serve
-
-# 查看版本
-ssh-licco --version
-```
-
-### exec - 执行远程命令
-
-```bash
-ssh-licco exec --host 192.168.1.100 -u root --password pwd "ls -la /home"
-ssh-licco exec --timeout 120 "docker ps"
-```
-
-### upload / download - 文件传输
-
-```bash
-# 上传文件
-ssh-licco upload --host 192.168.1.100 -u root --password pwd ./local.txt /remote/path.txt
-
-# 下载文件
-ssh-licco download --host 192.168.1.100 -u root --password pwd /remote/log.txt ./local.log
-```
-
-### list-hosts - 列出已配置主机
-
-```bash
-ssh-licco list-hosts
-ssh-licco list-hosts --json
-```
-
-> 💡 所有 CLI 子命令都支持环境变量配置（`SSH_HOST`、`SSH_USER`、`SSH_PASSWORD` 等），无需每次手动指定。
-
----
-
 ## 🧪 测试
 
 ### 测试状态
 
 | 指标 | 状态 |
 |------|------|
-| **测试用例** | 410 passed, 0 skipped |
-| **覆盖率** | 17 个源模块全覆盖 |
+| **测试用例** | 400 passed, 0 skipped |
+| **覆盖率** | 16 个源模块全覆盖 |
 | **测试框架** | pytest + pytest-asyncio |
 
 ### 测试模块覆盖
@@ -677,7 +548,6 @@ ssh-licco list-hosts --json
 | `session_manager.py` | `test_session_manager.py` | 18 |
 | `connection_pool.py` | `test_connection_pool.py` | 10 |
 | `batch_executor.py` | `test_batch_executor.py` | 10 |
-| `cli.py` | `test_cli.py` | 10 |
 | `server.py` | `test_server.py` | 30+ |
 | `service.py` | `test_service.py` | 14 |
 
@@ -697,70 +567,3 @@ pytest --cov=ssh_mcp --cov-report=term-missing
 ---
 
 ## 📊 版本历史
-
-| 版本 | 日期 | 主要变更 |
-|------|------|----------|
-| v1.6.4 | 2026-06-28 | 🛡️ 扩展安全策略黑名单：新增 `rm -rf /任意路径/*` 和 `rm -rf /任意路径` 模式拦截，防止递归删除任意绝对路径下的文件 |
-| v1.6.3 | 2026-06-28 | 🐛 修复 `ssh_docker` 的 `images` action 因 f-string 转义导致 Docker Go template 占位符 `{{.Repository}}` 变成 `{.Repository}` 无法解析的问题；改用 editable 模式安装确保源码修改即时生效 |
-| v1.6.2 | 2026-06-28 | 🐛 4 个 Bug 修复：`ConfigManager` 支持 `server_config_path` 构造参数；`ssh_connect` 自动将字符串端口（如 `"22"`）强转为 int；`ConfigManager.add_host` 增加 IP+端口重复校验；修复 `SessionManager.get_session` 在断连 session 时引用未初始化 `self._logger` 导致 `AttributeError` 的问题（测试用例 410 passed） |
-| v1.6.1 | 2026-06-28 | 🛠️ 安全策略 `relaxed` 改为黑名单机制，修复后台任务"假失败"误报，新增 `sudo_password`/`use_sudo` 支持，新增 `remote_copy` 服务器间直传，新增任务元数据便于跨 session 追踪 |
-| v1.5.0 | 2026-06-20 | 🎉 白名单配置与日志诊断增强：新增 `config/allowed_commands.example.json` 白名单配置示例，`nginx`/`systemctl`/`curl` 等常用命令加入内置白名单，支持 `SSH_ALLOWED_COMMANDS_FILE` 环境变量；后台任务日志状态细化为 5 种（成功/命令失败/异常终止/运行中/启动失败），附退出码诊断和启动失败诊断；测试全部通过（409 passed, 0 skipped） |
-| v1.4.0 | 2026-06-20 | 🛡️ 安全策略 `relaxed` 改为黑名单机制，修复后台任务"假失败"误报，新增 `sudo_password`/`use_sudo` 支持，新增 `remote_copy` 服务器间直传，新增任务元数据便于跨 session 追踪 |
-| v1.3.3 | 2026-06-19 | 🛠️ 后台任务可靠性修复：单次 SSH 调用 + nohup bash -c 包装消除竞态；新增 screen/tmux 会话支持（session_type 参数）；channel 引用保持防止进程被 GC 回收；docker build 不再被误判为后台任务；新增 ssh_session/ssh_process 工具 |
-| v1.3.2 | 2026-06-19 | 🔧 修复 MCP_GITHUB_TOKEN 配置，Auto Release 工作流修复 |
-| v1.2.1 | 2026-06-03 | 📝 README 文档更新，同步到 PyPI |
-| v1.1.0 | 2026-06-01 | 🔥 精简重构！MCP 工具从 15 个合并为 7 个（ssh_connect/ssh_execute/ssh_disconnect/ssh_file_transfer/ssh_host/ssh_docker/ssh_generate_key），自动连接、智能后台检测、长任务等待 |
-| v1.0.0 | 2026-05-31 | 🎉 首个主要版本！CLI 增强（exec/upload/download/docker-build/list-hosts）、完整测试套件（402 用例）、看门狗监控、审计日志、连接池、批量执行 |
-| v0.5.5 | 2026-05 | 自动安装体系优化：依赖完整性检查、增量更新、Anaconda 检测、cli.py 精简 |
-| v0.2.3 | 2026-03-14 | 修复 `_logger` 初始化 bug |
-| v0.2.2 | 2026-03-14 | 安全配置增强（有 bug） |
-| v0.2.1 | 2026-03-13 | 多级安全策略、环境变量配置 |
-| v0.2.0 | 2026-03-12 | 安全验证模块、命令白名单 |
-| v0.1.7 | 2026-03-11 | 基础功能、后台任务 |
-
----
-
-## 🤝 贡献指南
-
-欢迎贡献代码、文档和建议！
-
-### 开发流程
-
-1. Fork 项目
-2. 创建特性分支
-3. 提交变更
-4. 推送到分支
-5. 创建 Pull Request
-
-### 开发资源
-
-- **[docs/skills/ssh-mcp-dev/SKILL.md](docs/skills/ssh-mcp-dev/SKILL.md)** - 开发指南
-- **[docs/skills/RELEASE_SKILL.md](docs/skills/RELEASE_SKILL.md)** - 发布流程
-
----
-
-## 📄 许可证
-
-MIT License - 详见 [LICENSE](LICENSE)
-
----
-
-## 💬 获取帮助
-
-### 遇到问题？
-
-1. **查看文档**: [MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)
-2. **故障排除**: [docs/skills/ssh-mcp-troubleshoot/SKILL.md](docs/skills/ssh-mcp-troubleshoot/SKILL.md)
-3. **提交 Issue**: [GitHub Issues](https://github.com/Echoqili/ssh-licco/issues)
-
-### 社区支持
-
-- GitHub Discussions
-- MCP Community
-- Stack Overflow (tag: `ssh-licco`)
-
----
-
-**Made with ❤️ by Echoqili**
-
-*Last updated: 2026-06-19*
