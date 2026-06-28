@@ -36,9 +36,12 @@ jobs:
         pip install -e ".[dev]"
 
     - name: Sync docs
+      # 仅在非 tag 触发时向 master 回写文档（tag 触发时本地已保证文档同步）
+      if: github.ref_type != 'tag'
       run: python scripts/sync_docs.py
 
     - name: Check for changes
+      if: github.ref_type != 'tag'
       id: check-changes
       run: |
         git add -u
@@ -49,7 +52,7 @@ jobs:
         fi
 
     - name: Commit and push updates
-      if: steps.check-changes.outputs.changes == 'true'
+      if: github.ref_type != 'tag' && steps.check-changes.outputs.changes == 'true'
       run: |
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -66,13 +69,33 @@ jobs:
       run: |
         VERSION=$(python -c "from pathlib import Path; print(Path('VERSION').read_text().strip())")
         echo "Checking PyPI for version $VERSION..."
-        if curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/ssh-licco/$VERSION/json" | grep -q "200"; then
+
+        # 方法1: PyPI JSON API（带重试，避免缓存/网络波动）
+        HTTP_CODE=""
+        for i in 1 2 3; do
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://pypi.org/pypi/ssh-licco/$VERSION/json")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "skip_publish=true" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already exists on PyPI, skipping publish."
+            exit 0
+          fi
+          if [ "$HTTP_CODE" = "404" ]; then
+            break
+          fi
+          echo "Attempt $i returned HTTP $HTTP_CODE, retrying..."
+          sleep 3
+        done
+
+        # 方法2: pip index versions 作为交叉验证
+        LATEST=$(pip index versions ssh-licco 2>/dev/null | head -n 1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+        if [ "$LATEST" = "$VERSION" ]; then
           echo "skip_publish=true" >> $GITHUB_OUTPUT
-          echo "Version $VERSION already exists on PyPI, skipping publish."
-        else
-          echo "skip_publish=false" >> $GITHUB_OUTPUT
-          echo "Version $VERSION not found on PyPI, will publish."
+          echo "Version $VERSION found via pip index, skipping publish."
+          exit 0
         fi
+
+        echo "skip_publish=false" >> $GITHUB_OUTPUT
+        echo "Version $VERSION not found on PyPI, will publish."
 
     - name: Publish to PyPI
       if: steps.check-pypi.outputs.skip_publish != 'true'
