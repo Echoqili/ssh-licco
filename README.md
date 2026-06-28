@@ -2,7 +2,7 @@
 
 <!-- mcp-name: io.github.Echoqili/ssh-licco -->
 
-[![PyPI version](https://img.shields.io/pypi/v/ssh-licco.svg?cacheSeconds=60)](https://pypi.org/project/ssh-licco/)
+[![PyPI version](https://img.shields.io/pypi/v/ssh-licco.svg?cacheSeconds=3600)](https://pypi.org/project/ssh-licco/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MCP Registry](https://img.shields.io/badge/MCP-Registry-green.svg)](https://registry.modelcontextprotocol.io/)
@@ -40,7 +40,7 @@
 - 🎯 **自然语言控制** - 用对话方式操作服务器
 - 🔐 **多种认证方式** - 密码、密钥、Agent 转发
 - 🔗 **长连接支持** - 自动保活（30 秒心跳），避免账户锁定
-- ⏱️ **可配置超时** - Banner 超时 (60s)、会话超时 (2 小时)
+- ⏱️ **可配置超时** - Banner 超时 (60s)、会话超时 (2 小时)，支持自动重连
 - 📦 **异步高性能** - 基于 Paramiko 的异步架构（线程池 + asyncio）
 - 🛡️ **完善的异常处理** - 统一的错误处理机制（7 层异常层次）
 - 📊 **会话管理** - 支持多个并发 SSH 会话（最大 10 个，每主机 3 个）

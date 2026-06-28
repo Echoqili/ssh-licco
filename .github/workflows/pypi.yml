@@ -6,14 +6,19 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-publish-pypi:
+  update-docs-and-publish:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
+      contents: write
+    outputs:
+      changes_detected: ${{ steps.check-changes.outputs.changes }}
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.MCP_GITHUB_TOKEN }}
     
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -28,6 +33,24 @@ jobs:
     - name: Sync docs
       run: python scripts/sync_docs.py
 
+    - name: Check for changes
+      id: check-changes
+      run: |
+        git add -u
+        if git diff --staged --quiet; then
+          echo "changes=false" >> $GITHUB_OUTPUT
+        else
+          echo "changes=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Commit and push updates
+      if: steps.check-changes.outputs.changes == 'true'
+      run: |
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git commit -m "chore: update documentation for release"
+        git push
+
     - name: Build package
       run: python -m build
     
@@ -41,7 +64,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    needs: build-and-publish-pypi  # 等待 PyPI 发布完成
+    needs: update-docs-and-publish
     
     steps:
     - uses: actions/checkout@v4

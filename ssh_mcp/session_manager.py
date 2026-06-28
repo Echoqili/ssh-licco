@@ -56,6 +56,9 @@ class SSHSession:
         self._connect_lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
         self._background_channels: list = []  # 保持 background channel 引用，防止 GC 关闭 channel
+        self._reconnect_count = 0  # 重连次数统计
+        self._max_reconnects = 3  # 最大重连次数
+        self._logger = get_logger("SSHSession")
 
     @property
     def state(self) -> SessionState:
@@ -63,7 +66,19 @@ class SSHSession:
 
     @property
     def is_connected(self) -> bool:
-        return self._state == SessionState.CONNECTED and self.client is not None
+        # 检查状态标志和实际连接状态
+        if self._state != SessionState.CONNECTED or self.client is None:
+            return False
+        
+        try:
+            transport = self.client.get_transport()
+            if transport is None or not transport.is_active():
+                self._state = SessionState.DISCONNECTED
+                return False
+            return True
+        except Exception:
+            self._state = SessionState.DISCONNECTED
+            return False
 
     async def connect(self) -> SessionInfo:
         async with self._connect_lock:
@@ -147,11 +162,17 @@ class SSHSession:
                     transport = await self._executor.submit(
                         lambda: self.client.get_transport() if self.client else None
                     )
-                    if transport:
+                    if transport and transport.is_active():
                         await self._executor.submit(transport.send_ignore)
                         self._last_keepalive = datetime.now()
+                    else:
+                        # Transport 不再活跃，标记为断开
+                        self._state = SessionState.DISCONNECTED
+                        self._logger.warning(f"Keepalive failed: transport not active for session {self.session_id}")
+                        break
                 except Exception as e:
-                    print(f"Keepalive failed for session {self.session_id}: {e}")
+                    self._state = SessionState.DISCONNECTED
+                    self._logger.warning(f"Keepalive failed for session {self.session_id}: {e}")
                     break
 
         self._keepalive_task = asyncio.create_task(keepalive_loop())
@@ -169,8 +190,19 @@ class SSHSession:
                     timeout=timeout + 5
                 )
                 return result
+            except ConnectionError as e:
+                # 连接错误，标记为断开状态
+                self._state = SessionState.DISCONNECTED
+                raise
+            except Exception as e:
+                # 其他异常也检查连接状态
+                if not self.is_connected:
+                    self._state = SessionState.DISCONNECTED
+                    raise ConnectionError(f"SSH connection lost during command execution: {str(e)}")
+                raise
             finally:
-                self._state = SessionState.CONNECTED
+                if self.is_connected:
+                    self._state = SessionState.CONNECTED
 
     def _execute_command_sync(self, command: str, timeout: int, background: bool = False, stdin_data: str | None = None, get_pty: bool = False) -> dict:
         assert self.client is not None
@@ -619,16 +651,59 @@ class SessionManager:
             self._session_counter += 1
             return session_info
 
-    async def get_session(self, session_id: str) -> SSHSession | None:
+    async def get_session(self, session_id: str, auto_reconnect: bool = True) -> SSHSession | None:
         async with self._lock:
             session = self._sessions.get(session_id)
-            # 🧹 自动清理失效 session：连接已断开时从字典移除，避免后续误用
+            
+            # 🔄 自动重连机制：如果 session 存在但已断开，尝试重连
+            if session and not session.is_connected and auto_reconnect:
+                # 检查重连次数限制
+                if session._reconnect_count >= session._max_reconnects:
+                    self._logger.error(
+                        f"Session {session_id} 重连次数已达上限 ({session._max_reconnects})，不再重连"
+                    )
+                    await session.disconnect()
+                    if session_id in self._sessions:
+                        del self._sessions[session_id]
+                    return None
+                
+                self._logger.warning(
+                    f"Session {session_id} 已断开，尝试自动重连（重连次数：{session._reconnect_count}/{session._max_reconnects}）"
+                )
+                try:
+                    # 保存配置信息用于重连
+                    config = session.config
+                    session._reconnect_count += 1
+                    
+                    # 清理旧 session
+                    await session.disconnect()
+                    if session_id in self._sessions:
+                        del self._sessions[session_id]
+                    
+                    # 创建新 session（使用相同的 session_id）
+                    new_session = SSHSession(config)
+                    new_session.session_id = session_id  # 复用原来的 session_id
+                    new_session._reconnect_count = session._reconnect_count  # 保持重连次数
+                    await new_session.connect()
+                    self._sessions[session_id] = new_session
+                    self._logger.info(f"Session {session_id} 自动重连成功")
+                    return new_session
+                except Exception as e:
+                    self._logger.error(f"Session {session_id} 自动重连失败: {e}")
+                    if session_id in self._sessions:
+                        del self._sessions[session_id]
+                    return None
+            
+            # 🧹 清理完全失效的 session
             if session and not session.is_connected:
                 self._logger.warning(
-                    f"Session {session_id} 已断开，自动清理（host={session.config.host}）"
+                    f"Session {session_id} 已断开，清理（host={session.config.host}）"
                 )
-                del self._sessions[session_id]
+                await session.disconnect()
+                if session_id in self._sessions:
+                    del self._sessions[session_id]
                 return None
+                
             return session
 
     async def close_session(self, session_id: str) -> None:
