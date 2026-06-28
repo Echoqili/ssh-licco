@@ -4,6 +4,19 @@
 
 ---
 
+## [1.6.5] - 2026-06-28
+
+### 修复
+
+- `server.list_sessions` 和 `server._execute` 中 `session_info` 属性访问修复，改为 `session_info.config.username` / `session_info.config.host`，避免属性缺失导致崩溃
+- `list_sessions` 输出中使用 `session._connected_at` / `session._last_activity` 并增加 `N/A` 兜底，防止 session 未完全初始化时崩溃
+
+### 变更
+
+- 版本号更新至 1.6.5
+
+---
+
 ## [1.6.2] - 2026-06-28
 
 ### 修复

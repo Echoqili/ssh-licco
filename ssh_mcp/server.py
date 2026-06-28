@@ -605,8 +605,8 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
             import time
             session_info = await self.session_manager.get_session(session_id)
             self._audit.log_command(
-                username=session_info.username if session_info else "unknown",
-                host=session_info.host if session_info else "unknown",
+                username=session_info.config.username if session_info else "unknown",
+                host=session_info.config.host if session_info else "unknown",
                 command=command,
                 return_code=result.get('exit_code', -1),
                 stdout_length=len(result.get('stdout', '')),
@@ -1157,11 +1157,11 @@ Use ssh_execute to check: cat {log_file}
         output = "Active Sessions:\n"
         for session in sessions:
             output += f"\n- Session ID: {session.session_id}\n"
-            output += f"  Host: {session.host}:{session.port}\n"
-            output += f"  Username: {session.username}\n"
+            output += f"  Host: {session.config.host}:{session.config.port}\n"
+            output += f"  Username: {session.config.username}\n"
             output += f"  State: {session.state.value}\n"
-            output += f"  Connected: {session.connected_at.isoformat()}\n"
-            output += f"  Last Activity: {session.last_activity.isoformat()}\n"
+            output += f"  Connected: {session._connected_at.isoformat() if session._connected_at else 'N/A'}\n"
+            output += f"  Last Activity: {session._last_activity.isoformat()}\n"
 
         return [TextContent(type="text", text=output)]
 
