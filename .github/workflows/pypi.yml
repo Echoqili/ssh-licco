@@ -59,7 +59,21 @@ jobs:
     - name: Build package
       run: python -m build
     
+    - name: Check PyPI version
+      id: check-pypi
+      run: |
+        VERSION=$(python -c "from pathlib import Path; print(Path('VERSION').read_text().strip())")
+        echo "Checking PyPI for version $VERSION..."
+        if curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/ssh-licco/$VERSION/json" | grep -q "200"; then
+          echo "skip_publish=true" >> $GITHUB_OUTPUT
+          echo "Version $VERSION already exists on PyPI, skipping publish."
+        else
+          echo "skip_publish=false" >> $GITHUB_OUTPUT
+          echo "Version $VERSION not found on PyPI, will publish."
+        fi
+
     - name: Publish to PyPI
+      if: steps.check-pypi.outputs.skip_publish != 'true'
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         attestations: false
