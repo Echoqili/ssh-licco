@@ -3,6 +3,9 @@ name: Publish to PyPI & MCP Registry
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -48,8 +51,9 @@ jobs:
       run: |
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git checkout master
         git commit -m "chore: update documentation for release"
-        git push
+        git push origin master
 
     - name: Build package
       run: python -m build
