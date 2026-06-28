@@ -10,7 +10,7 @@ description: "SSH MCP server development guide. Invoke when working on ssh-licco
 - **Project Name**: ssh-licco
 - **Description**: SSH Model Context Protocol Server - Enable SSH functionality for AI models
 - **Repository**: https://github.com/Echoqili/ssh-licco
-- **Current Version**: 2.0.0 (stored in `ssh_mcp/__init__.py`)
+- **Current Version**: 2.0.1 (stored in `ssh_mcp/__init__.py`)
 - **Python**: >=3.10, <3.14
 - **License**: MIT
 
