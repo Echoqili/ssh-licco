@@ -102,6 +102,75 @@ def update_plain(filepath: Path, version: str, dry_run: bool = False) -> bool:
     return True
 
 
+def git_commit_version(version: str, dry_run: bool = False) -> bool:
+    """自动 git add 版本相关文件并提交。"""
+    commit_msg = f"chore(v{version}): bump version"
+    files_to_add = [
+        "pyproject.toml",
+        "ssh_mcp/__init__.py",
+        "VERSION",
+        "README.md",
+        "docs/skills/ssh-mcp-dev/SKILL.md",
+        ".trae/skills/ssh-mcp-dev/SKILL.md",
+    ]
+
+    if dry_run:
+        print(f"[DRY-RUN] git add {' '.join(files_to_add)}")
+        print(f"[DRY-RUN] git commit -m '{commit_msg}'")
+        return True
+
+    # 检查工作区是否干净
+    status_result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if not status_result.stdout.strip():
+        print("[WARN] No changes to commit")
+        return True
+
+    # 添加文件
+    add_result = subprocess.run(
+        ["git", "add"] + files_to_add,
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if add_result.returncode != 0:
+        print(f"[ERROR] git add failed: {add_result.stderr.strip()}")
+        return False
+
+    # 提交
+    commit_result = subprocess.run(
+        ["git", "commit", "-m", commit_msg],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if commit_result.returncode != 0:
+        print(f"[ERROR] git commit failed: {commit_result.stderr.strip()}")
+        return False
+    print(f"[OK] git commit created: {commit_msg}")
+
+    # 推送到所有远程仓库
+    remotes_result = subprocess.run(
+        ["git", "remote"], cwd=ROOT, capture_output=True, text=True,
+    )
+    remotes = remotes_result.stdout.strip().splitlines()
+    if not remotes:
+        print("[WARN] No git remotes configured, commit created locally only")
+        return True
+
+    all_ok = True
+    for remote in remotes:
+        push_result = subprocess.run(
+            ["git", "push", remote, "HEAD"],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        if push_result.returncode == 0:
+            print(f"[OK] Commit pushed to {remote}")
+        else:
+            print(f"[ERROR] Push to {remote} failed: {push_result.stderr.strip()}")
+            all_ok = False
+
+    return all_ok
+
+
 def create_git_tag(version: str, dry_run: bool = False) -> bool:
     """创建 annotated git tag 并推送到所有远程仓库。"""
     tag_name = f"v{version}"
@@ -176,13 +245,17 @@ def sync_version(version: str, dry_run: bool = False) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sync version across all project files and optionally create git tag.",
-        epilog="Example: python sync_version.py 1.6.3 --tag",
+        description="Sync version across all project files and auto commit/tag.",
+        epilog="Example: python sync_version.py 1.6.3 (use --no-commit/--no-tag to skip)",
     )
     parser.add_argument("version", help="Version number in x.y.z format")
     parser.add_argument(
-        "--tag", action="store_true",
-        help="Create an annotated git tag and push to all remotes",
+        "--no-commit", action="store_true",
+        help="Skip git commit creation (default: auto-commit and push)",
+    )
+    parser.add_argument(
+        "--no-tag", action="store_true",
+        help="Skip git tag creation (default: auto-create and push tag)",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -210,8 +283,19 @@ def main():
         else:
             print(f"[WARN] Docs sync script not found: {docs_script}")
 
+    # 自动提交版本变更（如果启用）
+    if not args.no_commit:
+        if args.dry_run:
+            print("\n[DRY-RUN] Would create git commit ...")
+            git_commit_version(version, dry_run=True)
+        else:
+            print("\nCreating git commit ...")
+            if not git_commit_version(version, dry_run=False):
+                print("[WARN] Git commit failed")
+                sys.exit(1)
+
     # 创建并推送 git tag
-    if args.tag:
+    if not args.no_tag:
         print("\nCreating git tag ...")
         if not create_git_tag(version, dry_run=args.dry_run):
             print("[WARN] Git tag creation/push failed")
