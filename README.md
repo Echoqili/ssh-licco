@@ -700,6 +700,7 @@ pytest --cov=ssh_mcp --cov-report=term-missing
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v1.6.4 | 2026-06-28 | 🛡️ 扩展安全策略黑名单：新增 `rm -rf /任意路径/*` 和 `rm -rf /任意路径` 模式拦截，防止递归删除任意绝对路径下的文件 |
 | v1.6.3 | 2026-06-28 | 🐛 修复 `ssh_docker` 的 `images` action 因 f-string 转义导致 Docker Go template 占位符 `{{.Repository}}` 变成 `{.Repository}` 无法解析的问题；改用 editable 模式安装确保源码修改即时生效 |
 | v1.6.2 | 2026-06-28 | 🐛 4 个 Bug 修复：`ConfigManager` 支持 `server_config_path` 构造参数；`ssh_connect` 自动将字符串端口（如 `"22"`）强转为 int；`ConfigManager.add_host` 增加 IP+端口重复校验；修复 `SessionManager.get_session` 在断连 session 时引用未初始化 `self._logger` 导致 `AttributeError` 的问题（测试用例 410 passed） |
 | v1.6.1 | 2026-06-28 | 🛠️ 安全策略 `relaxed` 改为黑名单机制，修复后台任务"假失败"误报，新增 `sudo_password`/`use_sudo` 支持，新增 `remote_copy` 服务器间直传，新增任务元数据便于跨 session 追踪 |

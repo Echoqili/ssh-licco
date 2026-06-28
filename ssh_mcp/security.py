@@ -155,6 +155,8 @@ class CommandValidator:
         r'rm\s+-rf\s+/(?:\s|$)',          # rm -rf /  (根目录递归删除)
         r'rm\s+-rf\s+/\*',                # rm -rf /*
         r'rm\s+-fr\s+/(?:\s|$)',          # rm -fr /
+        r'rm\s+-rf\s+/[^\s]+/\*',         # rm -rf /任意路径/*  (递归删除任意子目录内容)
+        r'rm\s+-rf\s+/[^\s]+',             # rm -rf /任意路径    (递归删除任意绝对路径)
         r'mkfs\.\w+',                      # mkfs.*  (格式化文件系统)
         r'dd\s+if=/dev/(?:zero|random|urandom)\s+of=/dev/sd',  # dd 覆写磁盘
         r'dd\s+if=/dev/(?:zero|random|urandom)\s+of=/dev/nvm', # dd 覆写 NVMe
