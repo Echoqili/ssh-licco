@@ -521,14 +521,33 @@ class SSHMCPServer:
 
             command = args.get("command")
             if command:
-                session = await self.session_manager.get_session(session_info.session_id)
-                result = await session.execute_command(command)
-                output += "\n\n--- Command Output ---\n"
-                output += f"Exit Code: {result['exit_code']}\n"
-                if result["stdout"]:
-                    output += f"\n{result['stdout']}"
-                if result["stderr"]:
-                    output += f"\n--- STDERR ---\n{result['stderr']}"
+                from .security import SecurityError, command_validator
+                try:
+                    command_validator.validate_command(command)
+                except SecurityError as e:
+                    self._logger.warning(f"Command blocked by security policy in ssh_connect: {command}")
+                    if self._audit:
+                        self._audit.log_command(
+                            username=config.username, host=config.host,
+                            command=command, return_code=-1,
+                            stdout_length=0, stderr_length=0,
+                            session_id=session_info.session_id,
+                            execution_time_ms=0
+                        )
+                    output += (
+                        f"\n\n--- Command Blocked by Security Policy ---\n"
+                        f"Command: `{command}`\n"
+                        f"Reason: {str(e)}\n"
+                    )
+                else:
+                    session = await self.session_manager.get_session(session_info.session_id)
+                    result = await session.execute_command(command)
+                    output += "\n\n--- Command Output ---\n"
+                    output += f"Exit Code: {result['exit_code']}\n"
+                    if result["stdout"]:
+                        output += f"\n{result['stdout']}"
+                    if result["stderr"]:
+                        output += f"\n--- STDERR ---\n{result['stderr']}"
 
             return [TextContent(type="text", text=output)]
         except Exception as e:
