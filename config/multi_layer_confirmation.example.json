@@ -1,0 +1,104 @@
+{
+  "_comment": "SSH MCP 多层安全确认配置文件",
+  "_usage": "通过 SSH_MULTI_LAYER_CONFIRMATION_FILE 环境变量指定路径加载",
+  "_version": "1.0.0",
+
+  "enabled": true,
+  "_enabled_help": "是否启用多层安全确认机制",
+
+  "mode": "strict",
+  "_mode_help": "确认模式: strict(严格) | balanced(平衡) | relaxed(宽松)",
+
+  "confirmation_layers": {
+    "critical": 3,
+    "_critical_help": "严重风险操作需要的确认次数",
+    
+    "high": 2,
+    "_high_help": "高风险操作需要的确认次数",
+    
+    "medium": 1,
+    "_medium_help": "中等风险操作需要的确认次数",
+    
+    "low": 0,
+    "_low_help": "低风险操作需要的确认次数",
+    
+    "safe": 0,
+    "_safe_help": "安全操作需要的确认次数"
+  },
+
+  "risk_patterns": {
+    "_comment": "自定义风险命令模式（可选，会叠加到内置模式之上）",
+    "critical": [
+      "_comment": "严重风险命令模式"
+    ],
+    "high": [
+      "_comment": "高风险命令模式"
+    ],
+    "medium": [
+      "_comment": "中等风险命令模式"
+    ],
+    "low": [
+      "_comment": "低风险命令模式"
+    ]
+  },
+
+  "confirmation_messages": {
+    "_comment": "自定义确认消息（可选）",
+    "critical": {
+      "title": "🚨 严重危险操作警告",
+      "description": "可能导致系统完全损坏或数据永久丢失",
+      "reminder": "此操作不可逆！请确保您完全理解其后果。"
+    },
+    "high": {
+      "title": "⚠️  高风险操作警告",
+      "description": "可能影响系统运行或导致重要数据丢失",
+      "reminder": "此操作可能影响系统稳定性，请谨慎操作。"
+    },
+    "medium": {
+      "title": "⚡ 中等风险操作提醒",
+      "description": "可能影响系统配置或部分功能",
+      "reminder": "此操作可能影响系统配置，建议先备份。"
+    },
+    "low": {
+      "title": "📌 低风险操作提示",
+      "description": "轻微影响，但仍需注意",
+      "reminder": "此操作影响较小，但建议仔细检查参数。"
+    }
+  },
+
+  "security_integration": {
+    "_comment": "与现有安全机制的集成设置",
+    "combine_with_whitelist": true,
+    "_combine_with_whitelist_help": "是否与命令白名单机制结合使用",
+
+    "respect_security_level": true,
+    "_respect_security_level_help": "是否尊重全局安全级别设置",
+
+    "relaxed_mode_behavior": "warning_only",
+    "_relaxed_mode_behavior_help": "宽松模式下的行为: block(阻止) | warning_only(仅警告) | allow(允许)"
+  },
+
+  "logging": {
+    "_comment": "日志记录设置",
+    "log_confirmation_attempts": true,
+    "_log_confirmation_attempts_help": "是否记录确认尝试",
+
+    "log_successful_confirmations": true,
+    "_log_successful_confirmations_help": "是否记录成功的确认",
+
+    "log_blocked_commands": true,
+    "_log_blocked_commands_help": "是否记录被阻止的命令",
+
+    "detailed_risk_assessment": true,
+    "_detailed_risk_assessment_help": "是否记录详细的风险评估信息"
+  },
+
+  "timeout_settings": {
+    "_comment": "超时设置（未来扩展）",
+    "confirmation_timeout": 300,
+    "_confirmation_timeout_help": "确认超时时间（秒），0 表示不超时",
+
+    "layer_timeout": 120,
+    "_layer_timeout_help": "每个确认层级的超时时间（秒）"
+  }
+}

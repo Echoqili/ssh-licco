@@ -17,6 +17,15 @@ class SecurityLevel(Enum):
     RELAXED = "relaxed"      # 宽松模式 - 开发/测试
 
 
+class RiskLevel(Enum):
+    """风险级别枚举"""
+    SAFE = "safe"           # 安全 - 无风险
+    LOW = "low"             # 低风险 - 轻微影响
+    MEDIUM = "medium"       # 中风险 - 需要注意
+    HIGH = "high"           # 高风险 - 需要确认
+    CRITICAL = "critical"   # 严重风险 - 需要多次确认
+
+
 class SecurityError(Exception):
     """安全异常类"""
     pass
@@ -176,6 +185,65 @@ class CommandValidator:
     # 危险关键字
     DANGEROUS_KEYWORDS = ['passwd', 'shadow', '/etc/shadow', '/root/.ssh']
 
+    # 多层安全确认配置
+    MULTI_LAYER_CONFIRMATION_ENABLED = True  # 是否启用多层确认
+    CONFIRMATION_LAYERS = {
+        RiskLevel.CRITICAL: 3,  # 严重风险需要3次确认
+        RiskLevel.HIGH: 2,      # 高风险需要2次确认
+        RiskLevel.MEDIUM: 1,    # 中风险需要1次确认
+        RiskLevel.LOW: 0,       # 低风险不需要确认
+        RiskLevel.SAFE: 0,      # 安全不需要确认
+    }
+
+    # 危险命令分类和风险评估
+    DANGEROUS_COMMAND_PATTERNS = {
+        # 删除操作 - 最高风险
+        RiskLevel.CRITICAL: [
+            r'rm\s+-rf\s+/',          # rm -rf / (根目录删除)
+            r'rm\s+-rf\s+/\*',        # rm -rf /*
+            r'rm\s+-fr\s+/',          # rm -fr /
+            r'rm\s+-rf\s+/[^/]+/\*',  # rm -rf /path/*
+            r'rm\s+-rf\s+/[^/]+$',    # rm -rf /path
+            r'shred\s+-.*\s+/',       # shred 安全删除
+        ],
+        # 系统操作 - 高风险
+        RiskLevel.HIGH: [
+            r'reboot',                # 重启系统
+            r'shutdown',              # 关机系统
+            r'poweroff',              # 强制关机
+            r'init\s+0',              # 关机
+            r'rm\s+-rf\s+',           # 任何 rm -rf 操作
+            r'rm\s+-fr\s+',           # 任何 rm -fr 操作
+        ],
+        # 文件系统操作 - 中高风险
+        RiskLevel.MEDIUM: [
+            r'mkfs\.\w+',             # 格式化文件系统
+            r'fdisk',                 # 磁盘分区
+            r'parted',                # 磁盘分区工具
+            r'dd\s+if=/dev/',         # dd 操作磁盘设备
+            r'mount\s+.*\s+/',        # 挂载到根目录
+            r'chmod\s+-R\s+777\s+/',  # 递归设置根目录权限
+            r'userdel',               # 删除用户
+            r'groupdel',              # 删除组
+        ],
+        # 网络和防火墙操作 - 中等风险
+        RiskLevel.LOW: [
+            r'iptables',              # 防火墙规则
+            r'firewalld',             # 防火墙管理
+            r'ufw',                   # Ubuntu防火墙
+            r'route\s+del',           # 删除路由
+        ],
+    }
+
+    # 风险描述和警告消息
+    RISK_DESCRIPTIONS = {
+        RiskLevel.CRITICAL: "🔴 严重风险 - 可能导致系统完全损坏或数据永久丢失",
+        RiskLevel.HIGH: "🟠 高风险 - 可能影响系统运行或导致重要数据丢失",
+        RiskLevel.MEDIUM: "🟡 中等风险 - 可能影响系统配置或部分功能",
+        RiskLevel.LOW: "🟢 低风险 - 轻微影响，但仍需注意",
+        RiskLevel.SAFE: "✅ 安全 - 无明显风险",
+    }
+
     def __init__(
         self,
         security_level: SecurityLevel = SecurityLevel.BALANCED,
@@ -204,6 +272,14 @@ class CommandValidator:
 
         self.allowed_commands = self._build_allowed_commands()
         self._compile_patterns()
+        
+        # 编译风险评估正则表达式
+        self._risk_pattern_regex = {}
+        for risk_level, patterns in self.DANGEROUS_COMMAND_PATTERNS.items():
+            self._risk_pattern_regex[risk_level] = [
+                re.compile(pattern) for pattern in patterns
+            ]
+        
         # relaxed 模式黑名单正则（独立编译，与白名单模式的 dangerous_regex 区分）
         self._relaxed_blocked_regex = [
             re.compile(pattern) for pattern in self.RELAXED_BLOCKED_PATTERNS
@@ -360,6 +436,138 @@ class CommandValidator:
                 if len(similar) >= 5:
                     break
         return similar
+
+    def assess_risk_level(self, command: str) -> RiskLevel:
+        """
+        评估命令的风险级别
+        
+        Args:
+            command: 要评估的命令
+            
+        Returns:
+            RiskLevel: 风险级别
+        """
+        # 按风险级别从高到低检查
+        for risk_level in [RiskLevel.CRITICAL, RiskLevel.HIGH, RiskLevel.MEDIUM, RiskLevel.LOW]:
+            if risk_level in self._risk_pattern_regex:
+                for regex in self._risk_pattern_regex[risk_level]:
+                    if regex.search(command):
+                        return risk_level
+        
+        return RiskLevel.SAFE
+
+    def get_required_confirmations(self, command: str) -> int:
+        """
+        获取命令需要的确认次数
+        
+        Args:
+            command: 要检查的命令
+            
+        Returns:
+            int: 需要的确认次数
+        """
+        if not self.MULTI_LAYER_CONFIRMATION_ENABLED:
+            return 0
+        
+        risk_level = self.assess_risk_level(command)
+        return self.CONFIRMATION_LAYERS.get(risk_level, 0)
+
+    def get_risk_description(self, command: str) -> tuple[RiskLevel, str]:
+        """
+        获取命令的风险描述
+        
+        Args:
+            command: 要检查的命令
+            
+        Returns:
+            tuple[RiskLevel, str]: 风险级别和描述信息
+        """
+        risk_level = self.assess_risk_level(command)
+        description = self.RISK_DESCRIPTIONS.get(risk_level, "未知风险")
+        return risk_level, description
+
+    def generate_warning_message(self, command: str, layer: int = 1) -> str:
+        """
+        生成多层确认的警告消息
+        
+        Args:
+            command: 要执行的命令
+            layer: 当前确认层级（从1开始）
+            
+        Returns:
+            str: 警告消息
+        """
+        risk_level, risk_description = self.get_risk_description(command)
+        required_confirmations = self.get_required_confirmations(command)
+        
+        warning_header = {
+            RiskLevel.CRITICAL: "🚨 严重危险操作警告",
+            RiskLevel.HIGH: "⚠️  高风险操作警告", 
+            RiskLevel.MEDIUM: "⚡ 中等风险操作提醒",
+            RiskLevel.LOW: "📌 低风险操作提示",
+            RiskLevel.SAFE: "✅ 安全操作确认",
+        }
+        
+        message = f"""
+{'=' * 60}
+{warning_header.get(risk_level, '操作确认')}
+{'=' * 60}
+
+{risk_description}
+
+📋 将要执行的命令：
+   {command}
+
+🔐 安全确认流程：
+   当前层级：{layer}/{required_confirmations}
+   剩余确认：{required_confirmations - layer}
+
+{'⚠️  重要提醒：' if risk_level in [RiskLevel.CRITICAL, RiskLevel.HIGH] else '💡 提示：'}
+   {'此操作不可逆！请确保您完全理解其后果。' if risk_level == RiskLevel.CRITICAL else 
+    '此操作可能影响系统稳定性，请谨慎操作。' if risk_level == RiskLevel.HIGH else
+    '此操作可能影响系统配置，建议先备份。' if risk_level == RiskLevel.MEDIUM else
+    '此操作影响较小，但建议仔细检查参数。'}
+
+🛑 如需终止操作，请不设置 confirm_dangerous 参数
+✅ 如确认执行，请设置 confirm_dangerous=true 并重试
+
+{'=' * 60}
+"""
+        return message
+
+    def check_multi_layer_confirmation(self, command: str, confirm_dangerous: bool = False, current_layer: int = 1) -> tuple[bool, str]:
+        """
+        检查多层安全确认
+        
+        Args:
+            command: 要执行的命令
+            confirm_dangerous: 是否已确认危险操作
+            current_layer: 当前确认层级
+            
+        Returns:
+            tuple[bool, str]: (是否允许执行, 消息)
+        """
+        if not self.MULTI_LAYER_CONFIRMATION_ENABLED:
+            return True, ""
+        
+        required_confirmations = self.get_required_confirmations(command)
+        
+        if required_confirmations == 0:
+            return True, ""
+        
+        # 如果没有确认，返回警告消息
+        if not confirm_dangerous:
+            warning_message = self.generate_warning_message(command, current_layer)
+            return False, warning_message
+        
+        # 检查确认层级是否足够
+        if current_layer < required_confirmations:
+            next_warning = self.generate_warning_message(command, current_layer + 1)
+            return False, f"需要更多确认层级才能执行此操作。\n\n{next_warning}"
+        
+        # 所有确认层级都已完成
+        risk_level, risk_description = self.get_risk_description(command)
+        return True, f"✅ 已完成 {required_confirmations} 层安全确认，允许执行 {risk_level.value} 风险操作。"
 
 
 class PathValidator:

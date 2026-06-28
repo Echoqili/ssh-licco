@@ -4,6 +4,53 @@
 
 ---
 
+## [1.9.0] - 2026-06-28
+
+### 新增功能
+
+- **多层安全确认机制**：危险操作默认被阻止，需要多层确认才能执行
+  - 自动风险评估：SAFE/LOW/MEDIUM/HIGH/CRITICAL 五个风险级别
+  - 分层确认：严重风险3次确认，高风险2次确认，中等风险1次确认
+  - 默认阻止：危险命令（如 `rm -rf`）必须先确认，否则被阻止
+  - 详细警告消息：显示风险级别、确认进度和操作提示
+
+### 安全增强
+
+- **风险评估系统**：新增 `RiskLevel` 枚举，自动识别命令风险
+- **多层确认流程**：`confirm_dangerous=true` + `confirmation_layer` 参数组合确认
+- **配置文件支持**：`config/multi_layer_confirmation.example.json` 提供详细配置选项
+- **日志记录**：记录所有确认尝试、成功确认和被阻止的命令
+
+### 修改的文件
+
+- `ssh_mcp/security.py` - 添加 `RiskLevel` 枚举和多层确认方法
+- `ssh_mcp/server.py` - 集成多层确认逻辑
+- `config/multi_layer_confirmation.example.json` - 新增配置文件
+
+### 使用示例
+
+```python
+# 危险命令默认被阻止
+ssh_execute(command="rm -rf /tmp/test_cache/*")
+# 输出：❌ 操作已被安全机制阻止 + 详细警告信息
+
+# 确认执行（需要3次确认）
+ssh_execute(command="rm -rf /tmp/test_cache/*", confirm_dangerous=True, confirmation_layer=1)
+ssh_execute(command="rm -rf /tmp/test_cache/*", confirm_dangerous=True, confirmation_layer=2)
+ssh_execute(command="rm -rf /tmp/test_cache/*", confirm_dangerous=True, confirmation_layer=3)
+```
+
+---
+
+## [1.8.0] - 2026-06-28
+
+### 修复
+
+- 修复 session 管理和重连机制问题
+- 升级版本到 v1.8.0 并移除废弃的 CLI 测试文件
+
+---
+
 ## [1.7.0] - 2026-06-28
 
 ### 重大变更

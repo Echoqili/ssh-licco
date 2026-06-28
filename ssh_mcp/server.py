@@ -545,9 +545,40 @@ class SSHMCPServer:
             if not session_id:
                 return [TextContent(type="text", text="Auto-connect failed.")]
 
-        # Security validation
+        # Security validation with multi-layer confirmation
         # confirm_dangerous=True 时跳过安全检查（用户明确确认执行危险操作）
         confirm_dangerous = args.get("confirm_dangerous", False)
+        confirmation_layer = args.get("confirmation_layer", 1)  # 当前确认层级
+        
+        # 多层安全确认检查
+        can_execute, confirmation_message = command_validator.check_multi_layer_confirmation(
+            command, confirm_dangerous, confirmation_layer
+        )
+        
+        if not can_execute:
+            self._logger.warning(f"Command blocked by multi-layer confirmation: {command}")
+            return [TextContent(
+                type="text",
+                text=f"""❌ 操作已被安全机制阻止
+
+{confirmation_message}
+
+🛡️ 当前安全级别: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}
+🔍 风险评估: {command_validator.assess_risk_level(command).value}
+📊 需要确认层级: {command_validator.get_required_confirmations(command)}
+
+💡 提示：
+- 对于危险操作，系统要求多层确认以确保安全
+- 请仔细阅读警告信息，确保完全理解操作后果
+- 如确需执行，请设置 confirm_dangerous=true 并增加 confirmation_layer 参数
+"""
+            )]
+        
+        # 如果通过了多层确认，记录日志
+        if confirmation_message:
+            self._logger.info(f"Multi-layer confirmation passed: {confirmation_message}")
+        
+        # 原有的安全检查逻辑（保持兼容性）
         if not confirm_dangerous:
             try:
                 command_validator.validate_command(command)
@@ -555,9 +586,9 @@ class SSHMCPServer:
                 self._logger.error(f"Command blocked: {e}")
                 return [TextContent(
                     type="text",
-                    text=f"""Command blocked by security policy
+                    text=f"""❌ 命令已被安全机制阻止
 
-Blocked command: `{command}`
+Command: {command}
 Reason: {str(e)}
 
 Solutions:
@@ -568,7 +599,9 @@ Solutions:
 Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
                 )]
         else:
-            self._logger.warning(f"Dangerous command bypassed (confirm_dangerous=True): {command}")
+            # 风险评估和日志记录
+            risk_level, risk_desc = command_validator.get_risk_description(command)
+            self._logger.warning(f"Dangerous command execution approved: {command} | Risk: {risk_level.value} - {risk_desc}")
 
         # Auto-detect background if not specified
         if background is None:
