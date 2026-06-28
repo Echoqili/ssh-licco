@@ -224,7 +224,12 @@ class SSHMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect. If omitted, auto-connects via env vars."},
+                            "session_id": {"type": "string", "description": "Session ID from ssh_connect. If omitted, connects via name/host/env vars."},
+                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
+                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
+                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
+                            "username": {"type": "string", "description": "SSH username (used with host)."},
+                            "password": {"type": "string", "description": "SSH password (used with host)."},
                             "command": {"type": "string", "description": "Shell command to execute on the remote server (required)."},
                             "timeout": {"type": "integer", "description": "Command timeout in seconds. Default 120s. For long tasks (docker pull, pg_basebackup), set higher or use background=true.", "default": 120},
                             "background": {"type": "boolean", "description": "Run in background for long-running tasks. Auto-detected if not specified."},
@@ -255,7 +260,12 @@ class SSHMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
+                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
+                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
+                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
+                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
+                            "username": {"type": "string", "description": "SSH username (used with host)."},
+                            "password": {"type": "string", "description": "SSH password (used with host)."},
                             "direction": {"type": "string", "enum": ["upload", "download", "list", "write", "append", "delete", "mkdir", "stat", "remote_copy"], "description": "Action: upload, download, list, write (content->remote file), append, delete, mkdir, stat, remote_copy (server-to-server direct transfer)."},
                             "local_path": {"type": "string", "description": "Local file path. Required for upload/download."},
                             "remote_path": {"type": "string", "description": "Remote file/directory path. Required for all directions. For remote_copy, this is the source path on the connected server."},
@@ -293,7 +303,12 @@ class SSHMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
+                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
+                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
+                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
+                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
+                            "username": {"type": "string", "description": "SSH username (used with host)."},
+                            "password": {"type": "string", "description": "SSH password (used with host)."},
                             "action": {"type": "string", "enum": ["ps", "images", "build", "logs"], "description": "Docker action: ps=list containers, images=list images, build=build an image, logs=view container logs."},
                             "image_name": {"type": "string", "description": "Docker image name. Required for build, optional filter for images."},
                             "container_name": {"type": "string", "description": "Container name or ID. Required for logs."},
@@ -323,8 +338,13 @@ class SSHMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
-                            "action": {"type": "string", "enum": ["create", "send", "capture", "list", "kill"], "description": "create=new detached session, send=send command/keys to a session, capture=read current screen content, list=list sessions, kill=kill a session."},
+                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
+                            "host_name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
+                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/host_name, can override hosts.json entry."},
+                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
+                            "username": {"type": "string", "description": "SSH username (used with host)."},
+                            "password": {"type": "string", "description": "SSH password (used with host)."},
+                            "action": {"type": "string", "enum": ["create", "send", "capture", "list", "kill"], "description": "create=new detached session, send=send keys/command to a session, capture=read current screen content, list=list sessions, kill=kill a session."},
                             "name": {"type": "string", "description": "Session name. Required for create/send/capture/kill. Only letters, digits, _, ., - allowed."},
                             "command": {"type": "string", "description": "Command to run initially (create) or to send (send)."},
                             "session_type": {"type": "string", "enum": ["screen", "tmux"], "default": "screen", "description": "Use screen or tmux backend."},
@@ -339,7 +359,12 @@ class SSHMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID (required)."},
+                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
+                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
+                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
+                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
+                            "username": {"type": "string", "description": "SSH username (used with host)."},
+                            "password": {"type": "string", "description": "SSH password (used with host)."},
                             "action": {"type": "string", "enum": ["start", "stop", "status", "list", "tunnel_open", "tunnel_close", "tunnel_list"], "description": "Process/tunnel action."},
                             "command": {"type": "string", "description": "Command to run (start)."},
                             "pid": {"type": "string", "description": "Process ID (stop/status)."},
@@ -523,27 +548,71 @@ class SSHMCPServer:
                      f"4. SSH service is running"
             )]
 
+    async def _ensure_session(self, args: dict) -> str | None:
+        """Ensure an active session exists.
+
+        Priority:
+        1. session_id if provided
+        2. name/host_name from hosts.json
+        3. host directly (with optional port/username/password)
+        4. env-config fallback (auto-connect)
+
+        Returns session_id on success, None on failure.
+        """
+        session_id = args.get("session_id")
+        if session_id:
+            return session_id
+
+        # Use named host from hosts.json (name or host_name)
+        host_name = args.get("name") or args.get("host_name")
+        if host_name:
+            connect_args = {"name": host_name}
+            for key in ("port", "username", "password", "timeout"):
+                if key in args:
+                    connect_args[key] = args[key]
+            connect_result = await self._handle_connect(connect_args)
+            text = connect_result[0].text
+            for line in text.split('\n'):
+                if 'Session ID:' in line:
+                    return line.split('Session ID:')[1].strip()
+            return None
+
+        # Use explicit host
+        if args.get("host"):
+            connect_args = {}
+            for key in ("host", "port", "username", "password", "timeout"):
+                if key in args:
+                    connect_args[key] = args[key]
+            connect_result = await self._handle_connect(connect_args)
+            text = connect_result[0].text
+            for line in text.split('\n'):
+                if 'Session ID:' in line:
+                    return line.split('Session ID:')[1].strip()
+            return None
+
+        # Fallback to env config auto-connect
+        if self._env_config and self._env_config.get("host"):
+            connect_result = await self._handle_connect({})
+            text = connect_result[0].text
+            for line in text.split('\n'):
+                if 'Session ID:' in line:
+                    return line.split('Session ID:')[1].strip()
+            return None
+
+        return None
+
     async def _handle_execute(self, args: dict) -> list[TextContent]:
         """合并 ssh_execute + ssh_background_task + ssh_fallback_execute + ssh_execute_wait + ssh_task_status"""
         from .security import SecurityError, command_validator, path_validator
 
         command = args["command"]
-        session_id = args.get("session_id")
         timeout = args.get("timeout", 120)  # 默认 120s，避免 docker pull/pg_basebackup 等长任务超时
         background = args.get("background", None)
 
-        # Auto-connect if no session_id (fallback mode)
+        # Resolve session via session_id / name / host / env fallback
+        session_id = await self._ensure_session(args)
         if not session_id:
-            if not self._env_config or not self._env_config.get("host"):
-                return [TextContent(type="text", text="No session_id provided and no SSH_HOST env var configured.")]
-            connect_result = await self._handle_connect({})
-            text = connect_result[0].text
-            for line in text.split('\n'):
-                if 'Session ID:' in line:
-                    session_id = line.split('Session ID:')[1].strip()
-                    break
-            if not session_id:
-                return [TextContent(type="text", text="Auto-connect failed.")]
+            return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
 
         # Security validation with multi-layer confirmation
         # confirm_dangerous=True 时跳过安全检查（用户明确确认执行危险操作）
@@ -1199,9 +1268,12 @@ Use ssh_execute to check: cat {log_file}
         return [TextContent(type="text", text=output)]
 
     async def _handle_file_transfer(self, args: dict) -> list[TextContent]:
-        session = await self.session_manager.get_session(args["session_id"])
+        session_id = await self._ensure_session(args)
+        if not session_id:
+            return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
+        session = await self.session_manager.get_session(session_id)
         if not session:
-            return [TextContent(type="text", text=f"Session not found: {args['session_id']}")]
+            return [TextContent(type="text", text=f"Session not found: {session_id}")]
 
         direction = args.get("direction", "upload")
         local_path = args.get("local_path", "")
@@ -1380,11 +1452,11 @@ Use ssh_execute to check: cat {log_file}
         """合并 ssh_docker_build + ssh_docker_status + ssh_container_logs"""
         import re
 
-        session_id = args.get("session_id")
         action = args.get("action", "ps")
 
+        session_id = await self._ensure_session(args)
         if not session_id:
-            return [TextContent(type="text", text="Error: session_id is required")]
+            return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
 
         if action == "ps":
             result = await self.session_manager.execute_command(
@@ -1493,9 +1565,12 @@ Use ssh_execute to check: cat {log_file}
         import re
         from .security import SecurityError, command_validator
 
-        session_id = args.get("session_id")
         action = args.get("action")
         name = args.get("name", "")
+
+        session_id = await self._ensure_session(args)
+        if not session_id:
+            return [TextContent(type="text", text="No session_id, host_name, host, or SSH_HOST env var configured.")]
         command = args.get("command", "")
         session_type = args.get("session_type", "screen")
         lines = args.get("lines", 50)
@@ -1604,11 +1679,11 @@ Use ssh_execute to check: cat {log_file}
         import re
         from .security import SecurityError, command_validator, path_validator
 
-        session_id = args.get("session_id")
         action = args.get("action")
 
+        session_id = await self._ensure_session(args)
         if not session_id:
-            return [TextContent(type="text", text="Error: session_id is required")]
+            return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
 
         if action == "start":
             command = args.get("command", "")
