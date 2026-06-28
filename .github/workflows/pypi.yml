@@ -52,6 +52,7 @@ jobs:
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git checkout master
+        git pull origin master --rebase
         git commit -m "chore: update documentation for release"
         git push origin master
 
