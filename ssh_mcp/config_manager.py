@@ -40,9 +40,11 @@ class ConfigManager:
     # 服务器配置
     DEFAULT_HOSTS_CONFIG_PATH = Path(__file__).parent.parent / "config" / "hosts.json"
 
-    def __init__(self, config_path: Path | None = None):
+    def __init__(self, config_path: Path | None = None, server_config_path: Path | None = None):
         # 优先使用项目根目录配置
         self.config_path = config_path or self.PROJECT_CONFIG_PATH
+        if server_config_path is not None:
+            self.DEFAULT_HOSTS_CONFIG_PATH = server_config_path
 
     def load(self) -> SSHConfig | None:
         # 优先加载项目根目录配置
@@ -118,12 +120,15 @@ class ConfigManager:
             except Exception:
                 pass
 
-        # Check if host already exists
+        # Check if host already exists (by name or host:port)
         for i, h in enumerate(data.get("ssh_hosts", [])):
             if h.get("name") == host.name:
                 # Update existing
                 data["ssh_hosts"][i] = host.model_dump()
                 break
+            if h.get("host") == host.host and h.get("port") == host.port:
+                # Duplicate IP — skip silently
+                return
         else:
             # Add new
             data.setdefault("ssh_hosts", []).append(host.model_dump())

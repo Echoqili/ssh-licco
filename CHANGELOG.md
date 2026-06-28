@@ -4,6 +4,21 @@
 
 ---
 
+## [1.6.2] - 2026-06-28
+
+### 修复
+
+- `ConfigManager.__init__` 新增 `server_config_path` 参数，支持测试和外部调用方按需指定服务器配置文件路径
+- `ssh_connect` 接受 MCP 客户端以字符串 `"22"` 形式传入的端口，自动强转为 `int`（MCP 协议下 JSON schema 声明 integer，但部分客户端仍按字符串发送）
+- `ConfigManager.add_host` 增加 IP+端口重复校验，已存在相同 host:port 的主机时静默跳过，避免误添加
+- 修复 `SessionManager.get_session` 在遇到已断开 session 时引用未初始化的 `self._logger` 导致 `AttributeError` 的问题（断连时自动清理逻辑此前会崩溃，掩盖真实的连接断开信号）
+
+### 变更
+
+- 测试用例 409 → 410（新增 `test_get_session_disconnected_auto_clean` 覆盖断连自动清理场景）
+
+---
+
 ## [1.5.0] - 2026-06-20
 
 ### 新增

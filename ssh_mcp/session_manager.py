@@ -15,6 +15,7 @@ from paramiko import AutoAddPolicy, HostKeys, RejectPolicy, SSHClient, WarningPo
 from .connection_config import ConnectionConfig
 from .exceptions import ConnectionException
 from .executor import get_executor
+from .logging_config import get_logger
 
 
 class SessionState(Enum):
@@ -543,6 +544,7 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
         self._timeout_cleanup_task: asyncio.Task | None = None
+        self._logger = get_logger("SessionManager")
         self._start_timeout_cleanup()
         self._session_counter = 0  # 用于统计和限制
 

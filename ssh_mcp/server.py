@@ -391,12 +391,20 @@ class SSHMCPServer:
         host_config = None
         save_config = args.get("save_config", False)
 
+        # Coerce port to int (MCP clients may send it as string "22")
+        port = args.get("port", 22)
+        if isinstance(port, str):
+            try:
+                port = int(port)
+            except (ValueError, TypeError):
+                port = 22
+
         # Priority 1: user-provided host
         if args.get("host"):
             host_config = SSHHost(
                 name="user-server",
                 host=args["host"],
-                port=args.get("port", 22),
+                port=port,
                 username=args.get("username", "root"),
                 password=args.get("password", ""),
                 timeout=args.get("timeout", 30),

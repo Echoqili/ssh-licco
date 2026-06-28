@@ -75,10 +75,10 @@ ssh_connect({
 
 1. 复制示例配置：
    ```bash
-   cp config/ssh-hosts.example.json config/ssh-hosts.json
+   cp config/hosts.json.example config/hosts.json
    ```
 
-2. 编辑 `config/ssh-hosts.json`，填入你的服务器信息
+2. 编辑 `config/hosts.json`，填入你的服务器信息
 
 3. 使用配置：
    ```python

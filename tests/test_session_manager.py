@@ -146,6 +146,18 @@ class TestSessionManager:
         assert result is mock_session
 
     @pytest.mark.asyncio
+    async def test_get_session_disconnected_auto_clean(self):
+        """get_session 遇到已断开的 session 时，应自动清理并返回 None（不抛 AttributeError）"""
+        manager = SessionManager()
+        mock_session = MagicMock()
+        mock_session.is_connected = False
+        mock_session.config.host = "1.2.3.4"
+        manager._sessions["dead-id"] = mock_session
+        result = await manager.get_session("dead-id")
+        assert result is None
+        assert "dead-id" not in manager._sessions
+
+    @pytest.mark.asyncio
     async def test_get_session_not_found(self):
         manager = SessionManager()
         result = await manager.get_session("nonexistent")
