@@ -4,6 +4,103 @@
 
 ---
 
+## [2.1.0] - 2026-06-29
+
+### 新增功能
+
+- **生产加固四项**（SSH 跳板模式落地边界）：补齐跳板机单点风险，所有加固点默认关闭，向后兼容，生产显式开启。
+  - **加固点 1 · 运行账号最小权限**：`ssh_mcp/runtime_guard.py`，进程入口校验非 root / 非 sudo / 账号白名单。开关 `SSH_RUNTIME_GUARD=true`。
+  - **加固点 2 · 密钥不落地磁盘**：`ssh_mcp/secret_provider.py`（env/command/http 三 provider）+ `KeyManager.load_key_from_str()` 内存加载 + `save_key()` 拒绝落盘。私钥用 `bytearray` 持有，`release()` 清零，`atexit` 统一清理。开关 `SSH_SECRET_PROVIDER_ENABLED=true`。
+  - **加固点 3 · 双层命令拦截**：第一层 `server._normalize_command_for_remote_guard()` 禁止 `| ; & $() \` > <` 元字符；第二层远端 ForceCommand 脚本 `config/remote-guard/ssh_licco_force_command.sh` + 白名单 + sshd_config 片段。开关 `SSH_REMOTE_GUARD=true`。
+  - **加固点 4 · 高危操作审批**：`ssh_mcp/approval.py`（ApprovalGate，JSON 持久化，一次性消费，命令严格匹配，TTL 失效）。开关 `SSH_APPROVAL_GATE=true`。
+
+- **新增 3 个 MCP 工具**（高危审批工作流）：
+  - `ssh_request_approval` — AI 提交高危命令审批申请，返回 approval_id
+  - `ssh_approve_command` — 运维人员人工审批（approved/rejected）
+  - `ssh_list_approvals` — 列出待审批队列或全部历史
+
+- **`ssh_execute` 新增参数**：
+  - `approval_id` — 高危命令审批 ID（加固点 4）
+  - `remote_guard` — 标记远端已启用 ForceCommand 二次校验（加固点 3）
+
+- **`ConnectionConfig` 新增字段**：`private_key_material`（内存私钥 PEM，密钥不落地模式）
+
+- **远端加固配置**：`config/remote-guard/` 提供 ForceCommand 脚本、白名单模板、sshd_config 示例
+
+### 安全增强
+
+- **运行身份守护**：拒绝 root / sudo 上下文启动 ssh-licco 进程，强制专用普通账号
+- **私钥内存化**：连接建立后立即清零内存中的私钥字节，跳板机磁盘无私钥文件
+- **命令逃逸防护**：远端 ForceCommand + 跳板机侧元字符规范化，关闭 shell 元字符绕过白名单的路径
+- **高危命令人工闸门**：CRITICAL/HIGH 风险命令（rm -rf / reboot / iptables 等）必须经人工审批，AI 不能直接下发
+
+### 新增文件
+
+- `ssh_mcp/runtime_guard.py` — 运行账号最小权限守护
+- `ssh_mcp/secret_provider.py` — 密钥不落地凭证管理（SecretManager + 3 种 provider）
+- `ssh_mcp/approval.py` — 高危操作审批门禁（ApprovalGate）
+- `config/remote-guard/ssh_licco_force_command.sh` — 远端 ForceCommand 二次校验脚本
+- `config/remote-guard/allowed_commands.txt` — 远端命令白名单模板
+- `config/remote-guard/sshd_config.example` — sshd Match User 配置示例
+- `docs/SECURITY_HARDENING.md` — 完整加固方案文档
+- `test_hardening.py` — 四项加固端到端验收测试（4/4 通过）
+
+### 修改的文件
+
+- `ssh_mcp/server.py` — `run_server()` 接入 runtime_guard；`_handle_connect` 接入 SecretManager；`_handle_execute` 接入 remote_guard 规范化 + approval gate；新增 3 个审批工具的 handler 与 schema；`ssh_execute` schema 新增 `approval_id` / `remote_guard` 参数
+- `ssh_mcp/key_manager.py` — 新增 `load_key_from_str()`；`save_key()` 在密钥不落地模式拒绝落盘
+- `ssh_mcp/connection_config.py` — 新增 `private_key_material` 字段，认证校验兼容内存私钥
+- `ssh_mcp/clients/paramiko_client.py` — 新增 `_load_pkey_from_memory()` 辅助函数；连接时优先用内存私钥 `pkey=`
+- `ssh_mcp/session_manager.py` — 连接时优先用内存私钥
+- `README.md` — 工具表 9→12 个，新增生产加固四项章节
+- `VERSION` / `pyproject.toml` / `ssh_mcp/__init__.py` / `package.json` — 版本号 2.0.2 → 2.1.0
+
+### 使用示例
+
+```bash
+# 生产跳板机 systemd unit
+[Service]
+User=sshlicco
+Environment=SSH_RUNTIME_GUARD=true
+Environment=SSH_SECRET_PROVIDER_ENABLED=true
+Environment=SSH_SECRET_PROVIDER=command
+Environment=SSH_SECRET_COMMAND_PROD_DB=vault kv get -field=private_key secret/ssh/prod-db
+Environment=SSH_REMOTE_GUARD=true
+Environment=SSH_APPROVAL_GATE=true
+Environment=SSH_AUDIT_LOG_PATH=/var/log/ssh-licco/audit.log
+```
+
+```python
+# AI 高危命令审批工作流
+# 1. 直接执行被拦截
+ssh_execute(command="rm -rf /tmp/old_logs")  # → 审批门禁拦截
+
+# 2. 申请审批
+ssh_request_approval(command="rm -rf /tmp/old_logs", reason="清理过期日志")
+# → approval_id=eb4c261d...
+
+# 3. 运维人员审批
+ssh_approve_command(approval_id="eb4c261d...", decision="approved", reviewer="ops-admin")
+
+# 4. 携带 approval_id 执行（一次性消费）
+ssh_execute(command="rm -rf /tmp/old_logs", approval_id="eb4c261d...")
+```
+
+### 验收
+
+- `python test_hardening.py` 四项加固端到端测试全部通过（4/4）
+- 既有测试套件 327 passed / 10 failed（10 个失败为既有环境问题，非本次引入，已 git stash 对比验证）
+
+---
+
+## [2.0.2] - 2026-06-23
+
+### 修复
+
+- 版本号同步与发布流程稳定化
+
+---
+
 ## [1.9.0] - 2026-06-28
 
 ### 新增功能

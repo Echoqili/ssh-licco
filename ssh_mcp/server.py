@@ -5,6 +5,7 @@ import logging
 import os
 import shlex
 import threading
+import time
 import uuid
 from importlib.metadata import version as get_version
 from pathlib import Path
@@ -239,7 +240,9 @@ class SSHMCPServer:
                             "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True.", "default": 60},
                             "session_type": {"type": "string", "enum": ["nohup", "screen", "tmux"], "default": "nohup", "description": "Background session type: nohup (default), screen, or tmux (persistent)."},
                             "use_sudo": {"type": "boolean", "default": False, "description": "Wrap command with sudo -S using sudo_password from ssh_connect. Password is passed via stdin, not visible in process list."},
-                            "confirm_dangerous": {"type": "boolean", "default": False, "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform."}
+                            "confirm_dangerous": {"type": "boolean", "default": False, "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform."},
+                            "approval_id": {"type": "string", "description": "加固点 4：高危操作审批 ID。当 SSH_APPROVAL_GATE=true 且命令被判定为高危时，必须先调用 ssh_request_approval 获取 approval_id，再带上此参数执行。否则高危命令会被拒绝。"},
+                            "remote_guard": {"type": "boolean", "default": False, "description": "加固点 3：标记远端已启用 ForceCommand 二次校验。启用后 ssh-licco 侧会强制把命令规范为单一 argv 形式下发，禁止 shell 元字符，确保远端 bash -c 解析时无法绕过白名单。"}
                         },
                         "required": ["command"]
                     }
@@ -379,6 +382,42 @@ class SSHMCPServer:
                         "required": ["session_id", "action"]
                     }
                 ),
+                Tool(
+                    name="ssh_request_approval",
+                    description="加固点 4：高危操作审批 — AI 提交审批申请。当 SSH_APPROVAL_GATE=true 时，rm -rf、reboot、iptables 等高危命令必须先调用本工具申请审批，获得 approval_id 后再调用 ssh_execute 携带 approval_id 执行。AI 不能直接下发高危命令。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "需要审批的高危命令（必须与后续 ssh_execute 的 command 完全一致，否则校验失败）。"},
+                            "reason": {"type": "string", "description": "申请理由：为什么需要执行此高危命令、预期影响、回滚方案。"}
+                        },
+                        "required": ["command", "reason"]
+                    }
+                ),
+                Tool(
+                    name="ssh_approve_command",
+                    description="加固点 4：高危操作审批 — 运维人员人工审批 AI 提交的申请。返回审批结果。审批通过后 AI 可用获得的 approval_id 执行命令（一次性，用后即焚）。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "approval_id": {"type": "string", "description": "待审批的 approval_id（由 ssh_request_approval 返回）。"},
+                            "decision": {"type": "string", "enum": ["approved", "rejected"], "description": "审批决定：approved=同意执行，rejected=拒绝。"},
+                            "reviewer": {"type": "string", "description": "审批人标识（运维人员姓名/账号），用于审计。"},
+                            "comment": {"type": "string", "description": "审批意见（可选）。"}
+                        },
+                        "required": ["approval_id", "decision", "reviewer"]
+                    }
+                ),
+                Tool(
+                    name="ssh_list_approvals",
+                    description="加固点 4：高危操作审批 — 列出审批记录。运维人员查看待处理队列或历史记录。action=pending 只看待审批，action=all 查看全部（最近 100 条）。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "action": {"type": "string", "enum": ["pending", "all"], "default": "pending", "description": "pending=仅待审批，all=全部记录（最近 100 条）。"}
+                        }
+                    }
+                ),
             ]
 
         @self.server.call_tool()
@@ -406,6 +445,12 @@ class SSHMCPServer:
                     return await self._handle_session(arguments)
                 elif name == "ssh_process":
                     return await self._handle_process(arguments)
+                elif name == "ssh_request_approval":
+                    return await self._handle_request_approval(arguments)
+                elif name == "ssh_approve_command":
+                    return await self._handle_approve_command(arguments)
+                elif name == "ssh_list_approvals":
+                    return await self._handle_list_approvals(arguments)
                 else:
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
             except Exception as e:
@@ -485,25 +530,55 @@ class SSHMCPServer:
             or None
         )
 
-        config = ConnectionConfig(
-            host=host_config.host,
-            port=host_config.port,
-            username=host_config.username,
-            password=host_config.password,
-            auth_method="password" if host_config.password else "private_key",
-            timeout=host_config.timeout,
-            keepalive_interval=getattr(host_config, 'keepalive_interval', 30),
-            session_timeout=getattr(host_config, 'session_timeout', 7200),
-            client_type=client_type,
-            strict_host_key_checking=args.get("strict_host_key_checking", True),
-            known_hosts_path=args.get("known_hosts_path"),
-            accept_new_host_key=args.get("accept_new_host_key", True),
-            private_key_path=Path(args["private_key_path"]) if args.get("private_key_path") else None,
-            passphrase=args.get("passphrase"),
-            sudo_password=sudo_password,
-        )
+        # 加固点 2：密钥不落地磁盘
+        # 当 SecretManager 启用时，自动从 KMS 临时拉取私钥到内存，不读磁盘路径。
+        private_key_material: str | None = None
+        private_key_path = Path(args["private_key_path"]) if args.get("private_key_path") else None
+        from .secret_provider import SecretManager, SecretProviderError
+        sm = SecretManager.instance()
+        secret_material = None
+        if sm.enabled and not private_key_path and not host_config.password:
+            # 仅在「无磁盘私钥 + 无密码」时尝试拉取（避免覆盖显式凭证）
+            secret_name = args.get("name") or getattr(host_config, "name", None) or host_config.host
+            try:
+                secret_material = sm.fetch(secret_name)
+                private_key_material = secret_material.as_str()
+                self._logger.info(
+                    f"[secret] 私钥从 KMS 临时拉取到内存（source={secret_material.source}, name={secret_name}），"
+                    f"不落盘"
+                )
+            except SecretProviderError as e:
+                self._logger.error(f"[secret] 拉取私钥失败: {e}")
+                return [TextContent(type="text", text=f"密钥不落地模式：拉取私钥失败：{e}")]
+        elif sm.enabled and private_key_path:
+            return [TextContent(
+                type="text",
+                text=(
+                    "密钥不落地模式已启用（SSH_SECRET_PROVIDER_ENABLED=true），"
+                    "禁止使用 private_key_path 指定磁盘私钥文件。请通过 SecretManager 配置凭证。"
+                ),
+            )]
 
         try:
+            config = ConnectionConfig(
+                host=host_config.host,
+                port=host_config.port,
+                username=host_config.username,
+                password=host_config.password,
+                auth_method="password" if host_config.password else "private_key",
+                timeout=host_config.timeout,
+                keepalive_interval=getattr(host_config, 'keepalive_interval', 30),
+                session_timeout=getattr(host_config, 'session_timeout', 7200),
+                client_type=client_type,
+                strict_host_key_checking=args.get("strict_host_key_checking", True),
+                known_hosts_path=args.get("known_hosts_path"),
+                accept_new_host_key=args.get("accept_new_host_key", True),
+                private_key_path=private_key_path,
+                private_key_material=private_key_material,
+                passphrase=args.get("passphrase"),
+                sudo_password=sudo_password,
+            )
+
             session_info = await self.session_manager.create_session(config)
 
             if self._audit:
@@ -566,6 +641,11 @@ class SSHMCPServer:
                      f"3. Network connectivity\n"
                      f"4. SSH service is running"
             )]
+        finally:
+            # 加固点 2：连接建立/失败后立即清零内存中的私钥
+            # （paramiko 已在内部把私钥加载为 PKey 对象，原始 PEM 字符串不再需要）
+            if secret_material is not None:
+                sm.release(secret_material)
 
     async def _ensure_session(self, args: dict) -> str | None:
         """Ensure an active session exists.
@@ -620,13 +700,229 @@ class SSHMCPServer:
 
         return None
 
+    async def _handle_request_approval(self, args: dict) -> list[TextContent]:
+        """加固点 4：AI 提交高危命令审批申请。"""
+        from .approval import ApprovalGate
+        from .security import command_validator, RiskLevel
+
+        command = args.get("command", "").strip()
+        reason = args.get("reason", "").strip()
+        if not command:
+            return [TextContent(type="text", text="command 不能为空")]
+        if not reason:
+            return [TextContent(type="text", text="reason 不能为空：必须说明为什么需要执行此高危命令")]
+
+        risk = command_validator.assess_risk_level(command)
+        gate = ApprovalGate.instance()
+        rec = gate.request(command, reason)
+
+        return [TextContent(
+            type="text",
+            text=(
+                f"✅ 审批申请已提交\n\n"
+                f"approval_id: {rec.approval_id}\n"
+                f"command: {command}\n"
+                f"risk: {risk.value}\n"
+                f"reason: {reason}\n"
+                f"requested_at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rec.requested_at))}\n"
+                f"TTL: {rec.ttl}s（超时自动失效）\n\n"
+                f"⏳ 等待运维人员审批。\n"
+                f"   审批人请调用 ssh_approve_command(approval_id='{rec.approval_id}', decision='approved'|'rejected', reviewer='...')\n"
+                f"   审批通过后，调用 ssh_execute(command=..., approval_id='{rec.approval_id}') 执行。\n"
+                f"   注意：approval_id 一次性消费，命令必须与此申请完全一致。"
+            )
+        )]
+
+    async def _handle_approve_command(self, args: dict) -> list[TextContent]:
+        """加固点 4：运维人员审批 AI 提交的申请。"""
+        from .approval import ApprovalGate
+
+        approval_id = args.get("approval_id", "").strip()
+        decision = args.get("decision", "").strip()
+        reviewer = args.get("reviewer", "").strip()
+        comment = args.get("comment", "")
+
+        if not approval_id:
+            return [TextContent(type="text", text="approval_id 不能为空")]
+        if decision not in ("approved", "rejected"):
+            return [TextContent(type="text", text="decision 必须是 approved 或 rejected")]
+        if not reviewer:
+            return [TextContent(type="text", text="reviewer 不能为空：必须填写审批人标识")]
+
+        gate = ApprovalGate.instance()
+        try:
+            rec = gate.approve(approval_id, reviewer, decision)
+        except (KeyError, ValueError) as e:
+            return [TextContent(type="text", text=f"审批失败：{e}")]
+
+        status_emoji = "✅" if rec.status == "approved" else "❌"
+        return [TextContent(
+            type="text",
+            text=(
+                f"{status_emoji} 审批已完成\n\n"
+                f"approval_id: {rec.approval_id}\n"
+                f"command: {rec.command}\n"
+                f"status: {rec.status}\n"
+                f"reviewer: {rec.reviewer}\n"
+                f"decided_at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rec.decided_at))}\n"
+            ) + (f"comment: {comment}\n" if comment else "")
+            + (
+                f"\n👉 审批通过，AI 可执行：ssh_execute(command='{rec.command}', approval_id='{rec.approval_id}')"
+                if rec.status == "approved"
+                else f"\n🚫 审批拒绝，AI 不可执行此命令。"
+            )
+        )]
+
+    async def _handle_list_approvals(self, args: dict) -> list[TextContent]:
+        """加固点 4：列出审批记录。"""
+        from .approval import ApprovalGate
+
+        action = args.get("action", "pending")
+        gate = ApprovalGate.instance()
+        recs = gate.list_pending() if action == "pending" else gate.list_all()
+
+        if not recs:
+            return [TextContent(type="text", text=f"没有{('待审批' if action == 'pending' else '')}记录。")]
+
+        lines = [f"📋 审批记录（{action}，共 {len(recs)} 条）\n" + "=" * 60]
+        for r in recs:
+            lines.append(
+                f"\napproval_id: {r.approval_id}\n"
+                f"  command: {r.command}\n"
+                f"  status: {r.status}\n"
+                f"  risk_reason: {r.reason}\n"
+                f"  requested_at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.requested_at))}\n"
+                + (f"  reviewer: {r.reviewer}\n  decided_at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.decided_at))}\n" if r.decided_at else "")
+                + (f"  consumed_at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(r.consumed_at))}\n" if r.consumed_at else "")
+            )
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    def _normalize_command_for_remote_guard(self, command: str) -> tuple[str, str | None]:
+        """加固点 3：把命令规范为远端 ForceCommand 可安全解析的形式。
+
+        remote_guard 模式下，远端 sshd 的 ForceCommand 脚本会用 `bash -c "$SSH_ORIGINAL_COMMAND"`
+        执行。如果原始命令包含 shell 元字符（| ; & $() ` 等），bash -c 解析时会拆分出
+        多条命令或子 shell，绕过 ForceCommand 脚本的白名单校验（白名单只看第一个 token）。
+
+        因此本方法在跳板机侧（第一层）就把命令强制规范为「单一命令 + 参数」形式：
+          - 禁止管道 |、命令分隔 ;、后台 &、逻辑 && ||、命令替换 $() ``、重定向 > <、子 shell ()
+          - 允许普通参数（含路径、引号包裹的字符串参数）
+          - 返回 (规范化后的命令, 错误信息)；错误信息非 None 表示被拦截
+
+        这样远端 ForceCommand 解析出的「基础命令」就是真实要执行的那个，无法通过元字符
+        注入隐藏的第二条命令。
+        """
+        if not command or not command.strip():
+            return command, "命令为空"
+
+        # 远端 guard 模式下禁止的元字符/构造
+        forbidden = ['|', ';', '&', '&&', '||', '$(', ')', '`', '>', '<', '\n', '\r']
+        for token in forbidden:
+            if token in command:
+                return command, (
+                    f"命令包含禁止的 shell 元字符 '{token}'。"
+                    f"远端 guard 模式要求单一 argv，禁止管道/重定向/命令替换/子 shell。"
+                )
+
+        # 子 shell 圆括号（前面已拦 ')'，这里再拦开括号 '(' 作为保险）
+        if '(' in command:
+            return command, "命令包含禁止的子 shell 构造 '('"
+
+        # 命令长度校验
+        if len(command) > 4096:
+            return command, "命令过长（最大 4096 字符）"
+
+        # 通过 shlex 解析验证命令格式合法（不实际执行）
+        try:
+            parts = shlex.split(command)
+        except ValueError as e:
+            return command, f"命令格式无法解析：{e}"
+        if not parts:
+            return command, "命令解析后为空"
+
+        # 返回原命令（已通过元字符检查），远端 bash -c 会安全解析
+        return command, None
+
+    def _check_approval_gate(self, command: str, approval_id: str | None) -> str | None:
+        """加固点 4：高危操作审批门禁。
+
+        当 SSH_APPROVAL_GATE=true 时，高危命令（CRITICAL/HIGH 风险）必须携带有效
+        approval_id（由 ssh_request_approval 工具申请、人工 approve 后获得）才能执行。
+
+        返回 None 表示放行；返回字符串表示拒绝原因（作为 MCP 返回文本）。
+        """
+        if os.getenv("SSH_APPROVAL_GATE", "false").lower() != "true":
+            return None  # 审批门禁未启用
+
+        from .security import command_validator, RiskLevel
+        risk = command_validator.assess_risk_level(command)
+
+        # 仅 CRITICAL / HIGH 风险需要审批；MEDIUM/LOW/SAFE 直接放行
+        if risk not in (RiskLevel.CRITICAL, RiskLevel.HIGH):
+            return None
+
+        if not approval_id:
+            return (
+                f"❌ 高危操作审批门禁拦截\n\n"
+                f"Command: {command}\n"
+                f"Risk: {risk.value}\n\n"
+                f"此命令被判定为「{risk.value}」风险，启用了人工审批门禁（SSH_APPROVAL_GATE=true）。\n"
+                f"AI 不能直接下发此类高危运维命令，必须先申请审批：\n\n"
+                f"  1. 调用 ssh_request_approval 工具，提交 command 与 reason；\n"
+                f"  2. 等待人工审批通过，获得 approval_id；\n"
+                f"  3. 用 ssh_execute 携带 approval_id 重新执行。\n\n"
+                f"高危命令类别：rm -rf、reboot/shutdown、iptables/防火墙修改、mkfs、dd 覆盘等。"
+            )
+
+        # 校验 approval_id 有效性
+        from .approval import ApprovalGate
+        gate = ApprovalGate.instance()
+        ok, reason = gate.verify(approval_id, command)
+        if not ok:
+            return (
+                f"❌ 审批校验失败\n\n"
+                f"approval_id: {approval_id}\n"
+                f"Reason: {reason}\n\n"
+                f"请重新申请审批（ssh_request_approval）或确认 approval_id 是否匹配当前命令。"
+            )
+        return None
+
     async def _handle_execute(self, args: dict) -> list[TextContent]:
         """合并 ssh_execute + ssh_background_task + ssh_fallback_execute + ssh_execute_wait + ssh_task_status"""
         from .security import SecurityError, command_validator, path_validator
-
         command = args["command"]
         timeout = args.get("timeout", 120)  # 默认 120s，避免 docker pull/pg_basebackup 等长任务超时
         background = args.get("background", None)
+
+        # 加固点 3：双层命令拦截 — 第一层（跳板机侧）
+        # 当 remote_guard=True（或全局 SSH_REMOTE_GUARD=true）时，强制把命令规范为
+        # 单一 argv 形式，禁止 shell 元字符，防止远端 ForceCommand 的 bash -c 解析时
+        # 通过元字符注入绕过白名单。
+        remote_guard = args.get("remote_guard", False) or os.getenv("SSH_REMOTE_GUARD", "false").lower() == "true"
+        if remote_guard:
+            normalized, guard_err = self._normalize_command_for_remote_guard(command)
+            if guard_err:
+                self._logger.warning(f"Command blocked by remote_guard normalization: {command}")
+                return [TextContent(
+                    type="text",
+                    text=(
+                        f"❌ 命令被远端 guard 模式拦截（第一层）\n\n"
+                        f"Command: {command}\n"
+                        f"Reason: {guard_err}\n\n"
+                        f"远端已启用 ForceCommand 二次校验，命令必须为单一 argv 形式，\n"
+                        f"禁止 shell 元字符（| ; & $() ` > < && ||）、子 shell、管道。\n"
+                        f"如需复杂命令，请在跳板机本地拆分为多条简单命令分别执行。"
+                    )
+                )]
+            command = normalized
+
+        # 加固点 4：高危操作审批门禁
+        # 当 SSH_APPROVAL_GATE=true 且命令被判定为高危时，必须携带有效 approval_id 才能执行。
+        approval_id = args.get("approval_id")
+        approval_err = self._check_approval_gate(command, approval_id)
+        if approval_err:
+            self._logger.warning(f"Command blocked by approval gate: {command}")
+            return [TextContent(type="text", text=approval_err)]
 
         # Resolve session via session_id / name / host / env fallback
         session_id = await self._ensure_session(args)
@@ -1913,6 +2209,10 @@ def run_server():
     if not sys.stdin.isatty():
         print("Warning: Running in non-interactive mode (stdin is not a TTY)", file=sys.stderr)
         print("MCP server expects to be run as part of an MCP client", file=sys.stderr)
+    # 加固点 1：运行账号最小权限（生产跳板机强制）
+    # 仅当 SSH_RUNTIME_GUARD=true 时强制，否则仅打印警告。
+    from .runtime_guard import enforce_runtime_guard
+    enforce_runtime_guard()
     asyncio.run(main())
 
 

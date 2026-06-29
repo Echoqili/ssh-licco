@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/mcp-config",
+  "version": "1.0.0",
+  "description": "SSH LICCO 生产加固配置示例（v2.1.0 跳板机模式）",
+  "_help": "复制此文件并修改。所有加固点默认关闭，生产显式开启。详见 docs/SECURITY_HARDENING.md",
+
+  "mcpServers": {
+    "ssh-licco": {
+      "command": "ssh-licco",
+      "env": {
+        "SSH_SECURITY_LEVEL": "strict",
+        "SSH_BASE_DIR": "/home",
+        "SSH_STRICT_HOST_KEY_CHECKING": "true",
+        "SSH_RATE_LIMIT": "30",
+        "SSH_RATE_LIMIT_WINDOW": "60",
+        "SSH_AUDIT_LOG_PATH": "/var/log/ssh-licco/audit.log",
+
+        "SSH_RUNTIME_GUARD": "true",
+        "SSH_RUNTIME_ALLOWED_USERS": "sshlicco",
+        "SSH_RUNTIME_BLOCK_SUDO": "true",
+
+        "SSH_SECRET_PROVIDER_ENABLED": "true",
+        "SSH_SECRET_PROVIDER": "command",
+        "SSH_SECRET_COMMAND_PROD_WEB1": "vault kv get -field=private_key secret/ssh/prod-web1",
+        "SSH_SECRET_COMMAND_PROD_DB": "vault kv get -field=private_key secret/ssh/prod-db",
+
+        "SSH_REMOTE_GUARD": "true",
+
+        "SSH_APPROVAL_GATE": "true",
+        "SSH_APPROVAL_STORE": "/var/lib/ssh-licco/approvals.json",
+        "SSH_APPROVAL_TTL": "3600"
+      }
+    }
+  }
+}

@@ -152,6 +152,11 @@ class TestSessionManager:
         mock_session = MagicMock()
         mock_session.is_connected = False
         mock_session.config.host = "1.2.3.4"
+        # 让重连计数已达上限，走"清理并返回 None"分支（避免 MagicMock 比较 '>=' 报错）
+        mock_session._reconnect_count = 99
+        mock_session._max_reconnects = 1
+        # disconnect 是协程，需用 AsyncMock
+        mock_session.disconnect = AsyncMock(return_value=None)
         manager._sessions["dead-id"] = mock_session
         result = await manager.get_session("dead-id")
         assert result is None

@@ -1,0 +1,35 @@
+# SSH-LICCO 远端 sshd_config 片段（加固点 3：双层命令拦截 — 第二层）
+#
+# 部署位置：远端被管主机 /etc/ssh/sshd_config（追加到文件末尾，或放入 /etc/ssh/sshd_config.d/）
+#
+# 作用：为 ssh-licco 跳板机专用账号强制启用 ForceCommand 二次校验，
+#       并关闭一切不必要的 SSH 转发能力，缩小攻击面。
+
+# ── 为 ssh-licco 跳板机专用账号配置 ForceCommand ──
+# 假设跳板机用 sshlicco 账号登录远端主机（每个被管主机都建一个专用账号）
+Match User sshlicco
+    # 强制所有命令经过本脚本二次校验，绕过 ssh-licco 侧白名单的命令在这里会被拦截
+    ForceCommand /usr/local/bin/ssh_licco_force_command.sh
+    # 关闭一切转发能力，防止 SSH 逃逸
+    AllowTcpForwarding no
+    X11Forwarding no
+    PermitTunnel no
+    PermitForwarding no
+    # 不允许交互式 shell（ForceCommand 已拦截，这里再保险一道）
+    AllowAgentForwarding no
+    # 限制会话时长，避免长连接被滥用
+    ClientAliveInterval 300
+    ClientAliveCountMax 2
+    # 只允许密钥认证
+    PasswordAuthentication no
+    PubkeyAuthentication yes
+    # 限定来源 IP（跳板机 IP），收紧到单点
+    AllowUsers sshlicco@10.0.0.5
+
+# ── 全局加固（可选，但推荐） ──
+# 限制登录失败次数
+MaxAuthTries 3
+# 登录超时
+LoginGraceTime 30
+# 禁用 root 直接登录
+PermitRootLogin no

@@ -121,6 +121,17 @@ sync_version.py.backup
 
 # 软著申请资料（仅本地保留，不推送到远程）
 软著申请资料/
+软著申请资料.zip
+
+# WorkBuddy workspace memory & config (private per-device)
+.workbuddy/
+.codebuddy/
+
+# Temp dev scripts
+_fix_install.py
+_test_server_start.py
+_test_server_stdio.py
+setup-quick.ps1
 
 # Deleted docs (cleanup v1.3.3)
 ANACONDA_GUIDE.md

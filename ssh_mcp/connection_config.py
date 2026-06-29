@@ -25,6 +25,10 @@ class ConnectionConfig(BaseModel):
     auth_method: AuthMethod | None = Field(default=None, description="Authentication method (auto-detected if not provided)")
     password: str | None = Field(default=None, description="SSH password (if using password auth)")
     private_key_path: Path | None = Field(default=None, description="Path to private key file")
+    private_key_material: str | None = Field(
+        default=None,
+        description="内存中的私钥 PEM（密钥不落地模式：由 SecretProvider 临时拉取，不写入磁盘）"
+    )
     passphrase: str | None = Field(default=None, description="Passphrase for private key")
     timeout: int = Field(default=30, description="Connection timeout in seconds")
     keepalive_interval: int = Field(default=30, description="Keepalive interval in seconds")
@@ -94,13 +98,13 @@ class ConnectionConfig(BaseModel):
         """验证认证配置"""
         # 检查密码是否有效（非空字符串）
         has_valid_password = bool(self.password and self.password.strip())
-        has_private_key = bool(self.private_key_path)
+        has_private_key = bool(self.private_key_path or self.private_key_material)
 
         # 如果明确指定 auth_method，使用指定的方法
         if self.auth_method == "private_key":
             if not has_private_key and not has_valid_password:
                 raise ValueError(
-                    "Private key authentication requires either private_key_path or password as fallback"
+                    "Private key authentication requires either private_key_path/private_key_material or password as fallback"
                 )
         elif self.auth_method == "password":
             if not has_valid_password:

@@ -1,9 +1,33 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# Windows 下 os.environ 可能包含超长变量（如 ACC_PRODUCT_CONFIG_V3 > 32767 字符），
+# 任何 patch.dict(os.environ, ...) 在退出恢复时都会逐个 os.environ[k]=v 触发
+# _putenv 的 32767 限制抛 ValueError，污染后续测试（Path.home() 失败等）。
+# 本 autouse fixture 在每个测试前把超长变量暂存移除，测试后恢复，隔离该环境问题。
+_WIN_ENV_LEN_LIMIT = 32000
+
+
+@pytest.fixture(autouse=True)
+def _strip_oversized_env_vars():
+    oversized = {}
+    for k in list(os.environ.keys()):
+        v = os.environ.get(k, "")
+        if len(v) > _WIN_ENV_LEN_LIMIT:
+            oversized[k] = v
+            del os.environ[k]
+    yield
+    for k, v in oversized.items():
+        try:
+            os.environ[k] = v
+        except Exception:
+            # 恢复失败也无所谓，进程退出后环境自然消失
+            pass
 
 
 @pytest.fixture

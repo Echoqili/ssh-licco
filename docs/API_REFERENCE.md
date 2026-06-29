@@ -1048,12 +1048,17 @@ key_pair = km.generate_ed25519_key(comment="user@host")
 # 生成 RSA 密钥
 key_pair = km.generate_rsa_key(key_size=4096, comment="user@host")
 
-# 保存密钥
+# 保存密钥（v2.1.0：密钥不落地模式启用时抛 PermissionError，拒绝落盘）
 km.save_key(key_pair, "/path/to/key", passphrase="optional")
 
-# 加载密钥
+# 加载密钥（从磁盘文件）
 key_pair = km.load_key("/path/to/key", passphrase="optional")
+
+# 从内存 PEM 字符串加载密钥（v2.1.0 新增，密钥不落地模式专用）
+key_pair = km.load_key_from_str("-----BEGIN OPENSSH PRIVATE KEY-----\n...", passphrase="optional")
 ```
+
+> **v2.1.0 加固点 2**：当 `SSH_SECRET_PROVIDER_ENABLED=true` 时，`save_key()` 会抛 `PermissionError` 拒绝落盘；私钥应通过 `SecretManager` 从 KMS 临时拉取到内存，用 `load_key_from_str()` 加载。
 
 ### SSHKeyPair
 

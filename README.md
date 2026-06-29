@@ -184,15 +184,29 @@ export SSH_EXTRA_ALLOWED_COMMANDS="git,pip,npm"
 
 - **[MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)** - 完整配置指南，包含 5 种使用场景示例
 - **[SECURITY_CONFIG_GUIDE.md](SECURITY_CONFIG_GUIDE.md)** - 安全配置详解
+- **[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)** - 生产加固四项方案（v2.1.0 新增）
+
+### 🏛️ 生产加固四项（v2.1.0 新增）
+
+SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
+
+| 加固点 | 开关 | 说明 |
+|--------|------|------|
+| 1. 运行账号最小权限 | `SSH_RUNTIME_GUARD=true` | 专用普通账号运行，拒绝 root/sudo 启动 |
+| 2. 密钥不落地磁盘 | `SSH_SECRET_PROVIDER_ENABLED=true` | 私钥从 KMS 临时拉取到内存，用完清零，不落盘 |
+| 3. 双层命令拦截 | `SSH_REMOTE_GUARD=true` + 远端 ForceCommand | 跳板机侧禁元字符 + 远端二次白名单校验 |
+| 4. 高危操作审批 | `SSH_APPROVAL_GATE=true` | rm/reboot/iptables 等高危命令需人工审批，AI 不能直接下发 |
+
+完整方案见 [docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)。
 
 ---
 
-## 🛠️ 可用工具（v2.0.2 扩充至 9 个）
+## 🛠️ 可用工具（v2.1.0 扩充至 12 个）
 
 | 工具 | 描述 | 核心能力 |
 |------|------|---------|
 | `ssh_connect` | 连接管理 | 自动读取环境变量/配置，支持密码+密钥认证，可保存配置，登录后自动执行命令 |
-| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式 |
+| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式；v2.1.0 新增 `approval_id`（高危审批）与 `remote_guard`（双层拦截）参数 |
 | `ssh_disconnect` | 会话管理 | 断开指定会话 OR 列出所有活跃会话 |
 | `ssh_file_transfer` | 文件传输 | 上传/下载/列表/写入/追加/删除/创建目录/查看元信息（8 种操作） |
 | `ssh_host` | 主机管理 | `action=list/add/remove` 增删查主机配置 |
@@ -200,6 +214,9 @@ export SSH_EXTRA_ALLOWED_COMMANDS="git,pip,npm"
 | `ssh_generate_key` | 密钥生成 | RSA / Ed25519 密钥对 |
 | `ssh_session` | screen/tmux 会话 | 持久化远程会话管理（create/send/capture/list/kill），SSH 断开后进程依然存活 |
 | `ssh_process` | 进程管理 | 启动/停止/查询远程进程，SSH 端口转发（tunnel_open/tunnel_close/tunnel_list） |
+| `ssh_request_approval` | 高危审批申请（v2.1.0 新增） | AI 提交高危命令审批申请，返回 approval_id 等待人工审批 |
+| `ssh_approve_command` | 高危审批决定（v2.1.0 新增） | 运维人员人工审批 AI 申请，approved/rejected |
+| `ssh_list_approvals` | 审批记录查询（v2.1.0 新增） | 列出待审批队列或全部历史记录 |
 
 ### 📖 详细文档
 

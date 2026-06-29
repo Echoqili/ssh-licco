@@ -19,6 +19,26 @@ from .interface import (
 )
 
 
+def _load_pkey_from_memory(pem: str, passphrase: str | None):
+    """从内存 PEM 字符串加载 paramiko PKey 对象。
+
+    依次尝试 Ed25519Key / ECDSAKey / RSAKey，兼容 OpenSSH 与传统 PEM 格式。
+    返回第一个成功解析的 PKey；全部失败返回 None。
+    """
+    import io
+    from paramiko import RSAKey, ECDSAKey, Ed25519Key
+
+    pw = passphrase.encode("utf-8") if passphrase else None
+    sio = io.StringIO(pem)
+    for cls in (Ed25519Key, ECDSAKey, RSAKey):
+        try:
+            sio.seek(0)
+            return cls.from_private_key(sio, password=pw)
+        except Exception:
+            continue
+    return None
+
+
 class ParamikoClient(SSHClientInterface):
     """基于 Paramiko 的 SSH 客户端实现
     
@@ -85,10 +105,22 @@ class ParamikoClient(SSHClientInterface):
 
             if self.config.auth_method == "password" and self.config.password:
                 connect_kwargs['password'] = self.config.password
-            elif self.config.auth_method == "private_key" and self.config.private_key_path:
-                connect_kwargs['key_filename'] = str(self.config.private_key_path)
-                if self.config.passphrase:
-                    connect_kwargs['passphrase'] = self.config.passphrase
+            elif self.config.auth_method == "private_key" and (self.config.private_key_path or self.config.private_key_material):
+                # 加固点 2：优先使用内存私钥（密钥不落地），其次磁盘路径
+                if self.config.private_key_material:
+                    pkey = _load_pkey_from_memory(self.config.private_key_material, self.config.passphrase)
+                    if pkey is not None:
+                        connect_kwargs['pkey'] = pkey
+                    else:
+                        # 内存私钥解析失败，回退到 password（若有），否则报错
+                        if self.config.password:
+                            connect_kwargs['password'] = self.config.password
+                        else:
+                            raise SSHException("内存私钥解析失败且无 password 兜底")
+                else:
+                    connect_kwargs['key_filename'] = str(self.config.private_key_path)
+                    if self.config.passphrase:
+                        connect_kwargs['passphrase'] = self.config.passphrase
             else:
                 if self.config.password:
                     connect_kwargs['password'] = self.config.password

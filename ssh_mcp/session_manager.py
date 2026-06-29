@@ -136,10 +136,21 @@ class SSHSession:
 
         if self.config.auth_method == "password" and self.config.password:
             connect_kwargs['password'] = self.config.password
-        elif self.config.auth_method == "private_key" and self.config.private_key_path:
-            connect_kwargs['key_filename'] = str(self.config.private_key_path)
-            if self.config.passphrase:
-                connect_kwargs['passphrase'] = self.config.passphrase
+        elif self.config.auth_method == "private_key" and (self.config.private_key_path or self.config.private_key_material):
+            # 加固点 2：优先使用内存私钥（密钥不落地），其次磁盘路径
+            if self.config.private_key_material:
+                from .clients.paramiko_client import _load_pkey_from_memory
+                pkey = _load_pkey_from_memory(self.config.private_key_material, self.config.passphrase)
+                if pkey is not None:
+                    connect_kwargs['pkey'] = pkey
+                elif self.config.password:
+                    connect_kwargs['password'] = self.config.password
+                else:
+                    raise SSHException("内存私钥解析失败且无 password 兜底")
+            else:
+                connect_kwargs['key_filename'] = str(self.config.private_key_path)
+                if self.config.passphrase:
+                    connect_kwargs['passphrase'] = self.config.passphrase
 
         self.client.connect(**connect_kwargs)  # type: ignore[arg-type]
 
