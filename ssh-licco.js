@@ -117,9 +117,9 @@ function autoInstall() {
 
 function getPythonBinary() {
     if (process.platform === 'win32') {
-        return path.join(VENV_DIR, 'Scripts', 'ssh-licco.exe');
+        return path.join(VENV_DIR, 'Scripts', 'python.exe');
     }
-    return path.join(VENV_DIR, 'bin', 'ssh-licco');
+    return path.join(VENV_DIR, 'bin', 'python');
 }
 
 const pythonBinary = getPythonBinary();
@@ -129,20 +129,20 @@ if (!fs.existsSync(pythonBinary)) {
         if (!autoInstall()) {
             process.exit(1);
         }
-        // 重新检查二进制文件是否存在
+        // 重新检查 Python 解释器是否存在
         if (!fs.existsSync(pythonBinary)) {
-            console.error('❌ Auto-install completed but binary still not found');
+            console.error('❌ Auto-install completed but Python interpreter still not found');
             process.exit(1);
         }
     } else {
-        console.error('Error: ssh-licco not installed in venv.');
+        console.error('Error: ssh-licco venv not found.');
         console.error('Please run: npm install -g ssh-licco');
         console.error('Or set SSH_LICCO_AUTO_INSTALL=true to enable auto-install');
         process.exit(1);
     }
 }
 
-const proc = spawn(pythonBinary, process.argv.slice(2), {
+const proc = spawn(pythonBinary, ['-m', 'ssh_mcp.server', ...process.argv.slice(2)], {
     stdio: 'inherit',
     env: process.env
 });
