@@ -67,14 +67,6 @@ def mock_sshsession():
         yield session, mock_cls
 
 
-@pytest.fixture
-def mock_connect_and_exec():
-    """Mock _connect_and_exec 函数 - exec 测试用"""
-    with patch("ssh_mcp.cli._connect_and_exec") as mock:
-        mock.return_value = {"exit_code": 0, "stdout": "mock output\n", "stderr": ""}
-        yield mock
-
-
 def create_mock_args(**kwargs) -> MagicMock:
     defaults = {
         "host": None,
