@@ -4,6 +4,15 @@
 
 ---
 
+## [2.1.1] - 2026-07-01
+
+### 维护
+
+- 代码风格统一：使用 `ruff format` 与 `ruff check --fix` 全量格式化，确保 lint 全部通过。
+- 版本号对齐：`pyproject.toml` / `ssh_mcp/__init__.py` / `package.json` / `package-lock.json` 统一升级到 2.1.1。
+
+---
+
 ## [2.1.0] - 2026-06-29
 
 ### 新增功能
