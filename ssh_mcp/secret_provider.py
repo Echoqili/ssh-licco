@@ -38,7 +38,6 @@ import subprocess
 import threading
 import urllib.request
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 
 class SecretProviderError(RuntimeError):
@@ -48,9 +47,10 @@ class SecretProviderError(RuntimeError):
 @dataclass
 class SecretMaterial:
     """拉取到的凭证材料。使用完应调用 wipe() 清零。"""
-    name: str            # 连接名 / 凭证标识
-    data: bytearray      # 私钥内容（bytearray 便于清零）
-    source: str          # 来源描述（env/command/http），便于审计
+
+    name: str  # 连接名 / 凭证标识
+    data: bytearray  # 私钥内容（bytearray 便于清零）
+    source: str  # 来源描述（env/command/http），便于审计
 
     def as_str(self) -> str:
         return self.data.decode("utf-8", errors="strict")
@@ -76,7 +76,9 @@ class EnvSecretProvider(SecretProvider):
     """从环境变量读取私钥。"""
 
     def fetch(self, name: str) -> SecretMaterial:
-        var = os.getenv(f"SSH_SECRET_ENV_KEY_{name.upper()}") or os.getenv(f"SSH_SECRET_ENV_KEY_{name}")
+        var = os.getenv(f"SSH_SECRET_ENV_KEY_{name.upper()}") or os.getenv(
+            f"SSH_SECRET_ENV_KEY_{name}"
+        )
         if not var:
             # 兼容：直接以 name 作为变量名
             var = os.getenv(name)
@@ -91,12 +93,18 @@ class CommandSecretProvider(SecretProvider):
     """执行外部命令拉取私钥。stdout 即私钥 PEM 内容。"""
 
     def fetch(self, name: str) -> SecretMaterial:
-        cmd = os.getenv(f"SSH_SECRET_COMMAND_{name.upper()}") or os.getenv(f"SSH_SECRET_COMMAND_{name}")
+        cmd = os.getenv(f"SSH_SECRET_COMMAND_{name.upper()}") or os.getenv(
+            f"SSH_SECRET_COMMAND_{name}"
+        )
         if not cmd:
             raise SecretProviderError(f"command provider: 未配置 SSH_SECRET_COMMAND_{name.upper()}")
         try:
             proc = subprocess.run(
-                cmd, shell=True, capture_output=True, timeout=30, check=True,
+                cmd,
+                shell=True,
+                capture_output=True,
+                timeout=30,
+                check=True,
                 text=False,  # 拿 bytes 自行管理清零
             )
         except subprocess.CalledProcessError as e:
@@ -116,7 +124,9 @@ class HttpSecretProvider(SecretProvider):
         self._timeout = float(os.getenv("SSH_SECRET_HTTP_TIMEOUT", "15"))
 
     def fetch(self, name: str) -> SecretMaterial:
-        url = os.getenv(f"SSH_SECRET_HTTP_URL_{name.upper()}") or os.getenv(f"SSH_SECRET_HTTP_URL_{name}")
+        url = os.getenv(f"SSH_SECRET_HTTP_URL_{name.upper()}") or os.getenv(
+            f"SSH_SECRET_HTTP_URL_{name}"
+        )
         if not url:
             raise SecretProviderError(f"http provider: 未配置 SSH_SECRET_HTTP_URL_{name.upper()}")
         req = urllib.request.Request(url)
@@ -151,13 +161,13 @@ class SecretManager:
                 sm.release(material)              # 用完立即清零
     """
 
-    _instance: Optional["SecretManager"] = None
+    _instance: SecretManager | None = None
     _lock = threading.Lock()
 
     def __init__(self):
         self.enabled = os.getenv("SSH_SECRET_PROVIDER_ENABLED", "false").lower() == "true"
         provider_kind = os.getenv("SSH_SECRET_PROVIDER", "env").lower()
-        self._provider: Optional[SecretProvider] = None
+        self._provider: SecretProvider | None = None
         if self.enabled:
             cls = _PROVIDERS.get(provider_kind)
             if cls is None:
@@ -172,7 +182,7 @@ class SecretManager:
         self._live_lock = threading.Lock()
 
     @classmethod
-    def instance(cls) -> "SecretManager":
+    def instance(cls) -> SecretManager:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()

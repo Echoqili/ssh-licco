@@ -43,29 +43,28 @@ import shlex
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
 class ApprovalRecord:
     approval_id: str
-    command: str            # 原始命令
-    command_norm: str       # shlex 规范化后的命令（用于比对）
-    reason: str             # 申请理由
-    status: str             # pending | approved | rejected | consumed | expired
-    requested_at: float     # 申请时间戳
-    decided_at: Optional[float] = None     # 审批决定时间
-    reviewer: Optional[str] = None          # 审批人
-    consumed_at: Optional[float] = None     # 消费（执行）时间
-    ttl: int = 3600         # 有效期（秒）
+    command: str  # 原始命令
+    command_norm: str  # shlex 规范化后的命令（用于比对）
+    reason: str  # 申请理由
+    status: str  # pending | approved | rejected | consumed | expired
+    requested_at: float  # 申请时间戳
+    decided_at: float | None = None  # 审批决定时间
+    reviewer: str | None = None  # 审批人
+    consumed_at: float | None = None  # 消费（执行）时间
+    ttl: int = 3600  # 有效期（秒）
 
 
 class ApprovalGate:
     """审批门禁单例。"""
 
-    _instance: Optional["ApprovalGate"] = None
+    _instance: ApprovalGate | None = None
     _lock = threading.Lock()
 
     def __init__(self):
@@ -81,7 +80,7 @@ class ApprovalGate:
         self._load()
 
     @classmethod
-    def instance(cls) -> "ApprovalGate":
+    def instance(cls) -> ApprovalGate:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
@@ -93,11 +92,9 @@ class ApprovalGate:
             self._records = {}
             return
         try:
-            with open(self._store_path, "r", encoding="utf-8") as f:
+            with open(self._store_path, encoding="utf-8") as f:
                 data = json.load(f)
-            self._records = {
-                k: ApprovalRecord(**v) for k, v in data.items()
-            }
+            self._records = {k: ApprovalRecord(**v) for k, v in data.items()}
         except Exception:
             self._records = {}
 
@@ -135,7 +132,9 @@ class ApprovalGate:
             self._save()
             return rec
 
-    def approve(self, approval_id: str, reviewer: str, decision: str = "approved") -> ApprovalRecord:
+    def approve(
+        self, approval_id: str, reviewer: str, decision: str = "approved"
+    ) -> ApprovalRecord:
         """运维人员审批。decision = approved | rejected。"""
         with self._file_lock:
             self._purge_expired_locked()

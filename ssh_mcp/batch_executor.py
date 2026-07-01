@@ -17,6 +17,7 @@ from .logging_config import get_logger
 
 class BatchResultStatus(Enum):
     """批量执行结果状态"""
+
     SUCCESS = "success"
     PARTIAL = "partial"
     FAILED = "failed"
@@ -25,6 +26,7 @@ class BatchResultStatus(Enum):
 @dataclass
 class HostResult:
     """单主机执行结果"""
+
     host: str
     port: int
     username: str
@@ -40,6 +42,7 @@ class HostResult:
 @dataclass
 class BatchExecutionResult:
     """批量执行结果"""
+
     batch_id: str
     status: BatchResultStatus
     total_hosts: int
@@ -53,7 +56,7 @@ class BatchExecutionResult:
 class BatchExecutor:
     """
     批量执行器 - 多主机并行命令执行
-    
+
     特性：
     - 多主机并行执行
     - 失败隔离，单主机异常不影响其他主机
@@ -68,7 +71,7 @@ class BatchExecutor:
         client_type: ClientType | None = None,
         pool_config: PoolConfig | None = None,
         max_workers: int = 10,
-        timeout: int = 60
+        timeout: int = 60,
     ):
         self._hosts = hosts
         self._client_type = client_type or ClientType.ASYNCSSH
@@ -86,20 +89,14 @@ class BatchExecutor:
 
         if key not in self._pools:
             pool = ConnectionPool(
-                config=host_config,
-                pool_config=self._pool_config,
-                client_type=self._client_type
+                config=host_config, pool_config=self._pool_config, client_type=self._client_type
             )
             pool.initialize()
             self._pools[key] = pool
 
         return self._pools[key]
 
-    def _execute_on_host(
-        self,
-        host_config: ConnectionConfig,
-        command: str
-    ) -> HostResult:
+    def _execute_on_host(self, host_config: ConnectionConfig, command: str) -> HostResult:
         """在单个主机上执行命令"""
         start_time = time.time()
 
@@ -107,7 +104,7 @@ class BatchExecutor:
             host=host_config.host,
             port=host_config.port,
             username=host_config.username,
-            success=False
+            success=False,
         )
 
         try:
@@ -131,17 +128,15 @@ class BatchExecutor:
         return result
 
     def execute(
-        self,
-        command: str,
-        progress_callback: Callable[[int, int], None] | None = None
+        self, command: str, progress_callback: Callable[[int, int], None] | None = None
     ) -> BatchExecutionResult:
         """
         批量执行命令
-        
+
         Args:
             command: 要执行的命令
             progress_callback: 进度回调 (completed, total)
-            
+
         Returns:
             BatchExecutionResult: 批量执行结果
         """
@@ -167,11 +162,7 @@ class BatchExecutor:
             max_workers=min(self._max_workers, len(self._hosts))
         ) as executor:
             future_to_host = {
-                executor.submit(
-                    self._execute_on_host,
-                    host_config,
-                    command
-                ): host_config
+                executor.submit(self._execute_on_host, host_config, command): host_config
                 for host_config in self._hosts
             }
 
@@ -199,12 +190,10 @@ class BatchExecutor:
                         username=host_config.username,
                         success=False,
                         error_message=f"Command timeout after {self._timeout}s",
-                        return_code=-1
+                        return_code=-1,
                     )
                     results.append(error_result)
-                    self._logger.error(
-                        f"Host {host_config.host} timeout"
-                    )
+                    self._logger.error(f"Host {host_config.host} timeout")
 
                 except Exception as e:
                     error_result = HostResult(
@@ -213,12 +202,10 @@ class BatchExecutor:
                         username=host_config.username,
                         success=False,
                         error_message=str(e),
-                        return_code=-1
+                        return_code=-1,
                     )
                     results.append(error_result)
-                    self._logger.error(
-                        f"Host {host_config.host} error: {str(e)}"
-                    )
+                    self._logger.error(f"Host {host_config.host} error: {str(e)}")
 
                 completed += 1
                 if progress_callback:
@@ -249,32 +236,25 @@ class BatchExecutor:
             success_count=success_count,
             failed_count=failed_count,
             results=results,
-            total_time_ms=total_time_ms
+            total_time_ms=total_time_ms,
         )
 
     async def execute_async(
-        self,
-        command: str,
-        progress_callback: Callable[[int, int], None] | None = None
+        self, command: str, progress_callback: Callable[[int, int], None] | None = None
     ) -> BatchExecutionResult:
         """
         异步批量执行命令
-        
+
         Args:
             command: 要执行的命令
             progress_callback: 进度回调 (completed, total)
-            
+
         Returns:
             BatchExecutionResult: 批量执行结果
         """
         loop = asyncio.get_event_loop()
 
-        return await loop.run_in_executor(
-            None,
-            self.execute,
-            command,
-            progress_callback
-        )
+        return await loop.run_in_executor(None, self.execute, command, progress_callback)
 
     def close(self) -> None:
         """关闭所有连接池"""
@@ -289,7 +269,7 @@ class BatchExecutor:
 class AsyncBatchExecutor:
     """
     异步批量执行器 - 使用asyncssh实现高性能并发
-    
+
     特性：
     - 原生异步支持
     - 高并发性能
@@ -301,7 +281,7 @@ class AsyncBatchExecutor:
         hosts: list[ConnectionConfig],
         client_type: ClientType | None = None,
         max_concurrent: int = 50,
-        timeout: int = 60
+        timeout: int = 60,
     ):
         self._hosts = hosts
         self._client_type = client_type or ClientType.ASYNCSSH
@@ -311,10 +291,7 @@ class AsyncBatchExecutor:
         self._logger = get_logger("AsyncBatchExecutor")
 
     async def _execute_single(
-        self,
-        host_config: ConnectionConfig,
-        command: str,
-        semaphore: asyncio.Semaphore
+        self, host_config: ConnectionConfig, command: str, semaphore: asyncio.Semaphore
     ) -> HostResult:
         """异步执行单个主机命令"""
         async with semaphore:
@@ -324,7 +301,7 @@ class AsyncBatchExecutor:
                 host=host_config.host,
                 port=host_config.port,
                 username=host_config.username,
-                success=False
+                success=False,
             )
 
             try:
@@ -337,15 +314,24 @@ class AsyncBatchExecutor:
                     password=host_config.password,
                     client_keys=(
                         [str(host_config.private_key_path)]
-                        if host_config.private_key_path else None
+                        if host_config.private_key_path
+                        else None
                     ),
                     passphrase=host_config.passphrase,
-                    timeout=self._timeout
+                    timeout=self._timeout,
                 ) as conn:
                     result_obj = await conn.run(command, timeout=self._timeout)
 
-                    result.stdout = result_obj.stdout.decode() if isinstance(result_obj.stdout, bytes) else (result_obj.stdout or "")
-                    result.stderr = result_obj.stderr.decode() if isinstance(result_obj.stderr, bytes) else (result_obj.stderr or "")
+                    result.stdout = (
+                        result_obj.stdout.decode()
+                        if isinstance(result_obj.stdout, bytes)
+                        else (result_obj.stdout or "")
+                    )
+                    result.stderr = (
+                        result_obj.stderr.decode()
+                        if isinstance(result_obj.stderr, bytes)
+                        else (result_obj.stderr or "")
+                    )
                     result.return_code = result_obj.exit_status or -1
                     result.success = result_obj.exit_status == 0
 
@@ -362,17 +348,15 @@ class AsyncBatchExecutor:
             return result
 
     async def execute(
-        self,
-        command: str,
-        progress_callback: Callable[[int, int], None] | None = None
+        self, command: str, progress_callback: Callable[[int, int], None] | None = None
     ) -> BatchExecutionResult:
         """
         异步批量执行命令
-        
+
         Args:
             command: 要执行的命令
             progress_callback: 进度回调 (completed, total)
-            
+
         Returns:
             BatchExecutionResult: 批量执行结果
         """
@@ -387,8 +371,7 @@ class AsyncBatchExecutor:
         semaphore = asyncio.Semaphore(self._max_concurrent)
 
         tasks = [
-            self._execute_single(host_config, command, semaphore)
-            for host_config in self._hosts
+            self._execute_single(host_config, command, semaphore) for host_config in self._hosts
         ]
 
         results: list[HostResult] = []
@@ -425,5 +408,5 @@ class AsyncBatchExecutor:
             success_count=success_count,
             failed_count=failed_count,
             results=results,
-            total_time_ms=total_time_ms
+            total_time_ms=total_time_ms,
         )

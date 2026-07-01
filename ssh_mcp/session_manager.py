@@ -69,7 +69,7 @@ class SSHSession:
         # 检查状态标志和实际连接状态
         if self._state != SessionState.CONNECTED or self.client is None:
             return False
-        
+
         try:
             transport = self.client.get_transport()
             if transport is None or not transport.is_active():
@@ -125,32 +125,37 @@ class SSHSession:
             self.client.set_missing_host_key_policy(WarningPolicy())
 
         connect_kwargs = {
-            'hostname': self.config.host,
-            'port': self.config.port,
-            'username': self.config.username,
-            'timeout': self.config.timeout,
-            'compress': self.config.compress,
-            'look_for_keys': self.config.look_for_keys,
-            'allow_agent': self.config.allow_agent,
+            "hostname": self.config.host,
+            "port": self.config.port,
+            "username": self.config.username,
+            "timeout": self.config.timeout,
+            "compress": self.config.compress,
+            "look_for_keys": self.config.look_for_keys,
+            "allow_agent": self.config.allow_agent,
         }
 
         if self.config.auth_method == "password" and self.config.password:
-            connect_kwargs['password'] = self.config.password
-        elif self.config.auth_method == "private_key" and (self.config.private_key_path or self.config.private_key_material):
+            connect_kwargs["password"] = self.config.password
+        elif self.config.auth_method == "private_key" and (
+            self.config.private_key_path or self.config.private_key_material
+        ):
             # 加固点 2：优先使用内存私钥（密钥不落地），其次磁盘路径
             if self.config.private_key_material:
                 from .clients.paramiko_client import _load_pkey_from_memory
-                pkey = _load_pkey_from_memory(self.config.private_key_material, self.config.passphrase)
+
+                pkey = _load_pkey_from_memory(
+                    self.config.private_key_material, self.config.passphrase
+                )
                 if pkey is not None:
-                    connect_kwargs['pkey'] = pkey
+                    connect_kwargs["pkey"] = pkey
                 elif self.config.password:
-                    connect_kwargs['password'] = self.config.password
+                    connect_kwargs["password"] = self.config.password
                 else:
                     raise SSHException("内存私钥解析失败且无 password 兜底")
             else:
-                connect_kwargs['key_filename'] = str(self.config.private_key_path)
+                connect_kwargs["key_filename"] = str(self.config.private_key_path)
                 if self.config.passphrase:
-                    connect_kwargs['passphrase'] = self.config.passphrase
+                    connect_kwargs["passphrase"] = self.config.passphrase
 
         self.client.connect(**connect_kwargs)  # type: ignore[arg-type]
 
@@ -179,7 +184,9 @@ class SSHSession:
                     else:
                         # Transport 不再活跃，标记为断开
                         self._state = SessionState.DISCONNECTED
-                        self._logger.warning(f"Keepalive failed: transport not active for session {self.session_id}")
+                        self._logger.warning(
+                            f"Keepalive failed: transport not active for session {self.session_id}"
+                        )
                         break
                 except Exception as e:
                     self._state = SessionState.DISCONNECTED
@@ -188,7 +195,14 @@ class SSHSession:
 
         self._keepalive_task = asyncio.create_task(keepalive_loop())
 
-    async def execute_command(self, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None, get_pty: bool = False) -> dict:
+    async def execute_command(
+        self,
+        command: str,
+        timeout: int = 30,
+        background: bool = False,
+        stdin_data: str | None = None,
+        get_pty: bool = False,
+    ) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
 
@@ -197,11 +211,16 @@ class SSHSession:
             self._last_activity = datetime.now()
             try:
                 result = await self._executor.submit(
-                    self._execute_command_sync, command, timeout, background, stdin_data, get_pty,
-                    timeout=timeout + 5
+                    self._execute_command_sync,
+                    command,
+                    timeout,
+                    background,
+                    stdin_data,
+                    get_pty,
+                    timeout=timeout + 5,
                 )
                 return result
-            except ConnectionError as e:
+            except ConnectionError:
                 # 连接错误，标记为断开状态
                 self._state = SessionState.DISCONNECTED
                 raise
@@ -215,7 +234,14 @@ class SSHSession:
                 if self.is_connected:
                     self._state = SessionState.CONNECTED
 
-    def _execute_command_sync(self, command: str, timeout: int, background: bool = False, stdin_data: str | None = None, get_pty: bool = False) -> dict:
+    def _execute_command_sync(
+        self,
+        command: str,
+        timeout: int,
+        background: bool = False,
+        stdin_data: str | None = None,
+        get_pty: bool = False,
+    ) -> dict:
         assert self.client is not None
 
         # get_pty=True 时分配伪终端，sudo -S 在 requiretty 配置下需要
@@ -247,23 +273,21 @@ class SSHSession:
                 "exit_code": 0,
                 "stdout": f"Command started in {pid_msg}",
                 "stderr": "",
-                "session_id": self.session_id
+                "session_id": self.session_id,
             }
 
         exit_code = stdout.channel.recv_exit_status()
-        stdout_data = stdout.read().decode('utf-8', errors='replace')
-        stderr_data = stderr.read().decode('utf-8', errors='replace')
+        stdout_data = stdout.read().decode("utf-8", errors="replace")
+        stderr_data = stderr.read().decode("utf-8", errors="replace")
 
         return {
             "exit_code": exit_code,
             "stdout": stdout_data,
             "stderr": stderr_data,
-            "session_id": self.session_id
+            "session_id": self.session_id,
         }
 
-    async def execute_command_stream(
-        self, command: str
-    ) -> AsyncIterator[str]:
+    async def execute_command_stream(self, command: str) -> AsyncIterator[str]:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
 
@@ -286,15 +310,14 @@ class SSHSession:
         stdin, stdout, stderr = self.client.exec_command(command)
 
         for line in stdout:
-            yield line.decode('utf-8', errors='replace')
+            yield line.decode("utf-8", errors="replace")
 
     async def _async_stream_wrapper(self, sync_iterator):
         loop = asyncio.get_event_loop()
         while True:
             try:
                 item = await loop.run_in_executor(
-                    self._executor.executor,
-                    lambda: next(sync_iterator, None)
+                    self._executor.executor, lambda: next(sync_iterator, None)
                 )
                 if item is None:
                     break
@@ -302,14 +325,15 @@ class SSHSession:
             except StopIteration:
                 break
 
-    async def open_shell(self, term: str = "xterm", width: int = 80, height: int = 24) -> paramiko.Channel:
+    async def open_shell(
+        self, term: str = "xterm", width: int = 80, height: int = 24
+    ) -> paramiko.Channel:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
 
         self._last_activity = datetime.now()
         return await self._executor.submit(
-            self._open_shell_sync, term, width, height,
-            timeout=self.config.timeout
+            self._open_shell_sync, term, width, height, timeout=self.config.timeout
         )
 
     def _open_shell_sync(self, term: str, width: int, height: int) -> paramiko.Channel:
@@ -323,17 +347,21 @@ class SSHSession:
         # 🔒 安全验证：本地路径验证（防止路径遍历）
         try:
             from .security import SecurityError, path_validator
+
             safe_local = path_validator.validate_path(local_path)
         except (ImportError, SecurityError):
             # 如果 security 模块不可用或路径验证失败，使用基础安全检查
-            if '..' in local_path or local_path.startswith('~'):
-                return {"success": False, "message": "Invalid local path: path traversal detected", "session_id": self.session_id}
+            if ".." in local_path or local_path.startswith("~"):
+                return {
+                    "success": False,
+                    "message": "Invalid local path: path traversal detected",
+                    "session_id": self.session_id,
+                }
 
         async with self._connect_lock:
             self._last_activity = datetime.now()
             return await self._executor.submit(
-                self._upload_file_sync, local_path, remote_path,
-                timeout=60
+                self._upload_file_sync, local_path, remote_path, timeout=60
             )
 
     def _upload_file_sync(self, local_path: str, remote_path: str) -> dict:
@@ -342,9 +370,17 @@ class SSHSession:
             sftp = self.client.open_sftp()
             sftp.put(local_path, remote_path)
             sftp.close()
-            return {"success": True, "message": f"File uploaded: {local_path} -> {remote_path}", "session_id": self.session_id}
+            return {
+                "success": True,
+                "message": f"File uploaded: {local_path} -> {remote_path}",
+                "session_id": self.session_id,
+            }
         except Exception as e:
-            return {"success": False, "message": f"Upload failed: {str(e)}", "session_id": self.session_id}
+            return {
+                "success": False,
+                "message": f"Upload failed: {str(e)}",
+                "session_id": self.session_id,
+            }
 
     async def download_file(self, remote_path: str, local_path: str) -> dict:
         if not self.is_connected:
@@ -353,16 +389,20 @@ class SSHSession:
         # 🔒 安全验证：下载目标路径验证（防止写入到禁止目录）
         try:
             from .security import SecurityError, path_validator
+
             safe_local = path_validator.validate_path(local_path)
         except (ImportError, SecurityError):
-            if '..' in local_path or local_path.startswith('~'):
-                return {"success": False, "message": "Invalid local path: path traversal detected", "session_id": self.session_id}
+            if ".." in local_path or local_path.startswith("~"):
+                return {
+                    "success": False,
+                    "message": "Invalid local path: path traversal detected",
+                    "session_id": self.session_id,
+                }
 
         async with self._connect_lock:
             self._last_activity = datetime.now()
             return await self._executor.submit(
-                self._download_file_sync, remote_path, local_path,
-                timeout=60
+                self._download_file_sync, remote_path, local_path, timeout=60
             )
 
     def _download_file_sync(self, remote_path: str, local_path: str) -> dict:
@@ -371,19 +411,24 @@ class SSHSession:
             sftp = self.client.open_sftp()
             sftp.get(remote_path, local_path)
             sftp.close()
-            return {"success": True, "message": f"File downloaded: {remote_path} -> {local_path}", "session_id": self.session_id}
+            return {
+                "success": True,
+                "message": f"File downloaded: {remote_path} -> {local_path}",
+                "session_id": self.session_id,
+            }
         except Exception as e:
-            return {"success": False, "message": f"Download failed: {str(e)}", "session_id": self.session_id}
+            return {
+                "success": False,
+                "message": f"Download failed: {str(e)}",
+                "session_id": self.session_id,
+            }
 
     async def list_directory(self, remote_path: str = ".") -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
         async with self._connect_lock:
             self._last_activity = datetime.now()
-            return await self._executor.submit(
-                self._list_directory_sync, remote_path,
-                timeout=30
-            )
+            return await self._executor.submit(self._list_directory_sync, remote_path, timeout=30)
 
     def _list_directory_sync(self, remote_path: str) -> dict:
         assert self.client is not None
@@ -391,9 +436,18 @@ class SSHSession:
             sftp = self.client.open_sftp()
             files = sftp.listdir(remote_path)
             sftp.close()
-            return {"success": True, "files": files, "path": remote_path, "session_id": self.session_id}
+            return {
+                "success": True,
+                "files": files,
+                "path": remote_path,
+                "session_id": self.session_id,
+            }
         except Exception as e:
-            return {"success": False, "message": f"List failed: {str(e)}", "session_id": self.session_id}
+            return {
+                "success": False,
+                "message": f"List failed: {str(e)}",
+                "session_id": self.session_id,
+            }
 
     async def write_file(self, remote_path: str, content: str, append: bool = False) -> dict:
         """通过 SFTP 写入或追加内容到远程文件"""
@@ -402,8 +456,7 @@ class SSHSession:
         async with self._connect_lock:
             self._last_activity = datetime.now()
             return await self._executor.submit(
-                self._write_file_sync, remote_path, content, append,
-                timeout=60
+                self._write_file_sync, remote_path, content, append, timeout=60
             )
 
     def _write_file_sync(self, remote_path: str, content: str, append: bool = False) -> dict:
@@ -421,7 +474,11 @@ class SSHSession:
                 "session_id": self.session_id,
             }
         except Exception as e:
-            return {"success": False, "message": f"Write failed: {str(e)}", "session_id": self.session_id}
+            return {
+                "success": False,
+                "message": f"Write failed: {str(e)}",
+                "session_id": self.session_id,
+            }
         finally:
             if sftp:
                 try:
@@ -435,10 +492,7 @@ class SSHSession:
             raise ConnectionError("Not connected to SSH server")
         async with self._connect_lock:
             self._last_activity = datetime.now()
-            return await self._executor.submit(
-                self._stat_file_sync, remote_path,
-                timeout=30
-            )
+            return await self._executor.submit(self._stat_file_sync, remote_path, timeout=30)
 
     def _stat_file_sync(self, remote_path: str) -> dict:
         assert self.client is not None
@@ -447,6 +501,7 @@ class SSHSession:
             sftp = self.client.open_sftp()
             st = sftp.stat(remote_path)
             import stat as stat_mod
+
             is_dir = stat_mod.S_ISDIR(st.st_mode)
             is_link = stat_mod.S_ISLNK(st.st_mode)
             return {
@@ -462,7 +517,11 @@ class SSHSession:
                 "session_id": self.session_id,
             }
         except Exception as e:
-            return {"success": False, "message": f"Stat failed: {str(e)}", "session_id": self.session_id}
+            return {
+                "success": False,
+                "message": f"Stat failed: {str(e)}",
+                "session_id": self.session_id,
+            }
         finally:
             if sftp:
                 try:
@@ -476,10 +535,7 @@ class SSHSession:
             raise ConnectionError("Not connected to SSH server")
         async with self._connect_lock:
             self._last_activity = datetime.now()
-            return await self._executor.submit(
-                self._delete_file_sync, remote_path,
-                timeout=30
-            )
+            return await self._executor.submit(self._delete_file_sync, remote_path, timeout=30)
 
     def _delete_file_sync(self, remote_path: str) -> dict:
         assert self.client is not None
@@ -487,9 +543,17 @@ class SSHSession:
         try:
             sftp = self.client.open_sftp()
             sftp.remove(remote_path)
-            return {"success": True, "message": f"Deleted: {remote_path}", "session_id": self.session_id}
+            return {
+                "success": True,
+                "message": f"Deleted: {remote_path}",
+                "session_id": self.session_id,
+            }
         except Exception as e:
-            return {"success": False, "message": f"Delete failed: {str(e)}", "session_id": self.session_id}
+            return {
+                "success": False,
+                "message": f"Delete failed: {str(e)}",
+                "session_id": self.session_id,
+            }
         finally:
             if sftp:
                 try:
@@ -503,10 +567,7 @@ class SSHSession:
             raise ConnectionError("Not connected to SSH server")
         async with self._connect_lock:
             self._last_activity = datetime.now()
-            return await self._executor.submit(
-                self._make_dir_sync, remote_path,
-                timeout=30
-            )
+            return await self._executor.submit(self._make_dir_sync, remote_path, timeout=30)
 
     def _make_dir_sync(self, remote_path: str) -> dict:
         assert self.client is not None
@@ -520,6 +581,7 @@ class SSHSession:
                 try:
                     st = sftp.stat(remote_path)
                     import stat as _stat
+
                     if not _stat.S_ISDIR(st.st_mode):
                         return {
                             "success": False,
@@ -573,7 +635,7 @@ class SSHSession:
             state=self._state,
             connected_at=self._connected_at or datetime.now(),
             last_activity=self._last_activity,
-            last_keepalive=self._last_keepalive
+            last_keepalive=self._last_keepalive,
         )
 
 
@@ -634,10 +696,12 @@ class SessionManager:
             # 注意：必须比较 port，否则同 host 不同端口（如跳板机多端口）会复用错误 session
             if reuse:
                 for session in self._sessions.values():
-                    if (session.config.host == config.host
-                            and session.config.port == config.port
-                            and session.config.username == config.username
-                            and session.is_connected):
+                    if (
+                        session.config.host == config.host
+                        and session.config.port == config.port
+                        and session.config.username == config.username
+                        and session.is_connected
+                    ):
                         return session._get_session_info()
 
             # 🔒 安全检查：会话并发数限制
@@ -647,10 +711,7 @@ class SessionManager:
                 )
 
             # 🔒 安全检查：每个主机会话数限制
-            host_sessions = sum(
-                1 for s in self._sessions.values()
-                if s.config.host == config.host
-            )
+            host_sessions = sum(1 for s in self._sessions.values() if s.config.host == config.host)
             if host_sessions >= self.MAX_SESSIONS_PER_HOST:
                 raise ConnectionException(
                     f"主机 {config.host} 已达到最大会话数限制 ({self.MAX_SESSIONS_PER_HOST})"
@@ -665,7 +726,7 @@ class SessionManager:
     async def get_session(self, session_id: str, auto_reconnect: bool = True) -> SSHSession | None:
         async with self._lock:
             session = self._sessions.get(session_id)
-            
+
             # 🔄 自动重连机制：如果 session 存在但已断开，尝试重连
             if session and not session.is_connected and auto_reconnect:
                 # 检查重连次数限制
@@ -677,7 +738,7 @@ class SessionManager:
                     if session_id in self._sessions:
                         del self._sessions[session_id]
                     return None
-                
+
                 self._logger.warning(
                     f"Session {session_id} 已断开，尝试自动重连（重连次数：{session._reconnect_count}/{session._max_reconnects}）"
                 )
@@ -685,12 +746,12 @@ class SessionManager:
                     # 保存配置信息用于重连
                     config = session.config
                     session._reconnect_count += 1
-                    
+
                     # 清理旧 session
                     await session.disconnect()
                     if session_id in self._sessions:
                         del self._sessions[session_id]
-                    
+
                     # 创建新 session（使用相同的 session_id）
                     new_session = SSHSession(config)
                     new_session.session_id = session_id  # 复用原来的 session_id
@@ -704,7 +765,7 @@ class SessionManager:
                     if session_id in self._sessions:
                         del self._sessions[session_id]
                     return None
-            
+
             # 🧹 清理完全失效的 session
             if session and not session.is_connected:
                 self._logger.warning(
@@ -714,7 +775,7 @@ class SessionManager:
                 if session_id in self._sessions:
                     del self._sessions[session_id]
                 return None
-                
+
             return session
 
     async def close_session(self, session_id: str) -> None:
@@ -730,10 +791,7 @@ class SessionManager:
             self._sessions.clear()
 
     def list_sessions(self) -> list[SessionInfo]:
-        return [
-            session._get_session_info()
-            for session in self._sessions.values()
-        ]
+        return [session._get_session_info() for session in self._sessions.values()]
 
     async def shutdown(self):
         self._shutdown_event.set()
@@ -741,11 +799,21 @@ class SessionManager:
             self._timeout_cleanup_task.cancel()
         await self.close_all_sessions()
 
-    async def execute_command(self, session_id: str, command: str, timeout: int = 30, background: bool = False, stdin_data: str | None = None, get_pty: bool = False) -> dict:
+    async def execute_command(
+        self,
+        session_id: str,
+        command: str,
+        timeout: int = 30,
+        background: bool = False,
+        stdin_data: str | None = None,
+        get_pty: bool = False,
+    ) -> dict:
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")
-        return await session.execute_command(command, timeout, background, stdin_data=stdin_data, get_pty=get_pty)
+        return await session.execute_command(
+            command, timeout, background, stdin_data=stdin_data, get_pty=get_pty
+        )
 
     async def upload_file(self, session_id: str, local_path: str, remote_path: str) -> dict:
         session = await self.get_session(session_id)
@@ -765,7 +833,9 @@ class SessionManager:
             raise ConnectionError(f"Session {session_id} not found")
         return await session.list_directory(remote_path)
 
-    async def write_file(self, session_id: str, remote_path: str, content: str, append: bool = False) -> dict:
+    async def write_file(
+        self, session_id: str, remote_path: str, content: str, append: bool = False
+    ) -> dict:
         session = await self.get_session(session_id)
         if not session:
             raise ConnectionError(f"Session {session_id} not found")

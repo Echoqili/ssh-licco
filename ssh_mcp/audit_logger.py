@@ -10,6 +10,7 @@ from typing import Any
 
 class AuditEventType(Enum):
     """审计事件类型"""
+
     CONNECT = "connect"
     DISCONNECT = "disconnect"
     COMMAND_EXECUTE = "command_execute"
@@ -23,7 +24,7 @@ class AuditEventType(Enum):
 class AuditLogger:
     """
     审计日志管理器
-    
+
     特性：
     - 结构化审计日志
     - 用户操作记录
@@ -33,20 +34,14 @@ class AuditLogger:
     _instance: AuditLogger | None = None
     _logger: logging.Logger | None = None
 
-    def __init__(
-        self,
-        audit_log_path: str | Path | None = None,
-        log_level: int = logging.INFO
-    ):
+    def __init__(self, audit_log_path: str | Path | None = None, log_level: int = logging.INFO):
         self._audit_log_path = audit_log_path
         self._log_level = log_level
         self._extra_fields: dict[str, Any] = {}
 
     @classmethod
     def get_instance(
-        cls,
-        audit_log_path: str | Path | None = None,
-        log_level: int = logging.INFO
+        cls, audit_log_path: str | Path | None = None, log_level: int = logging.INFO
     ) -> AuditLogger:
         """获取审计日志单例"""
         if cls._instance is None:
@@ -68,17 +63,13 @@ class AuditLogger:
             console_handler.setLevel(self._log_level)
 
             formatter = logging.Formatter(
-                '%(asctime)s | AUDIT | %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                "%(asctime)s | AUDIT | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
             )
             console_handler.setFormatter(formatter)
             self._logger.addHandler(console_handler)
 
             if self._audit_log_path:
-                file_handler = logging.FileHandler(
-                    self._audit_log_path,
-                    encoding='utf-8'
-                )
+                file_handler = logging.FileHandler(self._audit_log_path, encoding="utf-8")
                 file_handler.setLevel(logging.DEBUG)
                 file_handler.setFormatter(formatter)
                 self._logger.addHandler(file_handler)
@@ -95,7 +86,7 @@ class AuditLogger:
         action: str,
         result: str,
         details: dict[str, Any] | None = None,
-        session_id: str | None = None
+        session_id: str | None = None,
     ) -> None:
         """记录审计日志"""
         audit_entry = {
@@ -107,7 +98,7 @@ class AuditLogger:
             "result": result,
             "session_id": session_id,
             "details": details or {},
-            **self._extra_fields
+            **self._extra_fields,
         }
 
         log_message = json.dumps(audit_entry, ensure_ascii=False, default=str)
@@ -122,7 +113,7 @@ class AuditLogger:
         client_type: str,
         session_id: str | None = None,
         success: bool = True,
-        error_message: str | None = None
+        error_message: str | None = None,
     ) -> None:
         """记录连接事件"""
         self.log(
@@ -131,20 +122,12 @@ class AuditLogger:
             host=host,
             action=f"SSH connect to {host}:{port}",
             result="success" if success else "failed",
-            details={
-                "port": port,
-                "client_type": client_type,
-                "error_message": error_message
-            },
-            session_id=session_id
+            details={"port": port, "client_type": client_type, "error_message": error_message},
+            session_id=session_id,
         )
 
     def log_disconnect(
-        self,
-        username: str,
-        host: str,
-        session_id: str,
-        duration_seconds: float | None = None
+        self, username: str, host: str, session_id: str, duration_seconds: float | None = None
     ) -> None:
         """记录断开连接事件"""
         self.log(
@@ -153,11 +136,8 @@ class AuditLogger:
             host=host,
             action=f"SSH disconnect from {host}",
             result="success",
-            details={
-                "session_id": session_id,
-                "duration_seconds": duration_seconds
-            },
-            session_id=session_id
+            details={"session_id": session_id, "duration_seconds": duration_seconds},
+            session_id=session_id,
         )
 
     def log_command(
@@ -169,7 +149,7 @@ class AuditLogger:
         stdout_length: int,
         stderr_length: int,
         session_id: str | None = None,
-        execution_time_ms: float | None = None
+        execution_time_ms: float | None = None,
     ) -> None:
         """记录命令执行事件"""
         self.log(
@@ -183,9 +163,9 @@ class AuditLogger:
                 "return_code": return_code,
                 "stdout_length": stdout_length,
                 "stderr_length": stderr_length,
-                "execution_time_ms": execution_time_ms
+                "execution_time_ms": execution_time_ms,
             },
-            session_id=session_id
+            session_id=session_id,
         )
 
     def log_file_transfer(
@@ -198,7 +178,7 @@ class AuditLogger:
         direction: str,
         success: bool = True,
         error_message: str | None = None,
-        session_id: str | None = None
+        session_id: str | None = None,
     ) -> None:
         """记录文件传输事件"""
         self.log(
@@ -211,9 +191,9 @@ class AuditLogger:
                 "file_path": file_path,
                 "file_size": file_size,
                 "direction": direction,
-                "error_message": error_message
+                "error_message": error_message,
             },
-            session_id=session_id
+            session_id=session_id,
         )
 
     def log_auth(
@@ -222,7 +202,7 @@ class AuditLogger:
         host: str,
         auth_method: str,
         success: bool,
-        error_message: str | None = None
+        error_message: str | None = None,
     ) -> None:
         """记录认证事件"""
         self.log(
@@ -231,16 +211,12 @@ class AuditLogger:
             host=host,
             action=f"SSH authentication using {auth_method}",
             result="success" if success else "failed",
-            details={
-                "auth_method": auth_method,
-                "error_message": error_message
-            }
+            details={"auth_method": auth_method, "error_message": error_message},
         )
 
 
 def get_audit_logger(
-    audit_log_path: str | Path | None = None,
-    log_level: int = logging.INFO
+    audit_log_path: str | Path | None = None, log_level: int = logging.INFO
 ) -> AuditLogger:
     """便捷函数：获取审计日志实例"""
     return AuditLogger.get_instance(audit_log_path, log_level)

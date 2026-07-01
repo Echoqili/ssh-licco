@@ -24,7 +24,7 @@ from .utils import (
 
 
 async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
-    """Merge ssh_execute + ssh_background_task + ssh_fallback_execute + ssh_execute_wait + ssh_task_status."""
+    """Handle ssh_execute, background tasks, execute-wait, and task-status."""
     command = args["command"]
     timeout = args.get("timeout", 120)  # 默认 120s，避免 docker pull/pg_basebackup 等长任务超时
     background = args.get("background", None)
@@ -33,22 +33,26 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
     # 当 remote_guard=True（或全局 SSH_REMOTE_GUARD=true）时，强制把命令规范为
     # 单一 argv 形式，禁止 shell 元字符，防止远端 ForceCommand 的 bash -c 解析时
     # 通过元字符注入绕过白名单。
-    remote_guard = args.get("remote_guard", False) or os.getenv("SSH_REMOTE_GUARD", "false").lower() == "true"
+    remote_guard = (
+        args.get("remote_guard", False) or os.getenv("SSH_REMOTE_GUARD", "false").lower() == "true"
+    )
     if remote_guard:
         normalized, guard_err = normalize_command_for_remote_guard(command)
         if guard_err:
             ctx.logger.warning(f"Command blocked by remote_guard normalization: {command}")
-            return [TextContent(
-                type="text",
-                text=(
-                    f"❌ 命令被远端 guard 模式拦截（第一层）\n\n"
-                    f"Command: {command}\n"
-                    f"Reason: {guard_err}\n\n"
-                    f"远端已启用 ForceCommand 二次校验，命令必须为单一 argv 形式，\n"
-                    f"禁止 shell 元字符（| ; & $() ` > < && ||）、子 shell、管道。\n"
-                    f"如需复杂命令，请在跳板机本地拆分为多条简单命令分别执行。"
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"❌ 命令被远端 guard 模式拦截（第一层）\n\n"
+                        f"Command: {command}\n"
+                        f"Reason: {guard_err}\n\n"
+                        f"远端已启用 ForceCommand 二次校验，命令必须为单一 argv 形式，\n"
+                        f"禁止 shell 元字符（| ; & $() ` > < && ||）、子 shell、管道。\n"
+                        f"如需复杂命令，请在跳板机本地拆分为多条简单命令分别执行。"
+                    ),
                 )
-            )]
+            ]
         command = normalized
 
     # 加固点 4：高危操作审批门禁
@@ -62,7 +66,11 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
     # Resolve session via session_id / name / host / env fallback
     session_id = await ensure_session(ctx, args, handle_connect)
     if not session_id:
-        return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
+        return [
+            TextContent(
+                type="text", text="No session_id, name, host, or SSH_HOST env var configured."
+            )
+        ]
 
     # Security validation with multi-layer confirmation
     # confirm_dangerous=True 时跳过安全检查（用户明确确认执行危险操作）
@@ -76,13 +84,14 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
 
     if not can_execute:
         ctx.logger.warning(f"Command blocked by multi-layer confirmation: {command}")
-        return [TextContent(
-            type="text",
-            text=f"""❌ 操作已被安全机制阻止
+        return [
+            TextContent(
+                type="text",
+                text=f"""❌ 操作已被安全机制阻止
 
 {confirmation_message}
 
-🛡️ 当前安全级别: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}
+🛡️ 当前安全级别: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}
 🔍 风险评估: {command_validator.assess_risk_level(command).value}
 📊 需要确认层级: {command_validator.get_required_confirmations(command)}
 
@@ -90,8 +99,9 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
 - 对于危险操作，系统要求多层确认以确保安全
 - 请仔细阅读警告信息，确保完全理解操作后果
 - 如确需执行，请设置 confirm_dangerous=true 并增加 confirmation_layer 参数
-"""
-        )]
+""",
+            )
+        ]
 
     # 如果通过了多层确认，记录日志
     if confirmation_message:
@@ -103,9 +113,10 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
             command_validator.validate_command(command)
         except SecurityError as e:
             ctx.logger.error(f"Command blocked: {e}")
-            return [TextContent(
-                type="text",
-                text=f"""❌ 命令已被安全机制阻止
+            return [
+                TextContent(
+                    type="text",
+                    text=f"""❌ 命令已被安全机制阻止
 
 Command: {command}
 Reason: {str(e)}
@@ -115,12 +126,16 @@ Solutions:
 2. Add SSH_EXTRA_ALLOWED_COMMANDS with the blocked command
 3. Set confirm_dangerous=true in ssh_execute args to bypass (use with caution!)
 
-Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
-            )]
+Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
+                )
+            ]
     else:
         # 风险评估和日志记录
         risk_level, risk_desc = command_validator.get_risk_description(command)
-        ctx.logger.warning(f"Dangerous command execution approved: {command} | Risk: {risk_level.value} - {risk_desc}")
+        ctx.logger.warning(
+            f"Dangerous command execution approved: {command} | "
+            f"Risk: {risk_level.value} - {risk_desc}"
+        )
 
     # Auto-detect background if not specified
     if background is None:
@@ -140,18 +155,25 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
     get_pty = False
     use_sudo = args.get("use_sudo", False)
     if use_sudo:
-        sudo_pwd = getattr(session.config, 'sudo_password', None)
+        sudo_pwd = getattr(session.config, "sudo_password", None)
         if not sudo_pwd:
-            return [TextContent(type="text", text=(
-                "use_sudo=True but no sudo_password configured.\n"
-                "Please set sudo_password in ssh_connect or SSH_SUDO_PASSWORD env var."
-            ))]
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "use_sudo=True but no sudo_password configured.\n"
+                        "Please set sudo_password in ssh_connect or SSH_SUDO_PASSWORD env var."
+                    ),
+                )
+            ]
         # sudo -S 从 stdin 读密码，-p '' 抑制提示符，bash -c 包装原始命令
         command = f"sudo -S -p '' bash -c {shlex.quote(command)}"
         stdin_data = sudo_pwd + "\n"
         get_pty = True
 
-    result = await session.execute_command(command, timeout=timeout, stdin_data=stdin_data, get_pty=get_pty)
+    result = await session.execute_command(
+        command, timeout=timeout, stdin_data=stdin_data, get_pty=get_pty
+    )
 
     if ctx.audit:
         session_info = await ctx.session_manager.get_session(session_id)
@@ -159,11 +181,11 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
             username=session_info.config.username if session_info else "unknown",
             host=session_info.config.host if session_info else "unknown",
             command=command,
-            return_code=result.get('exit_code', -1),
-            stdout_length=len(result.get('stdout', '')),
-            stderr_length=len(result.get('stderr', '')),
+            return_code=result.get("exit_code", -1),
+            stdout_length=len(result.get("stdout", "")),
+            stderr_length=len(result.get("stderr", "")),
             session_id=session_id,
-            execution_time_ms=0
+            execution_time_ms=0,
         )
 
     # 统一输出格式：包含 session 标识，便于确认命令在哪个主机执行
@@ -179,11 +201,7 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
 
 
 async def execute_background(
-    ctx: HandlerContext,
-    session_id: str,
-    command: str,
-    args: dict,
-    timeout: int
+    ctx: HandlerContext, session_id: str, command: str, args: dict, timeout: int
 ) -> list[TextContent]:
     """Execute a command as a background task with proper nohup + bash -c wrapping."""
     workdir = args.get("workdir", "/tmp")
@@ -206,7 +224,7 @@ async def execute_background(
         return [TextContent(type="text", text=f"Path not allowed: {str(e)}")]
 
     # Block dangerous patterns
-    dangerous_patterns = ['rm -rf /', 'mkfs', 'dd if=/dev/zero', ':(){:|:&};:', 'chmod -R 777 /']
+    dangerous_patterns = ["rm -rf /", "mkfs", "dd if=/dev/zero", ":(){:|:&};:", "chmod -R 777 /"]
     for pattern in dangerous_patterns:
         if pattern in command:
             return [TextContent(type="text", text=f"Dangerous operation blocked: '{pattern}'")]
@@ -219,12 +237,25 @@ async def execute_background(
     # ── screen / tmux session support ──
     if session_type in ("screen", "tmux"):
         # 写入元数据（异步，不阻塞）
-        meta_content = f"command={command}\nlog_file={safe_log_file}\nworkdir={safe_workdir}\nsession_type={session_type}\n"
+        meta_content = (
+            f"command={command}\n"
+            f"log_file={safe_log_file}\n"
+            f"workdir={safe_workdir}\n"
+            f"session_type={session_type}\n"
+        )
         await ctx.session_manager.execute_command(
-            session_id, f"echo {shlex.quote(meta_content)} > {shlex.quote(meta_file)}", timeout=5)
+            session_id, f"echo {shlex.quote(meta_content)} > {shlex.quote(meta_file)}", timeout=5
+        )
         return await execute_background_session(
-            ctx, session_id, command, safe_workdir, safe_log_file,
-            session_type, task_id, wait, wait_timeout
+            ctx,
+            session_id,
+            command,
+            safe_workdir,
+            safe_log_file,
+            session_type,
+            task_id,
+            wait,
+            wait_timeout,
         )
 
     # ── nohup mode (default): single SSH call, no race condition ──
@@ -233,7 +264,9 @@ async def execute_background(
     # 内层命令结束后写入 exit_file，外层读取以区分"已完成"和"仍在运行"。
     exit_file = f"/tmp/task_{task_id}.exit"
     wrapped_command = f"{command}; echo $? > {shlex.quote(exit_file)}"
-    meta_content = f"command={command}\nlog_file={safe_log_file}\nworkdir={safe_workdir}\nsession_type=nohup\n"
+    meta_content = (
+        f"command={command}\nlog_file={safe_log_file}\nworkdir={safe_workdir}\nsession_type=nohup\n"
+    )
     check_cmd = (
         f"echo {shlex.quote(meta_content)} > {shlex.quote(meta_file)} && "
         f"cd {shlex.quote(safe_workdir)} && "
@@ -289,13 +322,13 @@ async def execute_background(
     #
     # 1. ✅ SUCCESS         — STATUS=COMPLETED, EXIT=0   命令执行成功
     # 2. ❌ COMMAND_FAILED  — STATUS=COMPLETED, EXIT>0    命令执行失败（非零退出码）
-    # 3. ⚠️ STATUS_ABNORMAL — STATUS=COMPLETED, EXIT=-1   进程异常终止（被信号杀死/OOM，未写 exit 文件）
+    # 3. ⚠️ STATUS_ABNORMAL — STATUS=COMPLETED, EXIT=-1   进程异常终止（被信号/OOM杀，未写exit文件）
     # 4. 🟢 RUNNING         — STATUS=RUNNING              后台任务仍在运行
     # 5. 🔴 STARTUP_FAILED  — 无 PID 或无 STATUS          任务启动失败（nohup/shell 错误）
 
     # 情况 1-3：命令已执行完毕（有 STATUS=COMPLETED）
     if status == "COMPLETED":
-        exit_code = int(exit_code_str) if exit_code_str.lstrip('-').isdigit() else -1
+        exit_code = int(exit_code_str) if exit_code_str.lstrip("-").isdigit() else -1
 
         # 统一头部信息：包含 session 标识，便于确认命令在哪个主机执行
         header = (
@@ -310,44 +343,58 @@ async def execute_background(
 
         if exit_code == 0:
             # ✅ 情况 1：命令执行成功
-            return [TextContent(type="text", text=(
-                f"✅ Background Task Completed Successfully!\n\n"
-                f"{header}{log_section}"
-            ))]
+            return [
+                TextContent(
+                    type="text",
+                    text=(f"✅ Background Task Completed Successfully!\n\n{header}{log_section}"),
+                )
+            ]
 
         elif exit_code > 0:
             # ❌ 情况 2：命令执行失败（非零退出码）
             # 常见原因：命令语法错误、文件不存在、权限不足、依赖缺失
             hint = diagnose_exit_code(exit_code, log_tail, start_stderr)
-            return [TextContent(type="text", text=(
-                f"❌ Background Task Failed (exit code {exit_code})!\n\n"
-                f"{header}{hint}"
-                f"--- TASK START STDERR ---\n{start_stderr or '(none)'}\n"
-                f"{log_section}"
-            ))]
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"❌ Background Task Failed (exit code {exit_code})!\n\n"
+                        f"{header}{hint}"
+                        f"--- TASK START STDERR ---\n{start_stderr or '(none)'}\n"
+                        f"{log_section}"
+                    ),
+                )
+            ]
 
         else:
             # ⚠️ 情况 3：进程异常终止（exit_code == -1，未写入 exit 文件）
             # 常见原因：被 SIGKILL/SIGTERM 杀死、OOM Killer、段错误
-            return [TextContent(type="text", text=(
-                f"⚠️ Background Task Terminated Abnormally!\n\n"
-                f"{header}"
-                f"\n可能原因：\n"
-                f"  - 被 SIGKILL/SIGTERM 信号终止（如 systemctl stop、kill -9）\n"
-                f"  - OOM Killer 杀死（内存不足，检查 dmesg | grep -i oom）\n"
-                f"  - 段错误/总线错误（程序 bug，检查 core dump）\n"
-                f"  - 父进程退出导致子进程被终止\n"
-                f"\n--- TASK START STDERR ---\n{start_stderr or '(none)'}\n"
-                f"{log_section}"
-            ))]
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"⚠️ Background Task Terminated Abnormally!\n\n"
+                        f"{header}"
+                        f"\n可能原因：\n"
+                        f"  - 被 SIGKILL/SIGTERM 信号终止（如 systemctl stop、kill -9）\n"
+                        f"  - OOM Killer 杀死（内存不足，检查 dmesg | grep -i oom）\n"
+                        f"  - 段错误/总线错误（程序 bug，检查 core dump）\n"
+                        f"  - 父进程退出导致子进程被终止\n"
+                        f"\n--- TASK START STDERR ---\n{start_stderr or '(none)'}\n"
+                        f"{log_section}"
+                    ),
+                )
+            ]
 
     # 🟢 情况 4：仍在运行
     if status == "RUNNING" and pid:
         if wait:
             output = await wait_for_task_completion(
                 ctx=ctx,
-                session_id=session_id, task_id=task_id,
-                log_file=safe_log_file, timeout=wait_timeout
+                session_id=session_id,
+                task_id=task_id,
+                log_file=safe_log_file,
+                timeout=wait_timeout,
             )
         else:
             output = f"""🟢 Background Task Started!
@@ -374,23 +421,33 @@ After SSH reconnect, list all tasks:
     # 🔴 情况 5：任务启动失败（无 PID 或无 STATUS）
     # 常见原因：工作目录不存在、bash 不可用、SSH 连接异常、权限拒绝
     startup_hint = diagnose_startup_failure(start_stdout, start_stderr, safe_workdir)
-    return [TextContent(type="text", text=(
-        f"🔴 Background Task Failed to Start!\n\n"
-        f"Command: {command}\n"
-        f"PID: {pid or '(none)'}\n"
-        f"Working Directory: {safe_workdir}\n"
-        f"{startup_hint}"
-        f"--- STDOUT ---\n{start_stdout or '(none)'}\n"
-        f"--- STDERR ---\n{start_stderr or '(none)'}\n"
-        f"--- LOG TAIL ---\n{log_tail or '(no log output)'}"
-    ))]
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"🔴 Background Task Failed to Start!\n\n"
+                f"Command: {command}\n"
+                f"PID: {pid or '(none)'}\n"
+                f"Working Directory: {safe_workdir}\n"
+                f"{startup_hint}"
+                f"--- STDOUT ---\n{start_stdout or '(none)'}\n"
+                f"--- STDERR ---\n{start_stderr or '(none)'}\n"
+                f"--- LOG TAIL ---\n{log_tail or '(no log output)'}"
+            ),
+        )
+    ]
 
 
 async def execute_background_session(
     ctx: HandlerContext,
-    session_id: str, command: str, workdir: str,
-    log_file: str, session_type: str, task_id: str,
-    wait: bool, wait_timeout: int
+    session_id: str,
+    command: str,
+    workdir: str,
+    log_file: str,
+    session_type: str,
+    task_id: str,
+    wait: bool,
+    wait_timeout: int,
 ) -> list[TextContent]:
     """Execute a command inside a screen/tmux session for persistent long-running tasks."""
     session_name = f"ssh_mcp_{task_id}"
@@ -417,21 +474,33 @@ async def execute_background_session(
 
     stderr = (result.get("stderr") or "").strip()
     if stderr:
-        return [TextContent(type="text", text=(
-            f"Failed to start {session_type} session!\n\n"
-            f"Session: {session_name}\n"
-            f"Command: {command}\n"
-            f"Error: {stderr}"
-        ))]
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    f"Failed to start {session_type} session!\n\n"
+                    f"Session: {session_name}\n"
+                    f"Command: {command}\n"
+                    f"Error: {stderr}"
+                ),
+            )
+        ]
 
     if wait:
         output = await wait_for_task_completion(
-            ctx=ctx,
-            session_id=session_id, task_id=task_id,
-            log_file=log_file, timeout=wait_timeout
+            ctx=ctx, session_id=session_id, task_id=task_id, log_file=log_file, timeout=wait_timeout
         )
     else:
-        attach_cmd = f"screen -r {session_name}" if session_type == "screen" else f"tmux attach -t {session_name}"
+        attach_cmd = (
+            f"screen -r {session_name}"
+            if session_type == "screen"
+            else f"tmux attach -t {session_name}"
+        )
+        kill_cmd = (
+            f"screen -XS {session_name} quit"
+            if session_type == "screen"
+            else f"tmux kill-session -t {session_name}"
+        )
         output = f"""{session_type.upper()} Session Started!
 
 Task ID: {task_id}
@@ -446,15 +515,14 @@ To attach to session:
 To view log:
   ssh_execute(session_id="{session_id}", command="cat {log_file}")
 To kill session:
-  ssh_execute(session_id="{session_id}", command="{'screen -XS ' + session_name + ' quit' if session_type == 'screen' else 'tmux kill-session -t ' + session_name}")
+  ssh_execute(session_id="{session_id}", command="{kill_cmd}")
 """
 
     return [TextContent(type="text", text=output)]
 
 
 async def wait_for_task_completion(
-    ctx: HandlerContext,
-    session_id: str, task_id: str, log_file: str, timeout: int
+    ctx: HandlerContext, session_id: str, task_id: str, log_file: str, timeout: int
 ) -> str:
     """Wait for a background task to complete and return its output."""
     pid_file = f"/tmp/task_{task_id}.pid"
@@ -466,22 +534,31 @@ async def wait_for_task_completion(
         await asyncio.sleep(interval)
         elapsed += interval
 
-        check_cmd = f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
+        check_cmd = (
+            f"if [ -f {pid_file} ]; then PID=$(cat {pid_file}); "
+            "if ps -p $PID > /dev/null 2>&1; then echo 'RUNNING'; "
+            "else echo 'COMPLETED'; fi; else echo 'NOT_FOUND'; fi"
+        )
         result = await ctx.session_manager.execute_command(session_id, check_cmd, timeout=10)
         status = result.get("stdout", "").strip()
 
         if status == "COMPLETED" or status == "NOT_FOUND":
             # 读取退出码
             exit_result = await ctx.session_manager.execute_command(
-                session_id, f"cat {exit_file} 2>/dev/null || echo -1", timeout=10)
+                session_id, f"cat {exit_file} 2>/dev/null || echo -1", timeout=10
+            )
             exit_code_str = (exit_result.get("stdout") or "-1").strip()
-            exit_code = int(exit_code_str) if exit_code_str.lstrip('-').isdigit() else -1
+            exit_code = int(exit_code_str) if exit_code_str.lstrip("-").isdigit() else -1
 
-            log_cmd = f"if [ -f {log_file} ]; then cat {log_file}; else echo 'No log file found'; fi"
+            log_cmd = (
+                f"if [ -f {log_file} ]; then cat {log_file}; else echo 'No log file found'; fi"
+            )
             log_result = await ctx.session_manager.execute_command(session_id, log_cmd, timeout=10)
             log_content = log_result.get("stdout", "")
 
-            status_label = "Completed Successfully" if exit_code == 0 else f"Failed (exit code {exit_code})"
+            status_label = (
+                "Completed Successfully" if exit_code == 0 else f"Failed (exit code {exit_code})"
+            )
             return f"""Task {status_label}!
 
 Task ID: {task_id}

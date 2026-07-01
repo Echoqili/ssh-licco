@@ -11,6 +11,7 @@ ClientType = Literal["paramiko", "asyncssh"]
 
 class RetryConfig(BaseModel):
     """重试配置"""
+
     max_retries: int = Field(default=3, description="最大重试次数")
     retry_delay: float = Field(default=1.0, description="重试延迟（秒）")
     exponential_backoff: bool = Field(default=True, description="使用指数退避")
@@ -19,57 +20,59 @@ class RetryConfig(BaseModel):
 
 class ConnectionConfig(BaseModel):
     """SSH 连接配置"""
+
     host: str = Field(..., description="SSH server hostname or IP address")
     port: int = Field(default=22, description="SSH server port")
     username: str = Field(..., description="SSH username")
-    auth_method: AuthMethod | None = Field(default=None, description="Authentication method (auto-detected if not provided)")
+    auth_method: AuthMethod | None = Field(
+        default=None, description="Authentication method (auto-detected if not provided)"
+    )
     password: str | None = Field(default=None, description="SSH password (if using password auth)")
     private_key_path: Path | None = Field(default=None, description="Path to private key file")
     private_key_material: str | None = Field(
         default=None,
-        description="内存中的私钥 PEM（密钥不落地模式：由 SecretProvider 临时拉取，不写入磁盘）"
+        description="内存中的私钥 PEM（密钥不落地模式：由 SecretProvider 临时拉取，不写入磁盘）",
     )
     passphrase: str | None = Field(default=None, description="Passphrase for private key")
     timeout: int = Field(default=30, description="Connection timeout in seconds")
     keepalive_interval: int = Field(default=30, description="Keepalive interval in seconds")
     compress: bool = Field(default=False, description="Enable compression")
-    look_for_keys: bool = Field(default=False, description="Look for keys in ~/.ssh (建议关闭以强制使用配置的密钥)")
-    allow_agent: bool = Field(default=False, description="Use SSH agent for authentication (建议关闭)")
-    session_timeout: int = Field(default=86400, description="Session timeout in seconds (default: 24 hours)")
-    client_type: ClientType = Field(default="asyncssh", description="SSH client implementation to use")
+    look_for_keys: bool = Field(
+        default=False, description="Look for keys in ~/.ssh (建议关闭以强制使用配置的密钥)"
+    )
+    allow_agent: bool = Field(
+        default=False, description="Use SSH agent for authentication (建议关闭)"
+    )
+    session_timeout: int = Field(
+        default=86400, description="Session timeout in seconds (default: 24 hours)"
+    )
+    client_type: ClientType = Field(
+        default="asyncssh", description="SSH client implementation to use"
+    )
     banner_timeout: int = Field(default=60, description="Banner timeout in seconds")
 
-    retry_config: RetryConfig | None = Field(
-        default=None,
-        description="重试配置"
-    )
+    retry_config: RetryConfig | None = Field(default=None, description="重试配置")
 
-    prefer_key_auth: bool = Field(
-        default=True,
-        description="优先使用密钥认证（忽略密码）"
-    )
+    prefer_key_auth: bool = Field(default=True, description="优先使用密钥认证（忽略密码）")
 
     # 🔒 Host Key 安全配置
     known_hosts_path: Path | None = Field(
-        default=None,
-        description="已知主机密钥文件路径 (默认: ~/.ssh/known_hosts)"
+        default=None, description="已知主机密钥文件路径 (默认: ~/.ssh/known_hosts)"
     )
     strict_host_key_checking: bool = Field(
-        default=True,
-        description="是否启用严格主机密钥验证 (生产环境必须开启)"
+        default=True, description="是否启用严格主机密钥验证 (生产环境必须开启)"
     )
     # ⚠️ 仅在测试环境使用：跳过主机密钥验证（等同于 MITM 攻击）
     # 设置为 True 时会接受任意主机密钥，请仅在可控环境中使用
     accept_new_host_key: bool = Field(
-        default=False,
-        description="⚠️ 危险：是否自动接受新主机密钥 (默认 False). 仅测试环境使用"
+        default=False, description="⚠️ 危险：是否自动接受新主机密钥 (默认 False). 仅测试环境使用"
     )
 
     # Sudo 密码（可选）：设置后 ssh_execute(use_sudo=True) 会自动用 sudo -S 包装命令
     # 密码通过 stdin 传递，不出现在进程列表（ps）中
     sudo_password: str | None = Field(
         default=None,
-        description="sudo 密码（可选）。设置后配合 use_sudo 参数自动包装 sudo -S，避免明文暴露密码"
+        description="sudo 密码（可选）。设置后配合 use_sudo 参数自动包装 sudo -S，避免明文暴露密码",
     )
 
     @field_validator("port")
@@ -93,7 +96,7 @@ class ConnectionConfig(BaseModel):
             raise ValueError("Session timeout must be at least 5 minutes (300 seconds)")
         return v
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_auth_priority(self) -> ConnectionConfig:
         """验证认证配置"""
         # 检查密码是否有效（非空字符串）

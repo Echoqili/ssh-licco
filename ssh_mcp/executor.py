@@ -15,13 +15,14 @@ def _default_max_workers() -> int:
     # 限制最大线程数：CPU * 5，上限 20
     return min(cpu_count * 5, 20)
 
-T = TypeVar('T')
+
+T = TypeVar("T")
 
 
 class ThreadPoolExecutor:
     """
     线程池执行器 - 支持异步执行阻塞操作
-    
+
     特性：
     - 自动管理线程池生命周期
     - 支持超时控制
@@ -40,7 +41,7 @@ class ThreadPoolExecutor:
         return cls._instance
 
     def __init__(self, max_workers: int | None = None):
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
 
         self._max_workers = max_workers or (_default_max_workers())
@@ -58,24 +59,25 @@ class ThreadPoolExecutor:
         with self._executor_lock:
             if self._executor is None:
                 self._executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=self._max_workers,
-                    thread_name_prefix="ssh-mcp-exec-"
+                    max_workers=self._max_workers, thread_name_prefix="ssh-mcp-exec-"
                 )
         return self._executor
 
-    async def submit(self, func: Callable[..., T], *args: Any, timeout: int | None = None, **kwargs: Any) -> T:
+    async def submit(
+        self, func: Callable[..., T], *args: Any, timeout: int | None = None, **kwargs: Any
+    ) -> T:
         """
         异步提交任务到线程池执行
-        
+
         Args:
             func: 要执行的函数
             *args: 位置参数
             timeout: 超时时间（秒），None表示不限制
             **kwargs: 关键字参数
-            
+
         Returns:
             函数执行结果
-            
+
         Raises:
             asyncio.TimeoutError: 超时异常
             Exception: 函数执行异常
@@ -88,23 +90,24 @@ class ThreadPoolExecutor:
         try:
             if timeout is not None:
                 return await asyncio.wait_for(
-                    loop.run_in_executor(self.executor, task_wrapper),
-                    timeout=timeout
+                    loop.run_in_executor(self.executor, task_wrapper), timeout=timeout
                 )
             else:
                 return await loop.run_in_executor(self.executor, task_wrapper)
         except asyncio.TimeoutError:
             raise asyncio.TimeoutError(f"Task execution timed out after {timeout}s")
 
-    async def map(self, func: Callable[..., T], *iterables: Any, timeout: int | None = None) -> list[T]:
+    async def map(
+        self, func: Callable[..., T], *iterables: Any, timeout: int | None = None
+    ) -> list[T]:
         """
         并行执行多个任务
-        
+
         Args:
             func: 要执行的函数
             *iterables: 可迭代参数
             timeout: 总超时时间（秒）
-            
+
         Returns:
             结果列表
         """
@@ -115,10 +118,7 @@ class ThreadPoolExecutor:
             futures.append(loop.run_in_executor(self.executor, func, *args))
 
         if timeout is not None:
-            return await asyncio.wait_for(
-                asyncio.gather(*futures),
-                timeout=timeout
-            )
+            return await asyncio.wait_for(asyncio.gather(*futures), timeout=timeout)
         else:
             return await asyncio.gather(*futures)
 
@@ -137,25 +137,28 @@ class ThreadPoolExecutor:
 def async_exec(timeout: int | None = None):
     """
     装饰器：将同步函数转换为异步执行
-    
+
     Args:
         timeout: 超时时间（秒）
-        
+
     Example:
         @async_exec(timeout=30)
         def blocking_operation():
             # 耗时操作
             pass
-            
+
         # 使用
         result = await blocking_operation()
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., Coroutine[Any, Any, T]]:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
             executor = ThreadPoolExecutor()
             return await executor.submit(func, *args, **kwargs, timeout=timeout)
+
         return wrapper
+
     return decorator
 
 

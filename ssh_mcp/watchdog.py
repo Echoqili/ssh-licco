@@ -39,7 +39,7 @@ class TaskInfo:
 class Watchdog:
     """
     看门狗监控器 - 监控系统健康状态和任务执行
-    
+
     特性：
     - 全局异常捕获和处理
     - 任务超时检测
@@ -59,7 +59,7 @@ class Watchdog:
         return cls._instance
 
     def __init__(self):
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
 
         self._logger = get_logger("Watchdog")
@@ -139,8 +139,8 @@ class Watchdog:
                     "task_name": task_info.name,
                     "timeout": task_info.timeout,
                     "started_at": task_info.started_at.isoformat(),
-                    "last_heartbeat": task_info.last_heartbeat.isoformat()
-                }
+                    "last_heartbeat": task_info.last_heartbeat.isoformat(),
+                },
             )
             self._log_event(event)
             await self._trigger_recovery(event)
@@ -164,7 +164,7 @@ class Watchdog:
                 started_at=datetime.now(),
                 last_heartbeat=datetime.now(),
                 timeout=timeout,
-                progress=0
+                progress=0,
             )
         self._logger.debug(f"Registered task: {task_id} ({name})")
 
@@ -200,7 +200,7 @@ class Watchdog:
             "CONNECTION_LOST": "ERROR",
             "RECOVERY_SUCCESS": "INFO",
             "RECOVERY_FAILED": "ERROR",
-            "WARNING": "WARNING"
+            "WARNING": "WARNING",
         }.get(event.event_type, "INFO")
 
         log_method = getattr(self._logger, log_level.lower(), self._logger.info)
@@ -237,8 +237,8 @@ class Watchdog:
             details={
                 "exception_type": type(exc).__name__,
                 "context": context,
-                "traceback": traceback.format_exc()
-            }
+                "traceback": traceback.format_exc(),
+            },
         )
         self._log_event(event)
 
@@ -246,7 +246,7 @@ class Watchdog:
 class GlobalExceptionHandler:
     """
     全局异常处理器
-    
+
     特性：
     - 捕获未处理异常
     - 记录异常信息
@@ -268,6 +268,7 @@ class GlobalExceptionHandler:
         asyncio.get_event_loop().set_exception_handler(self._handle_async_exception)
 
         import sys
+
         self._original_excepthook = sys.excepthook
         sys.excepthook = self._handle_sync_exception
 
@@ -282,6 +283,7 @@ class GlobalExceptionHandler:
         asyncio.get_event_loop().set_exception_handler(self._original_excepthook)
 
         import sys
+
         sys.excepthook = self._original_excepthook
 
         self._enabled = False
@@ -289,9 +291,9 @@ class GlobalExceptionHandler:
 
     def _handle_async_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
         """处理异步异常"""
-        exc = context.get('exception')
+        exc = context.get("exception")
         if exc:
-            self._watchdog.capture_exception(exc, context.get('message', ''))
+            self._watchdog.capture_exception(exc, context.get("message", ""))
 
         if self._original_excepthook:
             self._original_excepthook(loop, context)
@@ -307,6 +309,7 @@ class GlobalExceptionHandler:
             self._original_excepthook(exc_type, exc_value, exc_traceback)
         else:
             import traceback
+
             traceback.print_exception(exc_type, exc_value, exc_traceback)
 
 

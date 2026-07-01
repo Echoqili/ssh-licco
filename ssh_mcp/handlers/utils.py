@@ -242,47 +242,104 @@ def should_run_background(command: str) -> bool:
             return False
 
     docker_instant_commands = [
-        "docker start ", "docker stop ", "docker restart ", "docker rm ",
-        "docker rmi ", "docker pause ", "docker unpause ", "docker kill ",
-        "docker commit ", "docker export ", "docker import ",
-        "docker ps", "docker images", "docker logs", "docker inspect",
-        "docker stats", "docker top", "docker port", "docker history",
-        "docker pull", "docker push", "docker save", "docker load",
-        "docker network ls", "docker volume ls", "docker system",
-        "docker exec", "docker attach", "docker cp",
-        "docker build", "docker buildx", "docker compose build",
-        "docker-compose build", "docker tag", "docker login", "docker logout",
+        "docker start ",
+        "docker stop ",
+        "docker restart ",
+        "docker rm ",
+        "docker rmi ",
+        "docker pause ",
+        "docker unpause ",
+        "docker kill ",
+        "docker commit ",
+        "docker export ",
+        "docker import ",
+        "docker ps",
+        "docker images",
+        "docker logs",
+        "docker inspect",
+        "docker stats",
+        "docker top",
+        "docker port",
+        "docker history",
+        "docker pull",
+        "docker push",
+        "docker save",
+        "docker load",
+        "docker network ls",
+        "docker volume ls",
+        "docker system",
+        "docker exec",
+        "docker attach",
+        "docker cp",
+        "docker build",
+        "docker buildx",
+        "docker compose build",
+        "docker-compose build",
+        "docker tag",
+        "docker login",
+        "docker logout",
     ]
     for cmd in docker_instant_commands:
         if cmd in command_lower:
             return False
 
     web_servers = [
-        "python app.py", "python main.py", "python manage.py runserver",
-        "npm start", "npm run serve", "npm run dev",
-        "yarn start", "yarn serve", "yarn dev",
-        "node app.js", "node server.js", "node index.js",
-        "flask run", "django-admin runserver",
-        "uvicorn", "gunicorn", "waitress-serve",
-        "php artisan serve", "php -S",
-        "rails server", "rails s",
-        "go run", "go build && ./",
+        "python app.py",
+        "python main.py",
+        "python manage.py runserver",
+        "npm start",
+        "npm run serve",
+        "npm run dev",
+        "yarn start",
+        "yarn serve",
+        "yarn dev",
+        "node app.js",
+        "node server.js",
+        "node index.js",
+        "flask run",
+        "django-admin runserver",
+        "uvicorn",
+        "gunicorn",
+        "waitress-serve",
+        "php artisan serve",
+        "php -S",
+        "rails server",
+        "rails s",
+        "go run",
+        "go build && ./",
     ]
     database_servers = [
-        "mongod", "mysql", "mysqld", "postgres", "postgresql",
-        "redis-server", "elasticsearch", "kibana",
-        "docker-compose up", "docker run -d",
+        "mongod",
+        "mysql",
+        "mysqld",
+        "postgres",
+        "postgresql",
+        "redis-server",
+        "elasticsearch",
+        "kibana",
+        "docker-compose up",
+        "docker run -d",
     ]
     dev_servers = [
-        "webpack-dev-server", "webpack serve",
-        "vite", "vite dev", "vite preview",
-        "ng serve", "angular serve",
-        "next dev", "nuxt dev",
+        "webpack-dev-server",
+        "webpack serve",
+        "vite",
+        "vite dev",
+        "vite preview",
+        "ng serve",
+        "angular serve",
+        "next dev",
+        "nuxt dev",
         "svelte-kit dev",
     ]
     listen_patterns = [
-        "--host", "--port", "0.0.0.0", "localhost:",
-        "-p ", "--listen", "--bind",
+        "--host",
+        "--port",
+        "0.0.0.0",
+        "localhost:",
+        "-p ",
+        "--listen",
+        "--bind",
     ]
 
     for server_cmd in web_servers + database_servers + dev_servers:
@@ -299,20 +356,42 @@ def should_run_background(command: str) -> bool:
         return True
 
     java_patterns = [
-        "java -jar", "java -cp", "java -class",
-        "mvn spring-boot:run", "mvn jetty:run", "mvn tomcat:run",
-        "gradle bootrun", "gradle run", "gradle apprun", "gradle jettyrun",
-        "./mvnw spring-boot:run", "./gradlew bootrun", "./gradlew run",
-        "java -server", "java -x",
+        "java -jar",
+        "java -cp",
+        "java -class",
+        "mvn spring-boot:run",
+        "mvn jetty:run",
+        "mvn tomcat:run",
+        "gradle bootrun",
+        "gradle run",
+        "gradle apprun",
+        "gradle jettyrun",
+        "./mvnw spring-boot:run",
+        "./gradlew bootrun",
+        "./gradlew run",
+        "java -server",
+        "java -x",
     ]
     for pattern in java_patterns:
         if pattern in command_lower:
             return True
-    java_servers = ["tomcat", "jetty", "jboss", "wildfly", "websphere", "weblogic", "glassfish", "payara", "liberty"]
+    java_servers = [
+        "tomcat",
+        "jetty",
+        "jboss",
+        "wildfly",
+        "websphere",
+        "weblogic",
+        "glassfish",
+        "payara",
+        "liberty",
+    ]
     for server in java_servers:
         if server in command_lower and ("start" in command_lower or "run" in command_lower):
             return True
-    if "java" in command_lower and any(kw in command_lower for kw in ["start", "run", "launch", "boot", "server", "daemon"]):
+    if "java" in command_lower and any(
+        kw in command_lower for kw in ["start", "run", "launch", "boot", "server", "daemon"]
+    ):
         return True
 
     go_patterns = ["go run", "go build && .", "go install && "]
@@ -323,15 +402,42 @@ def should_run_background(command: str) -> bool:
     for pattern in rust_patterns:
         if pattern in command_lower:
             return True
-    ruby_patterns = ["ruby app.rb", "ruby server.rb", "ruby lib/server.rb", "rails server", "rails s", "rake server", "puma", "thin start", "unicorn", "passenger start", "rackup", "shotgun"]
+    ruby_patterns = [
+        "ruby app.rb",
+        "ruby server.rb",
+        "ruby lib/server.rb",
+        "rails server",
+        "rails s",
+        "rake server",
+        "puma",
+        "thin start",
+        "unicorn",
+        "passenger start",
+        "rackup",
+        "shotgun",
+    ]
     for pattern in ruby_patterns:
         if pattern in command_lower:
             return True
-    php_patterns = ["php -S", "php -s", "php server", "php -t", "laravel serve", "symfony server:start", "symfony serve"]
+    php_patterns = [
+        "php -S",
+        "php -s",
+        "php server",
+        "php -t",
+        "laravel serve",
+        "symfony server:start",
+        "symfony serve",
+    ]
     for pattern in php_patterns:
         if pattern in command_lower:
             return True
-    dotnet_patterns = ["dotnet run", "dotnet watch run", "dotnet webserver", " kestrel", " iisexpress"]
+    dotnet_patterns = [
+        "dotnet run",
+        "dotnet watch run",
+        "dotnet webserver",
+        " kestrel",
+        " iisexpress",
+    ]
     for pattern in dotnet_patterns:
         if pattern in command_lower:
             return True
@@ -339,7 +445,14 @@ def should_run_background(command: str) -> bool:
     for pattern in scala_patterns:
         if pattern in command_lower:
             return True
-    elixir_patterns = ["mix phx.server", "iex -s mix", "iex --sname", "iex -S", "elixir --sname", "elixir -e"]
+    elixir_patterns = [
+        "mix phx.server",
+        "iex -s mix",
+        "iex --sname",
+        "iex -S",
+        "elixir --sname",
+        "elixir -e",
+    ]
     for pattern in elixir_patterns:
         if pattern in command_lower:
             return True
@@ -359,7 +472,21 @@ def should_run_background(command: str) -> bool:
     for pattern in r_patterns:
         if pattern in command_lower:
             return True
-    other_servers = ["nginx", "apache", "httpd", "caddy", "haproxy", "traefik", "envoy", "prometheus", "grafana-server", "telegraf", "consul", "vault", "nomad"]
+    other_servers = [
+        "nginx",
+        "apache",
+        "httpd",
+        "caddy",
+        "haproxy",
+        "traefik",
+        "envoy",
+        "prometheus",
+        "grafana-server",
+        "telegraf",
+        "consul",
+        "vault",
+        "nomad",
+    ]
     for server in other_servers:
         if server in command_lower:
             return True

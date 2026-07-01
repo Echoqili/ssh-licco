@@ -19,7 +19,9 @@ async def handle_host(ctx: HandlerContext, args: dict) -> list[TextContent]:
     elif action == "remove":
         return await _host_remove(ctx, args)
     else:
-        return [TextContent(type="text", text=f"Unknown action: {action}. Use list, add, or remove.")]
+        return [
+            TextContent(type="text", text=f"Unknown action: {action}. Use list, add, or remove.")
+        ]
 
 
 async def _host_list(ctx: HandlerContext) -> list[TextContent]:
@@ -53,16 +55,31 @@ async def _host_add(ctx: HandlerContext, args: dict) -> list[TextContent]:
         return [TextContent(type="text", text="Error: name and host are required for add action")]
 
     new_host = SSHHost(
-        name=name, host=host, port=args.get("port", 22),
-        username=args.get("username", "root"), password=args.get("password", ""),
-        timeout=args.get("timeout", 60), keepalive_interval=30, session_timeout=7200
+        name=name,
+        host=host,
+        port=args.get("port", 22),
+        username=args.get("username", "root"),
+        password=args.get("password", ""),
+        timeout=args.get("timeout", 60),
+        keepalive_interval=30,
+        session_timeout=7200,
     )
     ctx.config_manager.add_host(new_host)
 
-    return [TextContent(
-        type="text",
-        text=f"SSH server added!\n\nName: {name}\nHost: {host}:{args.get('port', 22)}\nUser: {args.get('username', 'root')}\n\nUse ssh_connect with name='{name}' to connect."
-    )]
+    port = args.get("port", 22)
+    username = args.get("username", "root")
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"SSH server added!\n\n"
+                f"Name: {name}\n"
+                f"Host: {host}:{port}\n"
+                f"User: {username}\n\n"
+                f"Use ssh_connect with name='{name}' to connect."
+            ),
+        )
+    ]
 
 
 async def _host_remove(ctx: HandlerContext, args: dict) -> list[TextContent]:

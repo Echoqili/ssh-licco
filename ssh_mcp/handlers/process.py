@@ -20,7 +20,11 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
 
     session_id = await ensure_session(ctx, args, handle_connect)
     if not session_id:
-        return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
+        return [
+            TextContent(
+                type="text", text="No session_id, name, host, or SSH_HOST env var configured."
+            )
+        ]
 
     if action == "start":
         command = args.get("command", "")
@@ -44,20 +48,21 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
         task_id = args.get("task_id", "")
         signal = args.get("signal", "TERM") or "TERM"
         # 信号名只允许大写字母+数字
-        if not re.match(r'^[A-Z0-9]+$', signal):
+        if not re.match(r"^[A-Z0-9]+$", signal):
             return [TextContent(type="text", text=f"Invalid signal: {signal}")]
 
         if not pid and task_id:
             pid_file = f"/tmp/task_{task_id}.pid"
             r = await ctx.session_manager.execute_command(
-                session_id, f"cat {pid_file} 2>/dev/null", timeout=10)
+                session_id, f"cat {pid_file} 2>/dev/null", timeout=10
+            )
             pid = (r.get("stdout") or "").strip()
             if not pid:
                 return [TextContent(type="text", text=f"No PID found for task_id {task_id}")]
 
         if not pid:
             return [TextContent(type="text", text="stop requires pid or task_id")]
-        if not re.match(r'^[0-9]+$', str(pid)):
+        if not re.match(r"^[0-9]+$", str(pid)):
             return [TextContent(type="text", text=f"Invalid pid: {pid}")]
 
         cmd = f"kill -{signal} {pid}"
@@ -75,11 +80,12 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
         if not pid and task_id:
             pid_file = f"/tmp/task_{task_id}.pid"
             r = await ctx.session_manager.execute_command(
-                session_id, f"cat {pid_file} 2>/dev/null", timeout=10)
+                session_id, f"cat {pid_file} 2>/dev/null", timeout=10
+            )
             pid = (r.get("stdout") or "").strip()
         if not pid:
             return [TextContent(type="text", text="status requires pid or task_id")]
-        if not re.match(r'^[0-9]+$', str(pid)):
+        if not re.match(r"^[0-9]+$", str(pid)):
             return [TextContent(type="text", text=f"Invalid pid: {pid}")]
 
         cmd = f"ps -p {pid} -o pid,ppid,stat,etime,cmd --no-headers 2>/dev/null"
@@ -95,20 +101,20 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
     if action == "list":
         # 列出 /tmp/task_*.pid 跟踪的后台任务，并读取 .meta 元数据
         cmd = (
-            'for f in /tmp/task_*.pid; do '
+            "for f in /tmp/task_*.pid; do "
             '[ -f "$f" ] || continue; '
             'PID=$(cat "$f" 2>/dev/null); '
             '[ -n "$PID" ] || continue; '
-            'if ps -p $PID > /dev/null 2>&1; then ST=RUNNING; else ST=DEAD; fi; '
+            "if ps -p $PID > /dev/null 2>&1; then ST=RUNNING; else ST=DEAD; fi; "
             'TASK_ID=$(echo "$f" | sed "s|/tmp/task_||;s|\\.pid||"); '
             'META_FILE="/tmp/task_${TASK_ID}.meta"; '
             'CMD=""; LOG=""; '
             'if [ -f "$META_FILE" ]; then '
             '  CMD=$(grep "^command=" "$META_FILE" 2>/dev/null | cut -d= -f2-); '
             '  LOG=$(grep "^log_file=" "$META_FILE" 2>/dev/null | cut -d= -f2-); '
-            'fi; '
+            "fi; "
             'echo "TASK=$TASK_ID PID=$PID STATUS=$ST CMD=$CMD LOG=$LOG"; '
-            'done 2>/dev/null'
+            "done 2>/dev/null"
         )
         result = await ctx.session_manager.execute_command(session_id, cmd, timeout=15)
         stdout = (result.get("stdout") or "").strip()
@@ -120,14 +126,14 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
             # 解析: TASK=abc123 PID=12345 STATUS=RUNNING CMD=... LOG=...
             parts = {}
             for part in line.split(None, 4):  # 最多分5段，CMD 可能含空格
-                if '=' in part:
-                    key, val = part.split('=', 1)
+                if "=" in part:
+                    key, val = part.split("=", 1)
                     parts[key] = val
-            task_id = parts.get('TASK', '?')
-            pid = parts.get('PID', '?')
-            status = parts.get('STATUS', '?')
-            cmd_str = parts.get('CMD', '')
-            log = parts.get('LOG', '')
+            task_id = parts.get("TASK", "?")
+            pid = parts.get("PID", "?")
+            status = parts.get("STATUS", "?")
+            cmd_str = parts.get("CMD", "")
+            log = parts.get("LOG", "")
             status_icon = "🟢" if status == "RUNNING" else "⚫"
             output += f"{status_icon} Task: {task_id} | PID: {pid} | {status}\n"
             if cmd_str:
@@ -142,13 +148,21 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
         remote_host = args.get("remote_host", "")
         remote_port = args.get("remote_port")
         if not local_port or not remote_host or not remote_port:
-            return [TextContent(type="text", text="tunnel_open requires local_port, remote_host, remote_port")]
+            return [
+                TextContent(
+                    type="text", text="tunnel_open requires local_port, remote_host, remote_port"
+                )
+            ]
         if local_port in ctx.tunnels:
-            return [TextContent(type="text", text=f"Tunnel on local port {local_port} already exists")]
+            return [
+                TextContent(type="text", text=f"Tunnel on local port {local_port} already exists")
+            ]
 
         session = await ctx.session_manager.get_session(session_id)
         if not session or not session.client:
-            return [TextContent(type="text", text=f"Session not found or not connected: {session_id}")]
+            return [
+                TextContent(type="text", text=f"Session not found or not connected: {session_id}")
+            ]
         transport = session.client.get_transport()
         if transport is None or not transport.is_active():
             return [TextContent(type="text", text="SSH transport is not active")]
@@ -158,11 +172,17 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
             tunnel.start(transport)
             ctx.tunnels[int(local_port)] = tunnel
         except OSError as e:
-            return [TextContent(type="text", text=f"Failed to open tunnel: {str(e)} (port may be in use?)")]
+            return [
+                TextContent(
+                    type="text", text=f"Failed to open tunnel: {str(e)} (port may be in use?)"
+                )
+            ]
 
-        output = (f"✅ Tunnel opened: 127.0.0.1:{local_port} -> {remote_host}:{remote_port}\n"
-                  f"Session: {session_id}\n"
-                  f"Locally, connect to 127.0.0.1:{local_port} to reach the remote service.")
+        output = (
+            f"✅ Tunnel opened: 127.0.0.1:{local_port} -> {remote_host}:{remote_port}\n"
+            f"Session: {session_id}\n"
+            f"Locally, connect to 127.0.0.1:{local_port} to reach the remote service."
+        )
         return [TextContent(type="text", text=output)]
 
     if action == "tunnel_close":
@@ -181,7 +201,18 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
         lines = ["📋 Active SSH tunnels:"]
         for _port, t in ctx.tunnels.items():
             info = t.info()
-            lines.append(f"  127.0.0.1:{info['local_port']} -> {info['remote_host']}:{info['remote_port']}  (session {info['session_id']})")
+            lines.append(
+                f"  127.0.0.1:{info['local_port']} -> "
+                f"{info['remote_host']}:{info['remote_port']}  (session {info['session_id']})"
+            )
         return [TextContent(type="text", text="\n".join(lines))]
 
-    return [TextContent(type="text", text=f"Unknown action: {action}. Use start, stop, status, list, tunnel_open, tunnel_close, tunnel_list.")]
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"Unknown action: {action}. "
+                "Use start, stop, status, list, tunnel_open, tunnel_close, tunnel_list."
+            ),
+        )
+    ]

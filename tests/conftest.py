@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -56,12 +55,8 @@ def mock_sshsession():
     session.execute_command = AsyncMock(
         return_value={"exit_code": 0, "stdout": "mock output\n", "stderr": ""}
     )
-    session.upload_file = AsyncMock(
-        return_value={"success": True, "message": "File uploaded"}
-    )
-    session.download_file = AsyncMock(
-        return_value={"success": True, "message": "File downloaded"}
-    )
+    session.upload_file = AsyncMock(return_value={"success": True, "message": "File uploaded"})
+    session.download_file = AsyncMock(return_value={"success": True, "message": "File downloaded"})
 
     with patch("ssh_mcp.session_manager.SSHSession", return_value=session) as mock_cls:
         yield session, mock_cls

@@ -37,7 +37,7 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
             password=args.get("password", ""),
             timeout=args.get("timeout", 30),
             keepalive_interval=args.get("keepalive_interval", 30),
-            session_timeout=args.get("session_timeout", 7200)
+            session_timeout=args.get("session_timeout", 7200),
         )
         ctx.logger.info(f"Using user-provided host: {args['host']}")
 
@@ -45,7 +45,11 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
     if not host_config and args.get("name"):
         host_config = ctx.config_manager.get_host_by_name(args["name"])
         if not host_config:
-            return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
+            return [
+                TextContent(
+                    type="text", text=f"Host '{args['name']}' not found in config/hosts.json"
+                )
+            ]
 
     # Priority 3: env vars (fallback)
     if not host_config and ctx.env_config and ctx.env_config.get("host"):
@@ -63,10 +67,12 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
         ctx.logger.info(f"Using environment variable host: {host_config.host}")
 
     if not host_config:
-        return [TextContent(
-            type="text",
-            text="No host configured. Provide host/name parameters, or set SSH_HOST env var."
-        )]
+        return [
+            TextContent(
+                type="text",
+                text="No host configured. Provide host/name parameters, or set SSH_HOST env var.",
+            )
+        ]
 
     if save_config and host_config.password:
         saved = SSHConfig(
@@ -74,7 +80,7 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
             port=host_config.port,
             username=host_config.username,
             password=host_config.password,
-            timeout=host_config.timeout
+            timeout=host_config.timeout,
         )
         ctx.config_manager.save(saved)
 
@@ -83,7 +89,7 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
     # sudo_password: 优先用 ssh_connect 参数，其次 hosts.json 配置，最后环境变量
     sudo_password = (
         args.get("sudo_password")
-        or getattr(host_config, 'sudo_password', '')
+        or getattr(host_config, "sudo_password", "")
         or os.getenv("SSH_SUDO_PASSWORD", "")
         or None
     )
@@ -101,20 +107,22 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
             secret_material = sm.fetch(secret_name)
             private_key_material = secret_material.as_str()
             ctx.logger.info(
-                f"[secret] 私钥从 KMS 临时拉取到内存（source={secret_material.source}, name={secret_name}），"
-                f"不落盘"
+                "[secret] 私钥从 KMS 临时拉取到内存"
+                f"（source={secret_material.source}, name={secret_name}），不落盘"
             )
         except SecretProviderError as e:
             ctx.logger.error(f"[secret] 拉取私钥失败: {e}")
             return [TextContent(type="text", text=f"密钥不落地模式：拉取私钥失败：{e}")]
     elif sm.enabled and private_key_path:
-        return [TextContent(
-            type="text",
-            text=(
-                "密钥不落地模式已启用（SSH_SECRET_PROVIDER_ENABLED=true），"
-                "禁止使用 private_key_path 指定磁盘私钥文件。请通过 SecretManager 配置凭证。"
-            ),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    "密钥不落地模式已启用（SSH_SECRET_PROVIDER_ENABLED=true），"
+                    "禁止使用 private_key_path 指定磁盘私钥文件。请通过 SecretManager 配置凭证。"
+                ),
+            )
+        ]
 
     try:
         config = ConnectionConfig(
@@ -124,8 +132,8 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
             password=host_config.password,
             auth_method="password" if host_config.password else "private_key",
             timeout=host_config.timeout,
-            keepalive_interval=getattr(host_config, 'keepalive_interval', 30),
-            session_timeout=getattr(host_config, 'session_timeout', 7200),
+            keepalive_interval=getattr(host_config, "keepalive_interval", 30),
+            session_timeout=getattr(host_config, "session_timeout", 7200),
             client_type=client_type,
             strict_host_key_checking=args.get("strict_host_key_checking", True),
             known_hosts_path=args.get("known_hosts_path"),
@@ -140,14 +148,20 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
 
         if ctx.audit:
             ctx.audit.log_connect(
-                username=config.username, host=config.host, port=config.port,
-                client_type=config.client_type, session_id=session_info.session_id, success=True
+                username=config.username,
+                host=config.host,
+                port=config.port,
+                client_type=config.client_type,
+                session_id=session_info.session_id,
+                success=True,
             )
 
-        output = (f"Connected to {session_info.host}:{session_info.port}\n"
-                  f"Session ID: {session_info.session_id}\n"
-                  f"Username: {session_info.username}\n"
-                  f"Connected at: {session_info.connected_at.isoformat()}")
+        output = (
+            f"Connected to {session_info.host}:{session_info.port}\n"
+            f"Session ID: {session_info.session_id}\n"
+            f"Username: {session_info.username}\n"
+            f"Connected at: {session_info.connected_at.isoformat()}"
+        )
         if save_config:
             output += "\nConfig saved for future use."
 
@@ -159,11 +173,14 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
                 ctx.logger.warning(f"Command blocked by security policy in ssh_connect: {command}")
                 if ctx.audit:
                     ctx.audit.log_command(
-                        username=config.username, host=config.host,
-                        command=command, return_code=-1,
-                        stdout_length=0, stderr_length=0,
+                        username=config.username,
+                        host=config.host,
+                        command=command,
+                        return_code=-1,
+                        stdout_length=0,
+                        stderr_length=0,
                         session_id=session_info.session_id,
-                        execution_time_ms=0
+                        execution_time_ms=0,
                     )
                 output += (
                     f"\n\n--- Command Blocked by Security Policy ---\n"
@@ -185,18 +202,24 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
         ctx.logger.error(f"Connection failed: {e}")
         if ctx.audit:
             ctx.audit.log_connect(
-                username=config.username, host=config.host, port=config.port,
-                client_type=config.client_type, success=False, error_message=str(e)
+                username=config.username,
+                host=config.host,
+                port=config.port,
+                client_type=config.client_type,
+                success=False,
+                error_message=str(e),
             )
-        return [TextContent(
-            type="text",
-            text=f"Connection failed: {str(e)}\n\n"
-                 f"Check:\n"
-                 f"1. Server address and port\n"
-                 f"2. Username and password/key\n"
-                 f"3. Network connectivity\n"
-                 f"4. SSH service is running"
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=f"Connection failed: {str(e)}\n\n"
+                f"Check:\n"
+                f"1. Server address and port\n"
+                f"2. Username and password/key\n"
+                f"3. Network connectivity\n"
+                f"4. SSH service is running",
+            )
+        ]
     finally:
         # 加固点 2：连接建立/失败后立即清零内存中的私钥
         # （paramiko 已在内部把私钥加载为 PKey 对象，原始 PEM 字符串不再需要）
@@ -222,7 +245,8 @@ async def handle_disconnect(ctx: HandlerContext, args: dict) -> list[TextContent
         output += f"  Host: {session.config.host}:{session.config.port}\n"
         output += f"  Username: {session.config.username}\n"
         output += f"  State: {session.state.value}\n"
-        output += f"  Connected: {session._connected_at.isoformat() if session._connected_at else 'N/A'}\n"
+        connected_at = session._connected_at.isoformat() if session._connected_at else "N/A"
+        output += f"  Connected: {connected_at}\n"
         output += f"  Last Activity: {session._last_activity.isoformat()}\n"
 
     return [TextContent(type="text", text=output)]

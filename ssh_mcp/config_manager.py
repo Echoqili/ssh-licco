@@ -50,7 +50,7 @@ class ConfigManager:
         # 优先加载项目根目录配置
         if self.config_path.exists():
             try:
-                with open(self.config_path, encoding='utf-8') as f:
+                with open(self.config_path, encoding="utf-8") as f:
                     data = json.load(f)
                 return SSHConfig(**data)
             except Exception:
@@ -59,7 +59,7 @@ class ConfigManager:
         # 后备：加载用户主目录配置
         if self.USER_CONFIG_PATH.exists():
             try:
-                with open(self.USER_CONFIG_PATH, encoding='utf-8') as f:
+                with open(self.USER_CONFIG_PATH, encoding="utf-8") as f:
                     data = json.load(f)
                 return SSHConfig(**data)
             except Exception:
@@ -70,7 +70,7 @@ class ConfigManager:
     def save(self, config: SSHConfig) -> None:
         # 保存到项目根目录配置
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.config_path, 'w', encoding='utf-8') as f:
+        with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(config.model_dump(), f, indent=2)
 
     @classmethod
@@ -83,7 +83,7 @@ class ConfigManager:
         hosts_config_path = self.DEFAULT_HOSTS_CONFIG_PATH
         if hosts_config_path.exists():
             try:
-                with open(hosts_config_path, encoding='utf-8') as f:
+                with open(hosts_config_path, encoding="utf-8") as f:
                     data = json.load(f)
                 if "ssh_hosts" in data:
                     return ServerConfig(ssh_hosts=[SSHHost(**h) for h in data["ssh_hosts"]])
@@ -115,7 +115,7 @@ class ConfigManager:
         data: dict[str, Any] = {"ssh_hosts": []}
         if config_path.exists():
             try:
-                with open(config_path, encoding='utf-8') as f:
+                with open(config_path, encoding="utf-8") as f:
                     data = json.load(f)
             except Exception:
                 pass
@@ -135,7 +135,7 @@ class ConfigManager:
 
         # Save config
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, 'w', encoding='utf-8') as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
     def remove_host(self, name: str) -> bool:
@@ -146,7 +146,7 @@ class ConfigManager:
             return False
 
         try:
-            with open(config_path, encoding='utf-8') as f:
+            with open(config_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             # Find and remove host
@@ -154,7 +154,7 @@ class ConfigManager:
             data["ssh_hosts"] = [h for h in data.get("ssh_hosts", []) if h.get("name") != name]
 
             if len(data["ssh_hosts"]) < original_count:
-                with open(config_path, 'w', encoding='utf-8') as f:
+                with open(config_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 return True
             return False

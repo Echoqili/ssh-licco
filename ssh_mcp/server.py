@@ -82,6 +82,7 @@ class SSHMCPServer:
             return True, ""
 
         import time
+
         now = time.time()
         window_start = now - self._rate_limit_window
         self._command_timestamps = [ts for ts in self._command_timestamps if ts > window_start]
@@ -133,9 +134,7 @@ class SSHMCPServer:
         async with stdio_server() as (read_stream, write_stream):
             try:
                 await self.server.run(
-                    read_stream,
-                    write_stream,
-                    self.server.create_initialization_options()
+                    read_stream, write_stream, self.server.create_initialization_options()
                 )
             except (ConnectionError, BrokenPipeError):
                 pass
@@ -157,12 +156,14 @@ async def main():
 
 def run_server():
     import sys
+
     if not sys.stdin.isatty():
         print("Warning: Running in non-interactive mode (stdin is not a TTY)", file=sys.stderr)
         print("MCP server expects to be run as part of an MCP client", file=sys.stderr)
     # 加固点 1：运行账号最小权限（生产跳板机强制）
     # 仅当 SSH_RUNTIME_GUARD=true 时强制，否则仅打印警告。
     from .runtime_guard import enforce_runtime_guard
+
     enforce_runtime_guard()
     asyncio.run(main())
 

@@ -18,12 +18,20 @@ from ssh_mcp.server import SSHMCPServer
 @pytest.fixture
 def server():
     with patch.dict(os.environ, {}, clear=False):
-        for key in ["SSH_HOST", "SSH_PORT", "SSH_USER", "SSH_PASSWORD",
-                     "SSH_RATE_LIMIT", "SSH_AUDIT_LOG_PATH"]:
+        for key in [
+            "SSH_HOST",
+            "SSH_PORT",
+            "SSH_USER",
+            "SSH_PASSWORD",
+            "SSH_RATE_LIMIT",
+            "SSH_AUDIT_LOG_PATH",
+        ]:
             os.environ.pop(key, None)
-        with patch("ssh_mcp.server.SessionManager"), \
-             patch("ssh_mcp.server.KeyManager"), \
-             patch("ssh_mcp.server.ConfigManager"):
+        with (
+            patch("ssh_mcp.server.SessionManager"),
+            patch("ssh_mcp.server.KeyManager"),
+            patch("ssh_mcp.server.ConfigManager"),
+        ):
             srv = SSHMCPServer()
     return srv
 
@@ -54,6 +62,7 @@ class TestRateLimit:
         server._rate_limit_max = 2
         server._command_timestamps = []
         import time
+
         server._command_timestamps = [time.time(), time.time()]
         allowed, msg = server._check_rate_limit()
         assert allowed is False
@@ -70,15 +79,20 @@ class TestLoadEnvConfig:
         assert server._env_config == {}
 
     def test_with_env_vars(self):
-        with patch.dict(os.environ, {
-            "SSH_HOST": "10.0.0.1",
-            "SSH_PORT": "2222",
-            "SSH_USER": "admin",
-            "SSH_PASSWORD": "secret",
-        }):
-            with patch("ssh_mcp.server.SessionManager"), \
-                 patch("ssh_mcp.server.KeyManager"), \
-                 patch("ssh_mcp.server.ConfigManager"):
+        with patch.dict(
+            os.environ,
+            {
+                "SSH_HOST": "10.0.0.1",
+                "SSH_PORT": "2222",
+                "SSH_USER": "admin",
+                "SSH_PASSWORD": "secret",
+            },
+        ):
+            with (
+                patch("ssh_mcp.server.SessionManager"),
+                patch("ssh_mcp.server.KeyManager"),
+                patch("ssh_mcp.server.ConfigManager"),
+            ):
                 srv = SSHMCPServer()
             assert srv._env_config["host"] == "10.0.0.1"
             assert srv._env_config["port"] == 2222
@@ -98,14 +112,17 @@ class TestHandleConfig:
         mock_session_info.connected_at = MagicMock()
         mock_session_info.connected_at.isoformat.return_value = "2024-01-01T00:00:00"
         server.session_manager.create_session = AsyncMock(return_value=mock_session_info)
-        result = await handle_connect(server._ctx, {
-            "host": "1.2.3.4",
-            "port": 22,
-            "username": "root",
-            "password": "secret",
-            "timeout": 30,
-            "save_config": True,
-        })
+        result = await handle_connect(
+            server._ctx,
+            {
+                "host": "1.2.3.4",
+                "port": 22,
+                "username": "root",
+                "password": "secret",
+                "timeout": 30,
+                "save_config": True,
+            },
+        )
         assert len(result) == 1
         assert "saved" in result[0].text.lower() or "Config saved" in result[0].text
 
@@ -121,14 +138,17 @@ class TestHandleConfig:
         mock_session_info.connected_at.isoformat.return_value = "2024-01-01T00:00:00"
         server.session_manager.create_session = AsyncMock(return_value=mock_session_info)
         with patch.dict(os.environ, {"SSH_PASSWORD": "env_pass"}):
-            result = await handle_connect(server._ctx, {
-                "host": "1.2.3.4",
-                "port": 22,
-                "username": "root",
-                "password": "env_pass",
-                "timeout": 30,
-                "save_config": True,
-            })
+            result = await handle_connect(
+                server._ctx,
+                {
+                    "host": "1.2.3.4",
+                    "port": 22,
+                    "username": "root",
+                    "password": "env_pass",
+                    "timeout": 30,
+                    "save_config": True,
+                },
+            )
         assert len(result) == 1
 
 
@@ -143,7 +163,7 @@ class TestHandleDisconnect:
 
 
 class TestHandleListSessions:
-    """v1.2.2: _handle_list_sessions merged into _handle_disconnect (no session_id → lists sessions)"""
+    """v1.2.2: list_sessions merged into disconnect (no session_id lists sessions)."""
 
     @pytest.mark.asyncio
     async def test_no_sessions(self, server):
@@ -174,9 +194,12 @@ class TestHandleGenerateKey:
     @pytest.mark.asyncio
     async def test_generate_ed25519(self, server):
         from ssh_mcp.key_manager import SSHKeyPair
+
         mock_kp = SSHKeyPair(
-            private_key="priv", public_key="ssh-ed25519 AAAA",
-            key_type="ed25519", fingerprint="SHA256:abc",
+            private_key="priv",
+            public_key="ssh-ed25519 AAAA",
+            key_type="ed25519",
+            fingerprint="SHA256:abc",
         )
         server.key_manager = MagicMock()
         server.key_manager.generate_ed25519_key.return_value = mock_kp
@@ -187,9 +210,12 @@ class TestHandleGenerateKey:
     @pytest.mark.asyncio
     async def test_generate_rsa(self, server):
         from ssh_mcp.key_manager import SSHKeyPair
+
         mock_kp = SSHKeyPair(
-            private_key="priv", public_key="ssh-rsa AAAA",
-            key_type="rsa", fingerprint="SHA256:abc",
+            private_key="priv",
+            public_key="ssh-rsa AAAA",
+            key_type="rsa",
+            fingerprint="SHA256:abc",
         )
         server.key_manager = MagicMock()
         server.key_manager.generate_rsa_key.return_value = mock_kp
@@ -203,12 +229,15 @@ class TestHandleFileTransfer:
     async def test_session_not_found(self, server):
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=None)
-        result = await handle_file_transfer(server._ctx, {
-            "session_id": "nonexistent",
-            "local_path": "/local",
-            "remote_path": "/remote",
-            "direction": "upload",
-        })
+        result = await handle_file_transfer(
+            server._ctx,
+            {
+                "session_id": "nonexistent",
+                "local_path": "/local",
+                "remote_path": "/remote",
+                "direction": "upload",
+            },
+        )
         assert len(result) == 1
         assert "not found" in result[0].text.lower()
 
@@ -218,26 +247,34 @@ class TestHandleFileTransfer:
         mock_session.upload_file = AsyncMock(return_value={"success": True, "message": "Uploaded"})
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await handle_file_transfer(server._ctx, {
-            "session_id": "s1",
-            "local_path": "/local",
-            "remote_path": "/remote",
-            "direction": "upload",
-        })
+        result = await handle_file_transfer(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "local_path": "/local",
+                "remote_path": "/remote",
+                "direction": "upload",
+            },
+        )
         assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_download(self, server):
         mock_session = MagicMock()
-        mock_session.download_file = AsyncMock(return_value={"success": True, "message": "Downloaded"})
+        mock_session.download_file = AsyncMock(
+            return_value={"success": True, "message": "Downloaded"}
+        )
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await handle_file_transfer(server._ctx, {
-            "session_id": "s1",
-            "local_path": "/local",
-            "remote_path": "/remote",
-            "direction": "download",
-        })
+        result = await handle_file_transfer(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "local_path": "/local",
+                "remote_path": "/remote",
+                "direction": "download",
+            },
+        )
         assert len(result) == 1
 
     @pytest.mark.asyncio
@@ -245,12 +282,15 @@ class TestHandleFileTransfer:
         mock_session = MagicMock()
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await handle_file_transfer(server._ctx, {
-            "session_id": "s1",
-            "local_path": "/local",
-            "remote_path": "/remote",
-            "direction": "invalid",
-        })
+        result = await handle_file_transfer(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "local_path": "/local",
+                "remote_path": "/remote",
+                "direction": "invalid",
+            },
+        )
         assert len(result) == 1
         assert "unknown" in result[0].text.lower() or "Unknown" in result[0].text
 
@@ -272,26 +312,32 @@ class TestHandleAddHost:
     @pytest.mark.asyncio
     async def test_add_host(self, server):
         server.config_manager = MagicMock()
-        result = await handle_host(server._ctx, {
-            "action": "add",
-            "name": "prod",
-            "host": "1.2.3.4",
-            "port": 22,
-            "username": "root",
-            "password": "",
-            "timeout": 60,
-        })
+        result = await handle_host(
+            server._ctx,
+            {
+                "action": "add",
+                "name": "prod",
+                "host": "1.2.3.4",
+                "port": 22,
+                "username": "root",
+                "password": "",
+                "timeout": 60,
+            },
+        )
         assert len(result) == 1
         assert "added" in result[0].text.lower() or "添加" in result[0].text
 
     @pytest.mark.asyncio
     async def test_add_host_missing_name(self, server):
         server.config_manager = MagicMock()
-        result = await handle_host(server._ctx, {
-            "action": "add",
-            "name": None,
-            "host": "1.2.3.4",
-        })
+        result = await handle_host(
+            server._ctx,
+            {
+                "action": "add",
+                "name": None,
+                "host": "1.2.3.4",
+            },
+        )
         assert len(result) == 1
         assert "error" in result[0].text.lower() or "错误" in result[0].text
 
@@ -367,12 +413,15 @@ class TestShouldRunBackground:
 class TestHandleExecute:
     @pytest.mark.asyncio
     async def test_security_blocked(self, server):
-        result = await handle_execute(server._ctx, {
-            "session_id": "s1",
-            "command": "evil_command arg1",
-            "timeout": 30,
-            "background": False,
-        })
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "command": "evil_command arg1",
+                "timeout": 30,
+                "background": False,
+            },
+        )
         assert len(result) == 1
         assert "blocked" in result[0].text.lower() or "阻止" in result[0].text
 
@@ -380,12 +429,15 @@ class TestHandleExecute:
     async def test_session_not_found(self, server):
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=None)
-        result = await handle_execute(server._ctx, {
-            "session_id": "nonexistent",
-            "command": "ls",
-            "timeout": 30,
-            "background": False,
-        })
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "nonexistent",
+                "command": "ls",
+                "timeout": 30,
+                "background": False,
+            },
+        )
         assert len(result) == 1
         assert "not found" in result[0].text.lower()
 
@@ -395,22 +447,28 @@ class TestHandleDockerBuild:
 
     @pytest.mark.asyncio
     async def test_missing_session_id(self, server):
-        result = await handle_docker(server._ctx, {
-            "action": "build",
-            "session_id": None,
-            "image_name": "myapp:latest",
-        })
+        result = await handle_docker(
+            server._ctx,
+            {
+                "action": "build",
+                "session_id": None,
+                "image_name": "myapp:latest",
+            },
+        )
         assert len(result) == 1
         # 无 session 时返回 "No session_id, name, host, or SSH_HOST env var configured."
         assert "session" in result[0].text.lower() or "error" in result[0].text.lower()
 
     @pytest.mark.asyncio
     async def test_missing_image_name(self, server):
-        result = await handle_docker(server._ctx, {
-            "action": "build",
-            "session_id": "s1",
-            "image_name": None,
-        })
+        result = await handle_docker(
+            server._ctx,
+            {
+                "action": "build",
+                "session_id": "s1",
+                "image_name": None,
+            },
+        )
         assert len(result) == 1
 
 
@@ -419,10 +477,13 @@ class TestHandleDockerStatus:
 
     @pytest.mark.asyncio
     async def test_missing_session_id(self, server):
-        result = await handle_docker(server._ctx, {
-            "action": "ps",
-            "session_id": None,
-        })
+        result = await handle_docker(
+            server._ctx,
+            {
+                "action": "ps",
+                "session_id": None,
+            },
+        )
         assert len(result) == 1
         assert "session" in result[0].text.lower() or "error" in result[0].text.lower()
 
@@ -433,20 +494,26 @@ class TestHandleExecuteWait:
     @pytest.mark.asyncio
     async def test_missing_params(self, server):
         server._env_config = {}
-        result = await handle_execute(server._ctx, {
-            "session_id": None,
-            "command": "echo test",
-            "timeout": 60,
-        })
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": None,
+                "command": "echo test",
+                "timeout": 60,
+            },
+        )
         assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_security_blocked(self, server):
-        result = await handle_execute(server._ctx, {
-            "session_id": "s1",
-            "command": "evil_command arg1",
-            "timeout": 60,
-        })
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "command": "evil_command arg1",
+                "timeout": 60,
+            },
+        )
         assert len(result) == 1
 
 
@@ -455,20 +522,26 @@ class TestHandleContainerLogs:
 
     @pytest.mark.asyncio
     async def test_missing_params(self, server):
-        result = await handle_docker(server._ctx, {
-            "action": "logs",
-            "session_id": None,
-            "container_name": None,
-        })
+        result = await handle_docker(
+            server._ctx,
+            {
+                "action": "logs",
+                "session_id": None,
+                "container_name": None,
+            },
+        )
         assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_invalid_container_name(self, server):
-        result = await handle_docker(server._ctx, {
-            "action": "logs",
-            "session_id": "s1",
-            "container_name": "invalid;name",
-        })
+        result = await handle_docker(
+            server._ctx,
+            {
+                "action": "logs",
+                "session_id": "s1",
+                "container_name": "invalid;name",
+            },
+        )
         assert len(result) == 1
         assert "invalid" in result[0].text.lower() or "无效" in result[0].text
 
@@ -479,11 +552,14 @@ class TestHandleBackgroundTask:
     @pytest.mark.asyncio
     async def test_missing_params(self, server):
         server._env_config = {}
-        result = await handle_execute(server._ctx, {
-            "session_id": None,
-            "command": "echo test",
-            "background": True,
-        })
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": None,
+                "command": "echo test",
+                "background": True,
+            },
+        )
         assert len(result) == 1
 
     @pytest.mark.asyncio
@@ -491,14 +567,17 @@ class TestHandleBackgroundTask:
         # "docker ps" should NOT be auto-detected as background
         server.session_manager = MagicMock()
         mock_session = MagicMock()
-        mock_session.execute_command = AsyncMock(return_value={
-            "exit_code": 0, "stdout": "CONTAINER ID", "stderr": ""
-        })
+        mock_session.execute_command = AsyncMock(
+            return_value={"exit_code": 0, "stdout": "CONTAINER ID", "stderr": ""}
+        )
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await handle_execute(server._ctx, {
-            "session_id": "s1",
-            "command": "docker ps",
-        })
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "command": "docker ps",
+            },
+        )
         assert len(result) == 1
         assert "Exit Code: 0" in result[0].text
 
@@ -509,9 +588,12 @@ class TestHandleTaskStatus:
     @pytest.mark.asyncio
     async def test_missing_session_id(self, server):
         server._env_config = {}
-        result = await handle_execute(server._ctx, {
-            "session_id": None,
-            "command": "echo test",
-            "wait": True,
-        })
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": None,
+                "command": "echo test",
+                "wait": True,
+            },
+        )
         assert len(result) == 1

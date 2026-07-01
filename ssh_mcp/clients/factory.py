@@ -12,7 +12,7 @@ from .paramiko_client import ParamikoClient
 class SSHClientFactory:
     """SSH 客户端工厂类"""
 
-    _client_classes: dict[ClientType, type] = {}    # type: ignore[type-abstract]
+    _client_classes: dict[ClientType, type] = {}  # type: ignore[type-abstract]
     _default_client_type: ClientType = ClientType.PARAMIKO
 
     @classmethod
@@ -26,7 +26,9 @@ class SSHClientFactory:
         cls._default_client_type = client_type
 
     @classmethod
-    def create(cls, config: ConnectionConfig, client_type: ClientType | None = None) -> SSHClientInterface:
+    def create(
+        cls, config: ConnectionConfig, client_type: ClientType | None = None
+    ) -> SSHClientInterface:
         """创建 SSH 客户端实例"""
         if client_type is None:
             client_type = cls._default_client_type
@@ -49,18 +51,21 @@ SSHClientFactory.register(ClientType.PARAMIKO, ParamikoClient)
 # 尝试注册其他客户端（如果已安装）
 try:
     from .additional_clients import FabricClient  # type: ignore[attr-defined]
+
     SSHClientFactory.register(ClientType.FABRIC, FabricClient)
 except ImportError:
     pass
 
 try:
     from .additional_clients import AsyncSSHClient  # type: ignore[attr-defined]
+
     SSHClientFactory.register(ClientType.ASYNCSSH, AsyncSSHClient)
 except ImportError:
     pass
 
 try:
     from .additional_clients import SSH2Client  # type: ignore[attr-defined]
+
     SSHClientFactory.register(ClientType.SSH2, SSH2Client)
 except ImportError:
     pass
@@ -83,7 +88,7 @@ class ClientConfig:
             return
 
         try:
-            with open(self.config_path, encoding='utf-8') as f:
+            with open(self.config_path, encoding="utf-8") as f:
                 self._config = json.load(f)
         except Exception:
             self._config = self._get_default_config()
@@ -97,9 +102,9 @@ class ClientConfig:
                     "enabled": True,
                     "timeout": 30,
                     "keepalive_interval": 30,
-                    "session_timeout": 7200
+                    "session_timeout": 7200,
                 }
-            }
+            },
         }
 
     def get_default_client_type(self) -> ClientType:
@@ -128,7 +133,7 @@ class ClientConfig:
     def save(self) -> None:
         """保存配置"""
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.config_path, 'w', encoding='utf-8') as f:
+        with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(self._config, f, indent=2)
 
     @classmethod

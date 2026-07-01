@@ -26,6 +26,7 @@ class Tunnel:
 
     def start(self, transport) -> None:
         import socket
+
         self._transport = transport
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -36,11 +37,11 @@ class Tunnel:
         self._accept_thread.start()
 
     def _accept_loop(self):
-        import socket
+
         while not self._stop.is_set():
             try:
                 client_sock, _ = self._server_socket.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -49,7 +50,7 @@ class Tunnel:
             t.start()
 
     def _handle_connection(self, client_sock):
-        import socket
+
         chan = None
         try:
             chan = self._transport.open_channel(

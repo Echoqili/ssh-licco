@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
 
 
 class ClientType(Enum):
     """支持的 SSH 客户端类型"""
+
     PARAMIKO = "paramiko"
     FABRIC = "fabric"
     ASYNCSSH = "asyncssh"
@@ -17,6 +18,7 @@ class ClientType(Enum):
 @dataclass
 class CommandResult:
     """命令执行结果"""
+
     stdout: str
     stderr: str
     return_code: int
@@ -25,6 +27,7 @@ class CommandResult:
 @dataclass
 class FileListResult:
     """目录列表结果"""
+
     files: list[str]
     path: str
 
@@ -32,6 +35,7 @@ class FileListResult:
 @dataclass
 class ConnectionResult:
     """连接结果"""
+
     success: bool
     session_id: str | None = None
     message: str = ""
@@ -41,6 +45,7 @@ class ConnectionResult:
 @dataclass
 class FileTransferResult:
     """文件传输结果"""
+
     success: bool
     message: str = ""
     bytes_transferred: int = 0
@@ -49,7 +54,7 @@ class FileTransferResult:
 
 class SSHClientInterface(ABC):
     """SSH 客户端抽象接口
-    
+
     所有 SSH 客户端实现必须实现此接口。
     采用依赖倒置原则，便于扩展和测试。
     """
@@ -69,10 +74,10 @@ class SSHClientInterface(ABC):
     @abstractmethod
     def connect(self, timeout: int = 30) -> ConnectionResult:
         """建立 SSH 连接
-        
+
         Args:
             timeout: 连接超时时间（秒）
-            
+
         Returns:
             ConnectionResult: 连接结果
         """
@@ -84,14 +89,16 @@ class SSHClientInterface(ABC):
         pass
 
     @abstractmethod
-    def execute_command(self, command: str, timeout: int = 30, background: bool = False) -> CommandResult:
+    def execute_command(
+        self, command: str, timeout: int = 30, background: bool = False
+    ) -> CommandResult:
         """执行命令并返回结果
-        
+
         Args:
             command: 要执行的命令
             timeout: 命令执行超时时间（秒）
             background: 是否后台执行（不等待命令完成）
-            
+
         Returns:
             CommandResult: 命令执行结果
         """
@@ -100,10 +107,10 @@ class SSHClientInterface(ABC):
     @abstractmethod
     def execute_command_stream(self, command: str) -> Iterator[str]:
         """流式执行命令（用于大输出）
-        
+
         Args:
             command: 要执行的命令
-            
+
         Yields:
             str: 命令输出的每一行
         """
@@ -112,11 +119,11 @@ class SSHClientInterface(ABC):
     @abstractmethod
     def upload_file(self, local_path: str, remote_path: str) -> FileTransferResult:
         """上传文件
-        
+
         Args:
             local_path: 本地文件路径
             remote_path: 远程目标路径
-            
+
         Returns:
             FileTransferResult: 传输结果
         """
@@ -125,11 +132,11 @@ class SSHClientInterface(ABC):
     @abstractmethod
     def download_file(self, remote_path: str, local_path: str) -> FileTransferResult:
         """下载文件
-        
+
         Args:
             remote_path: 远程文件路径
             local_path: 本地目标路径
-            
+
         Returns:
             FileTransferResult: 传输结果
         """
@@ -138,10 +145,10 @@ class SSHClientInterface(ABC):
     @abstractmethod
     def list_directory(self, remote_path: str = ".") -> FileListResult:
         """列出目录内容
-        
+
         Args:
             remote_path: 远程目录路径
-            
+
         Returns:
             FileListResult: 目录列表结果
         """
@@ -150,7 +157,7 @@ class SSHClientInterface(ABC):
     @abstractmethod
     def get_transport_info(self) -> dict:
         """获取传输层信息
-        
+
         Returns:
             dict: 包含连接状态的字典
         """

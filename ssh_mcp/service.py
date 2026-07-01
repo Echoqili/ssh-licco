@@ -56,14 +56,14 @@ class SSHServiceProtocol(Protocol):
 class SSHService:
     """
     SSH 服务层 - 业务逻辑核心
-    
+
     职责：
     1. 统一的连接管理
     2. 会话生命周期管理
     3. 健康检查与监控
     4. 异常处理与重试
     5. 日志记录
-    
+
     改进特性：
     - 线程安全的数据访问
     - 异步执行阻塞操作
@@ -85,20 +85,18 @@ class SSHService:
             self._client_factory = factory
 
     async def connect(
-        self,
-        config: ConnectionConfig,
-        client_type: ClientType | None = None
+        self, config: ConnectionConfig, client_type: ClientType | None = None
     ) -> ConnectionInfo:
         """
         建立 SSH 连接（异步版本）
-        
+
         Args:
             config: 连接配置
             client_type: 客户端类型（可选，默认使用配置的客户端）
-            
+
         Returns:
             ConnectionInfo: 连接信息
-            
+
         Raises:
             ConnectionException: 连接失败
             AuthenticationException: 认证失败
@@ -113,13 +111,10 @@ class SSHService:
         try:
             # 使用线程池执行阻塞的连接操作
             client = await self._executor.submit(
-                self._create_client_sync, config, client_type,
-                timeout=config.timeout + 10
+                self._create_client_sync, config, client_type, timeout=config.timeout + 10
             )
 
-            connection_result = await self._executor.submit(
-                client.connect, timeout=config.timeout
-            )
+            connection_result = await self._executor.submit(client.connect, timeout=config.timeout)
 
             if not connection_result.success:
                 raise ConnectionException(connection_result.message)
@@ -133,7 +128,7 @@ class SSHService:
                 connected_at=datetime.now(),
                 last_activity=datetime.now(),
                 is_connected=True,
-                command_count=0
+                command_count=0,
             )
 
             with self._lock:
@@ -148,12 +143,10 @@ class SSHService:
             self._logger.error(f"Connection failed: {str(e)}")
             if "authentication" in str(e).lower() or "auth" in str(e).lower():
                 raise AuthenticationException(
-                    f"Authentication failed for {config.username}@{config.host}",
-                    original_error=e
+                    f"Authentication failed for {config.username}@{config.host}", original_error=e
                 )
             raise ConnectionException(
-                f"Failed to connect to {config.host}:{config.port}",
-                original_error=e
+                f"Failed to connect to {config.host}:{config.port}", original_error=e
             )
 
     async def disconnect(self, session_id: str) -> None:
@@ -177,20 +170,15 @@ class SSHService:
         with self._lock:
             self._sessions.pop(session_id, None)
 
-    async def execute_command(
-        self,
-        session_id: str,
-        command: str,
-        timeout: int = 30
-    ) -> dict:
+    async def execute_command(self, session_id: str, command: str, timeout: int = 30) -> dict:
         """
         执行命令（异步版本）
-        
+
         Args:
             session_id: 会话 ID
             command: 要执行的命令
             timeout: 超时时间（秒）
-            
+
         Returns:
             dict: 命令执行结果
         """
@@ -201,7 +189,7 @@ class SSHService:
             connection_info = self._sessions[session_id]
             client = self._clients.get(session_id)
 
-        if not client or not getattr(client, 'is_connected', False):
+        if not client or not getattr(client, "is_connected", False):
             with self._lock:
                 if session_id in self._sessions:
                     self._sessions[session_id].is_connected = False
@@ -210,9 +198,7 @@ class SSHService:
         self._logger.debug(f"Executing command: {command}")
 
         try:
-            result = await self._executor.submit(
-                client.execute_command, command, timeout=timeout
-            )
+            result = await self._executor.submit(client.execute_command, command, timeout=timeout)
 
             with self._lock:
                 if session_id in self._sessions:
@@ -224,37 +210,33 @@ class SSHService:
                 "stdout": result.stdout,
                 "stderr": result.stderr,
                 "return_code": result.return_code,
-                "session_id": session_id
+                "session_id": session_id,
             }
 
         except asyncio.TimeoutError:
             raise CommandExecutionException(
-                f"Command execution timed out after {timeout}s",
-                command=command
+                f"Command execution timed out after {timeout}s", command=command
             )
         except Exception as e:
             self._logger.error(f"Command execution failed: {str(e)}")
             raise CommandExecutionException(
-                f"Failed to execute command: {str(e)}",
-                command=command,
-                original_error=e
+                f"Failed to execute command: {str(e)}", command=command, original_error=e
             )
 
     async def health_check(self, session_id: str) -> HealthCheckResult:
         """
         健康检查（异步版本）
-        
+
         Args:
             session_id: 会话 ID
-            
+
         Returns:
             HealthCheckResult: 健康检查结果
         """
         with self._lock:
             if session_id not in self._sessions:
                 return HealthCheckResult(
-                    status=HealthCheckStatus.UNKNOWN,
-                    message=f"Session not found: {session_id}"
+                    status=HealthCheckStatus.UNKNOWN, message=f"Session not found: {session_id}"
                 )
 
             connection_info = self._sessions[session_id]
@@ -265,8 +247,7 @@ class SSHService:
                 if session_id in self._sessions:
                     self._sessions[session_id].is_connected = False
             return HealthCheckResult(
-                status=HealthCheckStatus.UNHEALTHY,
-                message="Client not available"
+                status=HealthCheckStatus.UNHEALTHY, message="Client not available"
             )
 
         try:
@@ -287,7 +268,7 @@ class SSHService:
             return HealthCheckResult(
                 status=HealthCheckStatus.HEALTHY if is_healthy else HealthCheckStatus.UNHEALTHY,
                 latency_ms=latency_ms,
-                message="OK" if is_healthy else f"Command failed: {result.stderr}"
+                message="OK" if is_healthy else f"Command failed: {result.stderr}",
             )
 
         except Exception as e:
@@ -295,8 +276,7 @@ class SSHService:
                 if session_id in self._sessions:
                     self._sessions[session_id].is_connected = False
             return HealthCheckResult(
-                status=HealthCheckStatus.UNHEALTHY,
-                message=f"Health check failed: {str(e)}"
+                status=HealthCheckStatus.UNHEALTHY, message=f"Health check failed: {str(e)}"
             )
 
     def get_session_info(self, session_id: str) -> ConnectionInfo | None:

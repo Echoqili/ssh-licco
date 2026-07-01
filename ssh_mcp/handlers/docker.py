@@ -19,13 +19,17 @@ async def handle_docker(ctx: HandlerContext, args: dict) -> list[TextContent]:
 
     session_id = await ensure_session(ctx, args, handle_connect)
     if not session_id:
-        return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
+        return [
+            TextContent(
+                type="text", text="No session_id, name, host, or SSH_HOST env var configured."
+            )
+        ]
 
     if action == "ps":
         result = await ctx.session_manager.execute_command(
             session_id,
             "docker ps --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'",
-            timeout=10
+            timeout=10,
         )
         output = "Docker Containers\n\n"
         output += result.get("stdout", "No running containers")
@@ -33,8 +37,12 @@ async def handle_docker(ctx: HandlerContext, args: dict) -> list[TextContent]:
 
     elif action == "images":
         image_name = args.get("image_name", "")
-        image_filter = "'{}'".format(image_name) if image_name else ""
-        cmd = "docker images " + image_filter + " --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
+        image_filter = f"'{image_name}'" if image_name else ""
+        cmd = (
+            "docker images "
+            + image_filter
+            + " --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'"
+        )
         result = await ctx.session_manager.execute_command(session_id, cmd, timeout=10)
         output = "Docker Images\n\n"
         output += result.get("stdout", "No images found")
@@ -55,7 +63,7 @@ async def handle_docker(ctx: HandlerContext, args: dict) -> list[TextContent]:
             "session_id": session_id,
             "command": build_cmd,
             "workdir": context,
-            "log_file": log_file
+            "log_file": log_file,
         }
         return await execute_background(ctx, session_id, build_cmd, background_args, 30)
 
@@ -63,8 +71,10 @@ async def handle_docker(ctx: HandlerContext, args: dict) -> list[TextContent]:
         container_name = args.get("container_name")
         tail = args.get("tail", 100)
         if not container_name:
-            return [TextContent(type="text", text="Error: container_name is required for logs action")]
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', container_name):
+            return [
+                TextContent(type="text", text="Error: container_name is required for logs action")
+            ]
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", container_name):
             return [TextContent(type="text", text=f"Invalid container name: {container_name}")]
 
         logs_cmd = f"docker logs {container_name} --tail {tail} 2>&1"
@@ -77,4 +87,8 @@ async def handle_docker(ctx: HandlerContext, args: dict) -> list[TextContent]:
         return [TextContent(type="text", text=output)]
 
     else:
-        return [TextContent(type="text", text=f"Unknown action: {action}. Use ps, images, build, or logs.")]
+        return [
+            TextContent(
+                type="text", text=f"Unknown action: {action}. Use ps, images, build, or logs."
+            )
+        ]

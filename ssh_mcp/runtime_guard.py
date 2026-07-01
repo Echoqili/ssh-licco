@@ -40,6 +40,7 @@ class RuntimeCheckResult:
 def _posix_user_name(uid: int) -> str:
     try:
         import pwd  # 仅 POSIX 可用
+
         return pwd.getpwuid(uid).pw_name
     except Exception:
         return str(uid)
@@ -65,8 +66,12 @@ def _is_root() -> bool:
 def _is_sudo_context() -> bool:
     """检测 sudo / doas / pkexec 提权环境。"""
     sudo_markers = (
-        "SUDO_USER", "SUDO_UID", "SUDO_GID", "SUDO_COMMAND",
-        "PKEXEC_UID", "DOAS_USER",
+        "SUDO_USER",
+        "SUDO_UID",
+        "SUDO_GID",
+        "SUDO_COMMAND",
+        "PKEXEC_UID",
+        "DOAS_USER",
     )
     return any(os.getenv(m) for m in sudo_markers)
 

@@ -16,7 +16,11 @@ async def handle_file_transfer(ctx: HandlerContext, args: dict) -> list[TextCont
     """Transfer files between local and remote, or perform remote file operations."""
     session_id = await ensure_session(ctx, args, handle_connect)
     if not session_id:
-        return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
+        return [
+            TextContent(
+                type="text", text="No session_id, name, host, or SSH_HOST env var configured."
+            )
+        ]
     session = await ctx.session_manager.get_session(session_id)
     if not session:
         return [TextContent(type="text", text=f"Session not found: {session_id}")]
@@ -66,19 +70,26 @@ async def handle_file_transfer(ctx: HandlerContext, args: dict) -> list[TextCont
         use_rsync = args.get("use_rsync", False)
 
         if not target_host or not target_path or not remote_path:
-            return [TextContent(type="text", text="remote_copy requires remote_path, target_host, and target_path")]
+            return [
+                TextContent(
+                    type="text",
+                    text="remote_copy requires remote_path, target_host, and target_path",
+                )
+            ]
 
         # 校验 host/user 不含 shell 元字符
-        if not re.match(r'^[a-zA-Z0-9._-]+$', str(target_host)):
+        if not re.match(r"^[a-zA-Z0-9._-]+$", str(target_host)):
             return [TextContent(type="text", text=f"Invalid target_host: {target_host}")]
-        if not re.match(r'^[a-zA-Z0-9._-]+$', str(target_user)):
+        if not re.match(r"^[a-zA-Z0-9._-]+$", str(target_user)):
             return [TextContent(type="text", text=f"Invalid target_user: {target_user}")]
 
         source = shlex.quote(remote_path)
         target = f"{target_user}@{target_host}:{shlex.quote(target_path)}"
 
         if use_rsync:
-            base_cmd = f"rsync -avz --progress -e 'ssh -p {target_port} -o StrictHostKeyChecking=no'"
+            base_cmd = (
+                f"rsync -avz --progress -e 'ssh -p {target_port} -o StrictHostKeyChecking=no'"
+            )
         else:
             base_cmd = f"scp -P {target_port} -o StrictHostKeyChecking=no -r"
 
@@ -112,13 +123,23 @@ async def handle_file_transfer(ctx: HandlerContext, args: dict) -> list[TextCont
 
     if result.get("success"):
         if direction == "stat":
-            ftype = "dir" if result.get("is_dir") else "file" if result.get("is_file") else "link" if result.get("is_link") else "unknown"
-            output = (f"📊 Stat: {result.get('path')}\n"
-                      f"  Size: {result.get('size')} bytes\n"
-                      f"  Mode: {result.get('mode')}\n"
-                      f"  Type: {ftype}\n"
-                      f"  mtime: {result.get('mtime')}\n"
-                      f"  atime: {result.get('atime')}")
+            ftype = (
+                "dir"
+                if result.get("is_dir")
+                else "file"
+                if result.get("is_file")
+                else "link"
+                if result.get("is_link")
+                else "unknown"
+            )
+            output = (
+                f"📊 Stat: {result.get('path')}\n"
+                f"  Size: {result.get('size')} bytes\n"
+                f"  Mode: {result.get('mode')}\n"
+                f"  Type: {ftype}\n"
+                f"  mtime: {result.get('mtime')}\n"
+                f"  atime: {result.get('atime')}"
+            )
         elif "files" in result:
             output = f"📁 Files in {result.get('path', '.')}:\n"
             for f in result["files"]:

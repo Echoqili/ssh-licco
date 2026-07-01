@@ -25,10 +25,17 @@ async def handle_generate_key(ctx: HandlerContext, args: dict) -> list[TextConte
         key_path = Path(save_path)
         ctx.key_manager.save_key(key_pair, key_path)
 
-    return [TextContent(
-        type="text",
-        text=f"Generated {key_type} key pair\n"
-             f"Fingerprint: {key_pair.fingerprint}\n"
-             f"Public Key:\n{key_pair.public_key}\n"
-             f"{'Saved to: ' + save_path if save_path else 'Key not saved (provide save_path to persist)'}"
-    )]
+    save_info = (
+        f"Saved to: {save_path}" if save_path else "Key not saved (provide save_path to persist)"
+    )
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"Generated {key_type} key pair\n"
+                f"Fingerprint: {key_pair.fingerprint}\n"
+                f"Public Key:\n{key_pair.public_key}\n"
+                f"{save_info}"
+            ),
+        )
+    ]

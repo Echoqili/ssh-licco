@@ -18,6 +18,7 @@ from .logging_config import get_logger
 
 class PooledConnectionState(Enum):
     """连接池连接状态"""
+
     IDLE = "idle"
     IN_USE = "in_use"
     CLOSED = "closed"
@@ -27,6 +28,7 @@ class PooledConnectionState(Enum):
 @dataclass
 class PooledConnection:
     """池化连接"""
+
     connection_id: str
     client: SSHClientInterface
     config: ConnectionConfig
@@ -66,6 +68,7 @@ class PooledConnection:
 @dataclass
 class PoolConfig:
     """连接池配置"""
+
     min_size: int = 1
     max_size: int = 10
     max_idle_time: int = 300
@@ -79,7 +82,7 @@ class PoolConfig:
 class ConnectionPool:
     """
     SSH 连接池 - 高性能连接管理
-    
+
     特性：
     - 连接复用，减少连接开销
     - 连接健康检查与自动回收
@@ -91,7 +94,7 @@ class ConnectionPool:
         self,
         config: ConnectionConfig,
         pool_config: PoolConfig | None = None,
-        client_type: ClientType | None = None
+        client_type: ClientType | None = None,
     ):
         self._config = config
         self._pool_config = pool_config or PoolConfig()
@@ -112,10 +115,7 @@ class ConnectionPool:
 
     def _create_client(self) -> SSHClientInterface:
         """创建新的SSH客户端"""
-        return SSHClientFactory.create(
-            self._config,
-            self._client_type
-        )
+        return SSHClientFactory.create(self._config, self._client_type)
 
     def _create_and_connect(self) -> PooledConnection:
         """创建并连接SSH客户端"""
@@ -133,7 +133,7 @@ class ConnectionPool:
                         connection_id=connection_id,
                         client=client,
                         config=self._config,
-                        client_type=self._client_type
+                        client_type=self._client_type,
                     )
                     self._logger.info(
                         f"Created new connection: {connection_id} "
@@ -143,9 +143,7 @@ class ConnectionPool:
                 last_error = result.message
             except Exception as e:
                 last_error = str(e)
-                self._logger.warning(
-                    f"Connection attempt {attempt + 1} failed: {last_error}"
-                )
+                self._logger.warning(f"Connection attempt {attempt + 1} failed: {last_error}")
                 time.sleep(0.5 * (attempt + 1))
 
         raise ConnectionException(
@@ -174,20 +172,18 @@ class ConnectionPool:
                 except Exception as e:
                     self._logger.error(f"Failed to create initial connection: {e}")
 
-            self._logger.info(
-                f"Connection pool initialized: {self._init_count} connections"
-            )
+            self._logger.info(f"Connection pool initialized: {self._init_count} connections")
 
     def acquire(self, timeout: int | None = None) -> PooledConnection:
         """
         获取一个连接
-        
+
         Args:
             timeout: 获取超时时间（秒），默认使用池配置
-            
+
         Returns:
             PooledConnection: 池化连接
-            
+
         Raises:
             PoolExhaustedException: 连接池耗尽
             ConnectionException: 获取连接失败
@@ -235,7 +231,7 @@ class ConnectionPool:
     def release(self, pooled: PooledConnection, force_close: bool = False) -> None:
         """
         释放连接回连接池
-        
+
         Args:
             pooled: 池化连接
             force_close: 是否强制关闭连接
@@ -253,9 +249,7 @@ class ConnectionPool:
             return
 
         if pooled.use_count >= self._pool_config.max_use_count:
-            self._logger.info(
-                f"Connection {pooled.connection_id} exceeded max use count, closing"
-            )
+            self._logger.info(f"Connection {pooled.connection_id} exceeded max use count, closing")
             self._remove_connection(pooled.connection_id)
             return
 
@@ -285,10 +279,7 @@ class ConnectionPool:
 
     def _start_validation(self) -> None:
         """启动连接验证任务"""
-        self._validation_task = threading.Thread(
-            target=self._validation_loop,
-            daemon=True
-        )
+        self._validation_task = threading.Thread(target=self._validation_loop, daemon=True)
         self._validation_task.start()
 
     def _validation_loop(self) -> None:
@@ -321,8 +312,7 @@ class ConnectionPool:
         for connection_id in connections_to_close:
             self._remove_connection(connection_id)
             self._logger.info(
-                f"Closed idle connection: {connection_id}, "
-                f"pool size: {len(self._pool)}"
+                f"Closed idle connection: {connection_id}, pool size: {len(self._pool)}"
             )
 
     def get_stats(self) -> dict[str, Any]:
@@ -340,8 +330,8 @@ class ConnectionPool:
                     "min_size": self._pool_config.min_size,
                     "max_size": self._pool_config.max_size,
                     "max_idle_time": self._pool_config.max_idle_time,
-                    "max_use_count": self._pool_config.max_use_count
-                }
+                    "max_use_count": self._pool_config.max_use_count,
+                },
             }
 
     def close(self) -> None:
@@ -365,7 +355,7 @@ class ConnectionPool:
 class PooledSSHClient:
     """
     池化SSH客户端 - 包装连接池提供会话接口
-    
+
     用法:
         pool = ConnectionPool(config)
         client = PooledSSHClient(pool)
