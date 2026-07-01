@@ -2,7 +2,22 @@ from __future__ import annotations
 
 import logging
 import sys
+import warnings
 from pathlib import Path
+
+
+def suppress_known_warnings() -> None:
+    """抑制已知但无需处理的三方库弃用警告。"""
+    warnings.filterwarnings(
+        "ignore",
+        message="Blowfish has been deprecated",
+        category=UserWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message="Blowfish has been deprecated",
+        category=DeprecationWarning,
+    )
 
 
 class SSHLogger:

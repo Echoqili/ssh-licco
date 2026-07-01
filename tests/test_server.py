@@ -5,6 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from ssh_mcp.handlers.connect import handle_connect, handle_disconnect
+from ssh_mcp.handlers.docker import handle_docker
+from ssh_mcp.handlers.execute import handle_execute
+from ssh_mcp.handlers.file_transfer import handle_file_transfer
+from ssh_mcp.handlers.host import handle_host
+from ssh_mcp.handlers.key import handle_generate_key
+from ssh_mcp.handlers.utils import should_run_background
 from ssh_mcp.server import SSHMCPServer
 
 
@@ -91,7 +98,7 @@ class TestHandleConfig:
         mock_session_info.connected_at = MagicMock()
         mock_session_info.connected_at.isoformat.return_value = "2024-01-01T00:00:00"
         server.session_manager.create_session = AsyncMock(return_value=mock_session_info)
-        result = await server._handle_connect({
+        result = await handle_connect(server._ctx, {
             "host": "1.2.3.4",
             "port": 22,
             "username": "root",
@@ -114,7 +121,7 @@ class TestHandleConfig:
         mock_session_info.connected_at.isoformat.return_value = "2024-01-01T00:00:00"
         server.session_manager.create_session = AsyncMock(return_value=mock_session_info)
         with patch.dict(os.environ, {"SSH_PASSWORD": "env_pass"}):
-            result = await server._handle_connect({
+            result = await handle_connect(server._ctx, {
                 "host": "1.2.3.4",
                 "port": 22,
                 "username": "root",
@@ -130,7 +137,7 @@ class TestHandleDisconnect:
     async def test_disconnect(self, server):
         server.session_manager = MagicMock()
         server.session_manager.close_session = AsyncMock()
-        result = await server._handle_disconnect({"session_id": "sess-1"})
+        result = await handle_disconnect(server._ctx, {"session_id": "sess-1"})
         assert len(result) == 1
         assert "closed" in result[0].text.lower()
 
@@ -142,7 +149,7 @@ class TestHandleListSessions:
     async def test_no_sessions(self, server):
         server.session_manager = MagicMock()
         server.session_manager.list_sessions.return_value = []
-        result = await server._handle_disconnect({})
+        result = await handle_disconnect(server._ctx, {})
         assert len(result) == 1
         assert "no" in result[0].text.lower() or "No" in result[0].text
 
@@ -158,7 +165,7 @@ class TestHandleListSessions:
         mock_info.connected_at.isoformat.return_value = "2024-01-01T00:00:00"
         mock_info.last_activity.isoformat.return_value = "2024-01-01T00:01:00"
         server.session_manager.list_sessions.return_value = [mock_info]
-        result = await server._handle_disconnect({})
+        result = await handle_disconnect(server._ctx, {})
         assert len(result) == 1
         assert "s1" in result[0].text
 
@@ -173,7 +180,7 @@ class TestHandleGenerateKey:
         )
         server.key_manager = MagicMock()
         server.key_manager.generate_ed25519_key.return_value = mock_kp
-        result = await server._handle_generate_key({"key_type": "ed25519"})
+        result = await handle_generate_key(server._ctx, {"key_type": "ed25519"})
         assert len(result) == 1
         assert "ed25519" in result[0].text
 
@@ -186,7 +193,7 @@ class TestHandleGenerateKey:
         )
         server.key_manager = MagicMock()
         server.key_manager.generate_rsa_key.return_value = mock_kp
-        result = await server._handle_generate_key({"key_type": "rsa", "key_size": 4096})
+        result = await handle_generate_key(server._ctx, {"key_type": "rsa", "key_size": 4096})
         assert len(result) == 1
         assert "rsa" in result[0].text
 
@@ -196,7 +203,7 @@ class TestHandleFileTransfer:
     async def test_session_not_found(self, server):
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=None)
-        result = await server._handle_file_transfer({
+        result = await handle_file_transfer(server._ctx, {
             "session_id": "nonexistent",
             "local_path": "/local",
             "remote_path": "/remote",
@@ -211,7 +218,7 @@ class TestHandleFileTransfer:
         mock_session.upload_file = AsyncMock(return_value={"success": True, "message": "Uploaded"})
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await server._handle_file_transfer({
+        result = await handle_file_transfer(server._ctx, {
             "session_id": "s1",
             "local_path": "/local",
             "remote_path": "/remote",
@@ -225,7 +232,7 @@ class TestHandleFileTransfer:
         mock_session.download_file = AsyncMock(return_value={"success": True, "message": "Downloaded"})
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await server._handle_file_transfer({
+        result = await handle_file_transfer(server._ctx, {
             "session_id": "s1",
             "local_path": "/local",
             "remote_path": "/remote",
@@ -238,7 +245,7 @@ class TestHandleFileTransfer:
         mock_session = MagicMock()
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await server._handle_file_transfer({
+        result = await handle_file_transfer(server._ctx, {
             "session_id": "s1",
             "local_path": "/local",
             "remote_path": "/remote",
@@ -255,7 +262,7 @@ class TestHandleListHosts:
     async def test_list_hosts(self, server):
         server.config_manager = MagicMock()
         server.config_manager.list_hosts.return_value = []
-        result = await server._handle_host({"action": "list"})
+        result = await handle_host(server._ctx, {"action": "list"})
         assert len(result) == 1
 
 
@@ -265,7 +272,7 @@ class TestHandleAddHost:
     @pytest.mark.asyncio
     async def test_add_host(self, server):
         server.config_manager = MagicMock()
-        result = await server._handle_host({
+        result = await handle_host(server._ctx, {
             "action": "add",
             "name": "prod",
             "host": "1.2.3.4",
@@ -280,7 +287,7 @@ class TestHandleAddHost:
     @pytest.mark.asyncio
     async def test_add_host_missing_name(self, server):
         server.config_manager = MagicMock()
-        result = await server._handle_host({
+        result = await handle_host(server._ctx, {
             "action": "add",
             "name": None,
             "host": "1.2.3.4",
@@ -296,71 +303,71 @@ class TestHandleRemoveHost:
     async def test_remove_host(self, server):
         server.config_manager = MagicMock()
         server.config_manager.remove_host.return_value = True
-        result = await server._handle_host({"action": "remove", "name": "prod"})
+        result = await handle_host(server._ctx, {"action": "remove", "name": "prod"})
         assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_remove_host_not_found(self, server):
         server.config_manager = MagicMock()
         server.config_manager.remove_host.return_value = False
-        result = await server._handle_host({"action": "remove", "name": "nonexistent"})
+        result = await handle_host(server._ctx, {"action": "remove", "name": "nonexistent"})
         assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_remove_host_no_name(self, server):
         server.config_manager = MagicMock()
-        result = await server._handle_host({"action": "remove", "name": None})
+        result = await handle_host(server._ctx, {"action": "remove", "name": None})
         assert len(result) == 1
 
 
 class TestShouldRunBackground:
     def test_docker_ps_not_background(self, server):
-        assert server._should_run_background("docker ps") is False
+        assert should_run_background("docker ps") is False
 
     def test_docker_images_not_background(self, server):
-        assert server._should_run_background("docker images") is False
+        assert should_run_background("docker images") is False
 
     def test_docker_logs_not_background(self, server):
-        assert server._should_run_background("docker logs mycontainer") is False
+        assert should_run_background("docker logs mycontainer") is False
 
     def test_python_app_background(self, server):
-        assert server._should_run_background("python app.py") is True
+        assert should_run_background("python app.py") is True
 
     def test_npm_start_background(self, server):
-        assert server._should_run_background("npm start") is True
+        assert should_run_background("npm start") is True
 
     def test_docker_compose_up_background(self, server):
-        assert server._should_run_background("docker-compose up") is True
+        assert should_run_background("docker-compose up") is True
 
     def test_simple_ls_not_background(self, server):
-        assert server._should_run_background("ls -la") is False
+        assert should_run_background("ls -la") is False
 
     def test_java_jar_background(self, server):
-        assert server._should_run_background("java -jar app.jar") is True
+        assert should_run_background("java -jar app.jar") is True
 
     def test_go_run_background(self, server):
-        assert server._should_run_background("go run main.go") is True
+        assert should_run_background("go run main.go") is True
 
     def test_cargo_run_background(self, server):
-        assert server._should_run_background("cargo run") is True
+        assert should_run_background("cargo run") is True
 
     def test_flask_run_background(self, server):
-        assert server._should_run_background("flask run") is True
+        assert should_run_background("flask run") is True
 
     def test_systemctl_start_background(self, server):
-        assert server._should_run_background("systemctl start nginx") is True
+        assert should_run_background("systemctl start nginx") is True
 
     def test_docker_stop_not_background(self, server):
-        assert server._should_run_background("docker stop mycontainer") is False
+        assert should_run_background("docker stop mycontainer") is False
 
     def test_docker_exec_not_background(self, server):
-        assert server._should_run_background("docker exec -it mycontainer bash") is False
+        assert should_run_background("docker exec -it mycontainer bash") is False
 
 
 class TestHandleExecute:
     @pytest.mark.asyncio
     async def test_security_blocked(self, server):
-        result = await server._handle_execute({
+        result = await handle_execute(server._ctx, {
             "session_id": "s1",
             "command": "evil_command arg1",
             "timeout": 30,
@@ -373,7 +380,7 @@ class TestHandleExecute:
     async def test_session_not_found(self, server):
         server.session_manager = MagicMock()
         server.session_manager.get_session = AsyncMock(return_value=None)
-        result = await server._handle_execute({
+        result = await handle_execute(server._ctx, {
             "session_id": "nonexistent",
             "command": "ls",
             "timeout": 30,
@@ -388,7 +395,7 @@ class TestHandleDockerBuild:
 
     @pytest.mark.asyncio
     async def test_missing_session_id(self, server):
-        result = await server._handle_docker({
+        result = await handle_docker(server._ctx, {
             "action": "build",
             "session_id": None,
             "image_name": "myapp:latest",
@@ -399,7 +406,7 @@ class TestHandleDockerBuild:
 
     @pytest.mark.asyncio
     async def test_missing_image_name(self, server):
-        result = await server._handle_docker({
+        result = await handle_docker(server._ctx, {
             "action": "build",
             "session_id": "s1",
             "image_name": None,
@@ -412,7 +419,7 @@ class TestHandleDockerStatus:
 
     @pytest.mark.asyncio
     async def test_missing_session_id(self, server):
-        result = await server._handle_docker({
+        result = await handle_docker(server._ctx, {
             "action": "ps",
             "session_id": None,
         })
@@ -426,7 +433,7 @@ class TestHandleExecuteWait:
     @pytest.mark.asyncio
     async def test_missing_params(self, server):
         server._env_config = {}
-        result = await server._handle_execute({
+        result = await handle_execute(server._ctx, {
             "session_id": None,
             "command": "echo test",
             "timeout": 60,
@@ -435,7 +442,7 @@ class TestHandleExecuteWait:
 
     @pytest.mark.asyncio
     async def test_security_blocked(self, server):
-        result = await server._handle_execute({
+        result = await handle_execute(server._ctx, {
             "session_id": "s1",
             "command": "evil_command arg1",
             "timeout": 60,
@@ -448,7 +455,7 @@ class TestHandleContainerLogs:
 
     @pytest.mark.asyncio
     async def test_missing_params(self, server):
-        result = await server._handle_docker({
+        result = await handle_docker(server._ctx, {
             "action": "logs",
             "session_id": None,
             "container_name": None,
@@ -457,7 +464,7 @@ class TestHandleContainerLogs:
 
     @pytest.mark.asyncio
     async def test_invalid_container_name(self, server):
-        result = await server._handle_docker({
+        result = await handle_docker(server._ctx, {
             "action": "logs",
             "session_id": "s1",
             "container_name": "invalid;name",
@@ -472,7 +479,7 @@ class TestHandleBackgroundTask:
     @pytest.mark.asyncio
     async def test_missing_params(self, server):
         server._env_config = {}
-        result = await server._handle_execute({
+        result = await handle_execute(server._ctx, {
             "session_id": None,
             "command": "echo test",
             "background": True,
@@ -488,7 +495,7 @@ class TestHandleBackgroundTask:
             "exit_code": 0, "stdout": "CONTAINER ID", "stderr": ""
         })
         server.session_manager.get_session = AsyncMock(return_value=mock_session)
-        result = await server._handle_execute({
+        result = await handle_execute(server._ctx, {
             "session_id": "s1",
             "command": "docker ps",
         })
@@ -502,7 +509,7 @@ class TestHandleTaskStatus:
     @pytest.mark.asyncio
     async def test_missing_session_id(self, server):
         server._env_config = {}
-        result = await server._handle_execute({
+        result = await handle_execute(server._ctx, {
             "session_id": None,
             "command": "echo test",
             "wait": True,
