@@ -179,7 +179,7 @@ async def handle_process(ctx: HandlerContext, args: dict) -> list[TextContent]:
         if not ctx.tunnels:
             return [TextContent(type="text", text="No active tunnels")]
         lines = ["📋 Active SSH tunnels:"]
-        for p, t in ctx.tunnels.items():
+        for _port, t in ctx.tunnels.items():
             info = t.info()
             lines.append(f"  127.0.0.1:{info['local_port']} -> {info['remote_host']}:{info['remote_port']}  (session {info['session_id']})")
         return [TextContent(type="text", text="\n".join(lines))]

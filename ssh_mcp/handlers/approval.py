@@ -12,7 +12,7 @@ from .context import HandlerContext
 async def handle_request_approval(ctx: HandlerContext, args: dict) -> list[TextContent]:
     """加固点 4：AI 提交高危命令审批申请。"""
     from ..approval import ApprovalGate
-    from ..security import RiskLevel, command_validator
+    from ..security import command_validator
 
     command = args.get("command", "").strip()
     reason = args.get("reason", "").strip()
@@ -79,7 +79,7 @@ async def handle_approve_command(ctx: HandlerContext, args: dict) -> list[TextCo
         + (
             f"\n👉 审批通过，AI 可执行：ssh_execute(command='{rec.command}', approval_id='{rec.approval_id}')"
             if rec.status == "approved"
-            else f"\n🚫 审批拒绝，AI 不可执行此命令。"
+            else "\n🚫 审批拒绝，AI 不可执行此命令。"
         )
     )]
 

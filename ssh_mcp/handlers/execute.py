@@ -154,7 +154,6 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
     result = await session.execute_command(command, timeout=timeout, stdin_data=stdin_data, get_pty=get_pty)
 
     if ctx.audit:
-        import time
         session_info = await ctx.session_manager.get_session(session_id)
         ctx.audit.log_command(
             username=session_info.config.username if session_info else "unknown",

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from mcp.types import Tool
 
-
 TOOLS: dict[str, Tool] = {
     "ssh_connect": Tool(
         name="ssh_connect",

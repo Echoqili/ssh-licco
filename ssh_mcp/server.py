@@ -43,7 +43,7 @@ class SSHMCPServer:
         self._command_timestamps: list[float] = []
 
         # 活动的 SSH 本地端口转发隧道: local_port -> Tunnel
-        self._tunnels: dict[int, "Tunnel"] = {}
+        self._tunnels: dict[int, Tunnel] = {}
 
         self._setup_handlers()
 
@@ -71,7 +71,9 @@ class SSHMCPServer:
             config["keepalive_interval"] = int(os.getenv("SSH_KEEPALIVE_INTERVAL", "30"))
             config["session_timeout"] = int(os.getenv("SSH_SESSION_TIMEOUT", "7200"))
             config["client_type"] = os.getenv("SSH_CLIENT_TYPE", "paramiko")
-            config["force_env_config"] = os.getenv("SSH_FORCE_ENV_CONFIG", "false").lower() == "true"
+            config["force_env_config"] = (
+                os.getenv("SSH_FORCE_ENV_CONFIG", "false").lower() == "true"
+            )
             config["sudo_password"] = os.getenv("SSH_SUDO_PASSWORD", "")
         return config
 
@@ -139,7 +141,7 @@ class SSHMCPServer:
                 pass
             finally:
                 # 关闭所有活动隧道
-                for port, tunnel in list(self._tunnels.items()):
+                for _port, tunnel in list(self._tunnels.items()):
                     try:
                         tunnel.stop()
                     except Exception:

@@ -5,8 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
-import time
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from mcp.types import TextContent
 

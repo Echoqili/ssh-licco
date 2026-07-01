@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ..tunnel import Tunnel
+
 
 @dataclass
 class HandlerContext:
@@ -16,4 +18,4 @@ class HandlerContext:
     env_config: dict
     logger: Any
     audit: Any | None
-    tunnels: dict[int, "Tunnel"]
+    tunnels: dict[int, Tunnel]
