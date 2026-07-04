@@ -14,13 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create Release
+      - name: Create or Skip Release
         env:
           GH_TOKEN: ${{ secrets.MCP_GITHUB_TOKEN }}
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          gh release create "$TAG_NAME" \
-            --title "$TAG_NAME" \
-            --generate-notes \
-            --draft=false \
-            --prerelease=false
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists, skipping creation."
+          else
+            gh release create "$TAG_NAME" \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --draft=false \
+              --prerelease=false
+          fi
