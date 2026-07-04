@@ -17,6 +17,7 @@ from mcp.types import TextContent, Tool
 from .audit_logger import get_audit_logger
 from .config_manager import ConfigManager, SSHConfig, SSHHost
 from .connection_config import ConnectionConfig
+from .handlers.context import HandlerContext
 from .key_manager import KeyManager
 from .session_manager import SessionManager
 
@@ -158,6 +159,22 @@ class SSHMCPServer:
         self._tunnels: dict[int, "Tunnel"] = {}
 
         self._setup_handlers()
+
+    @property
+    def _ctx(self) -> HandlerContext:
+        """共享上下文，供独立 handler 函数使用（也用于测试）。
+
+        使用 property 动态读取当前依赖，确保测试替换 manager 后上下文同步。
+        """
+        return HandlerContext(
+            session_manager=self.session_manager,
+            key_manager=self.key_manager,
+            config_manager=self.config_manager,
+            env_config=self._env_config,
+            logger=self._logger,
+            audit=self._audit,
+            tunnels=self._tunnels,
+        )
 
     def _load_env_config(self) -> dict:
         config: dict[str, Any] = {}
