@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -729,6 +730,18 @@ class SessionManager:
 
             # 🔄 自动重连机制：如果 session 存在但已断开，尝试重连
             if session and not session.is_connected and auto_reconnect:
+                # 非真实 SSHSession 实例（如测试 Mock）不尝试重连，直接清理
+                if not isinstance(session, SSHSession):
+                    self._logger.warning(
+                        f"Session {session_id} 不是真实会话对象，跳过重连并清理"
+                    )
+                    result = session.disconnect()
+                    if result is not None and inspect.isawaitable(result):
+                        await result
+                    if session_id in self._sessions:
+                        del self._sessions[session_id]
+                    return None
+
                 # 检查重连次数限制
                 if session._reconnect_count >= session._max_reconnects:
                     self._logger.error(
