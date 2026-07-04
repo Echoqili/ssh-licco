@@ -446,6 +446,16 @@ pytest --cov=ssh_mcp --cov-report=term-missing
 pytest --cov=ssh_mcp --cov-report=html:coverage_report
 ```
 
+### 跨平台路径安全测试
+
+`ssh_file_transfer` 的 delete 操作已支持 Windows / Unix 路径风格识别与敏感路径拦截。新增路径校验时，请确保覆盖以下场景：
+
+- Unix 敏感路径：`/etc/hosts`、`/var/lib/postgresql/data/file`、`/root/.bashrc`
+- Unix 路径遍历：`../etc/passwd`
+- Windows 敏感路径：`C:\Windows\System32\drivers\etc\hosts`、`C:\ProgramData\secret.txt`
+- Windows 路径遍历：`..\Windows\test.txt`
+- Windows UNC 路径：`\\server\share\file.txt`（按实际情况处理）
+
 ### 代码质量检查
 
 ```bash

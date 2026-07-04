@@ -178,7 +178,7 @@ python sync_version.py x.x.x
 | `ssh_connect` | Connect to SSH server (auto-reads env vars, saved config, or explicit params). Supports password/key/agent auth, optional save_config, and optional post-connect command. |
 | `ssh_execute` | Execute commands on remote server. Auto-connects if no session_id. Auto-detects background execution for long-running tasks. Supports `background`, `wait`, `workdir`, `log_file`, `wait_timeout` params. |
 | `ssh_disconnect` | Close a session (with session_id) or list all active sessions (without session_id). |
-| `ssh_file_transfer` | Upload/download/list files via SFTP. |
+| `ssh_file_transfer` | Upload/download/list/write/append/delete/mkdir/stat files via SFTP. v2.1.3+ delete validates Windows/Unix paths and blocks sensitive paths / traversal. |
 | `ssh_host` | Manage server configs: `action=list` (view all), `action=add` (register new), `action=remove` (delete). |
 | `ssh_docker` | Docker management: `action=ps` (list containers), `action=images` (list images), `action=build` (build image in background), `action=logs` (view container logs). |
 | `ssh_generate_key` | Generate SSH key pair (RSA/Ed25519). |

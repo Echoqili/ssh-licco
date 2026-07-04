@@ -53,8 +53,24 @@
 - 🐳 **Docker 支持** - Docker 构建和状态监控
 - 📋 **后台任务** - 可靠的后台进程启动（nohup + bash -c 包装，单次 SSH 调用无竞态）
 - 🖥️ **screen/tmux 会话** - 持久化远程会话，SSH 断开后进程依然存活
+- 🪟 **Windows 服务器支持** - 支持 Windows Server（OpenSSH for Windows）与 Linux/macOS 目标主机
 - 🔍 **进程管理** - 启动/停止/查询远程进程、SSH 端口转发（tunnel）
 - 🔍 **看门狗** - 任务监控、心跳检测、全局异常处理
+- 🛡️ **文件传输路径安全校验** - `ssh_file_transfer` delete 自动识别 Windows / Unix 路径风格并拦截敏感路径与路径遍历
+
+---
+
+## 🖥️ 目标主机支持
+
+SSH-LICCO 基于标准 SSH/SFTP 协议，可连接以下目标主机：
+
+| 操作系统 | 要求 | 备注 |
+|---|---|---|
+| **Linux** | OpenSSH 7.0+ | 推荐，完整支持所有功能 |
+| **Windows Server** | OpenSSH for Windows / PowerShell Remoting over SSH | v2.1.3+ 支持 Windows 路径风格与安全校验 |
+| **macOS** | 系统内置 OpenSSH | 完整支持 |
+
+> **提示**：连接 Windows 服务器时，请使用 Windows 风格路径（如 `C:\temp\file.txt`），系统会自动识别并进行路径安全校验。
 
 ---
 
@@ -208,7 +224,7 @@ SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
 | `ssh_connect` | 连接管理 | 自动读取环境变量/配置，支持密码+密钥认证，可保存配置，登录后自动执行命令 |
 | `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式；v2.1.0 新增 `approval_id`（高危审批）与 `remote_guard`（双层拦截）参数 |
 | `ssh_disconnect` | 会话管理 | 断开指定会话 OR 列出所有活跃会话 |
-| `ssh_file_transfer` | 文件传输 | 上传/下载/列表/写入/追加/删除/创建目录/查看元信息（8 种操作） |
+| `ssh_file_transfer` | 文件传输 | 上传/下载/列表/写入/追加/删除/创建目录/查看元信息（8 种操作）；v2.1.3+ delete 操作新增 Windows/Unix 敏感路径拦截与路径遍历防护 |
 | `ssh_host` | 主机管理 | `action=list/add/remove` 增删查主机配置 |
 | `ssh_docker` | Docker 管理 | `action=ps/images/build/logs` 全生命周期管理 |
 | `ssh_generate_key` | 密钥生成 | RSA / Ed25519 密钥对 |
