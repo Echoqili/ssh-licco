@@ -4,12 +4,65 @@ from __future__ import annotations
 
 import re
 import shlex
+from pathlib import PurePosixPath
 
 from mcp.types import TextContent
 
 from .connect import handle_connect
 from .context import HandlerContext
 from .utils import ensure_session
+
+
+# 远程敏感路径黑名单：禁止通过文件传输操作访问或删除
+FORBIDDEN_REMOTE_PATHS = [
+    "/etc",
+    "/root",
+    "/boot",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/lib",
+    "/lib64",
+    "/var/lib/postgresql",
+    "/var/lib/mysql",
+    "/var/lib/redis",
+    "/var/lib/docker",
+    "/var/log",
+    "/var/spool",
+    "/var/mail",
+    "/home/*/.ssh",
+]
+
+
+def _validate_remote_path(remote_path: str, operation: str = "access") -> tuple[bool, str]:
+    """校验远程路径是否安全。
+
+    Returns:
+        (is_safe, error_message)
+    """
+    if not remote_path or not remote_path.strip():
+        return False, "远程路径不能为空"
+
+    # 路径遍历检查
+    normalized = str(PurePosixPath(remote_path)).rstrip("/") or "/"
+    if ".." in normalized.split("/"):
+        return False, f"路径遍历被阻止：{remote_path}"
+
+    # 检查是否命中敏感路径黑名单
+    path_for_check = normalized.rstrip("/*") or "/"
+    for forbidden in FORBIDDEN_REMOTE_PATHS:
+        if forbidden.endswith("/*"):
+            prefix = forbidden[:-1]
+            if path_for_check.startswith(prefix) or path_for_check + "/" == prefix:
+                return False, f"禁止{operation}敏感路径：{forbidden}"
+        elif path_for_check == forbidden or path_for_check.startswith(forbidden + "/"):
+            return False, f"禁止{operation}敏感路径：{forbidden}"
+
+    return True, ""
 
 
 async def handle_file_transfer(ctx: HandlerContext, args: dict) -> list[TextContent]:
@@ -51,6 +104,9 @@ async def handle_file_transfer(ctx: HandlerContext, args: dict) -> list[TextCont
     elif direction == "delete":
         if not remote_path:
             return [TextContent(type="text", text="delete requires remote_path")]
+        safe, err = _validate_remote_path(remote_path, operation="delete")
+        if not safe:
+            return [TextContent(type="text", text=f"❌ Delete blocked: {err}")]
         result = await session.delete_file(remote_path)
     elif direction == "mkdir":
         if not remote_path:
