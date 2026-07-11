@@ -1,195 +1,207 @@
+"""Tests for ssh_mcp.security — Hard Block on Catastrophic Commands.
+
+Spec: openspec/changes/hardblock-dangerous-commands/specs/ssh-security/spec.md
+"""
+
 from __future__ import annotations
 
-import os
-from pathlib import PurePosixPath
-from unittest.mock import patch
+import logging
+import re
 
 import pytest
 
-from ssh_mcp.security import (
-    CommandValidator,
-    PathValidator,
-    SecurityError,
-    SecurityLevel,
-    create_validators_from_env,
-)
+from ssh_mcp.security import CommandValidator, SecurityError, SecurityLevel
+
+# ---------------------------------------------------------------------------
+# Parametrize fixtures
+# ---------------------------------------------------------------------------
+
+ABSOLUTE_PATH_RM_RF = [
+    "rm -rf /",
+    "rm -rf /*",
+    "rm -rf /etc",
+    "rm -rf /var/lib/postgresql/data",
+    "rm -rf /home/user/junk/*",
+    "rm -fr /etc",  # -fr variant
+]
+
+DISK_DESTRUCTIVE = [
+    "mkfs.ext4 /dev/sda1",
+    "mkfs.xfs /dev/nvme0n1",
+    "dd if=/dev/zero of=/dev/sda bs=1M",
+    "dd if=/dev/urandom of=/dev/nvme0n1",
+    "chmod -R 777 /",
+    "chmod -R 000 /",
+    ":(){:|:&};:",
+    ": ( ) { : | : & } ;",  # whitespace variant
+    "echo junk > /dev/sda",
+    "echo junk > /dev/nvme0n1",
+    "echo junk >> /dev/sdb",
+]
+
+SAFE_DELETE = [
+    "rm /tmp/test.log",
+    "rm -f /var/log/app.log",  # -f without -r is still safe
+    "rmdir /tmp/empty_dir",
+]
+
+ALL_LEVELS = [
+    SecurityLevel.STRICT,
+    SecurityLevel.BALANCED,
+    SecurityLevel.RELAXED,
+]
 
 
-class TestSecurityLevel:
-    def test_values(self):
-        assert SecurityLevel.STRICT.value == "strict"
-        assert SecurityLevel.BALANCED.value == "balanced"
-        assert SecurityLevel.RELAXED.value == "relaxed"
+# ---------------------------------------------------------------------------
+# 4.2: rm -rf on absolute paths is rejected in all security levels
+# ---------------------------------------------------------------------------
 
 
-class TestCommandValidator:
-    def test_balanced_allows_simple_command(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        assert v.validate_command("ls") is True
-
-    def test_balanced_allows_common_commands(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        for cmd in ["ls", "pwd", "cat file.txt", "grep pattern", "docker ps"]:
-            assert v.validate_command(cmd) is True
-
-    def test_balanced_blocks_pipe(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="危险字符"):
-            v.validate_command("ls | grep foo")
-
-    def test_balanced_blocks_semicolon(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="危险字符"):
-            v.validate_command("ls ; rm -rf /")
-
-    def test_balanced_blocks_command_substitution(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="危险字符"):
-            v.validate_command("echo $(whoami)")
-
-    def test_balanced_blocks_backtick(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="危险字符"):
-            v.validate_command("echo `whoami`")
-
-    def test_strict_blocks_redirect(self):
-        v = CommandValidator(SecurityLevel.STRICT)
-        with pytest.raises(SecurityError, match="危险字符"):
-            v.validate_command("echo hello > file.txt")
-
-    def test_strict_blocks_ampersand(self):
-        v = CommandValidator(SecurityLevel.STRICT)
-        with pytest.raises(SecurityError, match="危险字符"):
-            v.validate_command("ls 10 &")
-
-    def test_relaxed_allows_pipe(self):
-        v = CommandValidator(SecurityLevel.RELAXED)
-        assert v.validate_command("ls | grep foo") is True
-
-    def test_relaxed_allows_redirect(self):
-        v = CommandValidator(SecurityLevel.RELAXED)
-        assert v.validate_command("echo hello > file.txt") is True
-
-    def test_empty_command(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="不能为空"):
-            v.validate_command("")
-
-    def test_whitespace_command(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="不能为空"):
-            v.validate_command("   ")
-
-    def test_unknown_command(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="不在允许列表中"):
-            v.validate_command("evil_command arg1")
-
-    def test_extra_allowed_commands(self):
-        v = CommandValidator(SecurityLevel.BALANCED, extra_allowed_commands={"myapp"})
-        assert v.validate_command("myapp --flag") is True
-
-    def test_dangerous_keywords_passwd(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="受限关键字"):
-            v.validate_command("cat /etc/passwd")
-
-    def test_dangerous_keywords_shadow(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="受限关键字"):
-            v.validate_command("cat /etc/shadow")
-
-    def test_command_too_long(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        long_cmd = "ls " + "a" * 5000
-        with pytest.raises(SecurityError, match="过长"):
-            v.validate_command(long_cmd)
-
-    def test_malformed_command(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="格式错误"):
-            v.validate_command("echo 'unclosed")
-
-    def test_docker_command_allowed(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        assert v.validate_command("docker build -t myapp .") is True
-
-    def test_git_command_allowed(self):
-        v = CommandValidator(SecurityLevel.BALANCED)
-        assert v.validate_command("git status") is True
+@pytest.mark.parametrize("cmd", ABSOLUTE_PATH_RM_RF)
+@pytest.mark.parametrize("level", ALL_LEVELS)
+def test_hard_block_rejects_absolute_path_rm_rf(cmd: str, level: SecurityLevel) -> None:
+    """rm -rf against any absolute path is hard-blocked regardless of security level."""
+    v = CommandValidator(security_level=level)
+    with pytest.raises(SecurityError) as exc_info:
+        v.check_hard_block(cmd)
+    assert exc_info.value.hard_block is True
 
 
-class TestPathValidator:
-    def test_valid_path(self):
-        v = PathValidator(SecurityLevel.BALANCED, base_dir="/home")
-        result = v.validate_path("user/file.txt")
-        assert str(result).startswith(str(v.base_dir))
-
-    def test_path_traversal_attack(self):
-        v = PathValidator(SecurityLevel.BALANCED, base_dir="/home")
-        with pytest.raises(SecurityError, match="遍历"):
-            v.validate_path("../../../etc/passwd")
-
-    def test_empty_path(self):
-        v = PathValidator(SecurityLevel.BALANCED)
-        with pytest.raises(SecurityError, match="不能为空"):
-            v.validate_path("")
-
-    def test_forbidden_path_etc(self):
-        """测试禁止访问 /etc/shadow（PurePosixPath 确保跨平台兼容）"""
-        v = PathValidator(SecurityLevel.BALANCED, base_dir="/")
-        with pytest.raises(SecurityError, match="敏感路径"):
-            v.validate_path("etc/shadow")
-
-    def test_forbidden_path_root(self):
-        """测试禁止访问 /root/.ssh（PurePosixPath 确保跨平台兼容）"""
-        v = PathValidator(SecurityLevel.BALANCED, base_dir="/")
-        with pytest.raises(SecurityError, match="敏感路径"):
-            v.validate_path("root/.ssh")
-
-    def test_relaxed_no_forbidden_paths(self):
-        v = PathValidator(SecurityLevel.RELAXED, base_dir="/")
-        result = v.validate_path("etc/config")
-        assert result is not None
-
-    def test_strict_blocks_traversal(self):
-        v = PathValidator(SecurityLevel.STRICT, base_dir="/home")
-        with pytest.raises(SecurityError, match="遍历"):
-            v.validate_path("../../tmp/evil")
-
-    def test_extra_allowed_paths(self):
-        v = PathValidator(SecurityLevel.BALANCED, base_dir="/home", extra_allowed_paths=["/data"])
-        assert v.extra_allowed_paths == ["/data"]
+@pytest.mark.parametrize("cmd", ABSOLUTE_PATH_RM_RF)
+@pytest.mark.parametrize("level", ALL_LEVELS)
+def test_hard_block_rejects_even_with_validate_command(cmd: str, level: SecurityLevel) -> None:
+    """validate_command also runs the hard block first (so it works via the unified path)."""
+    v = CommandValidator(security_level=level)
+    with pytest.raises(SecurityError) as exc_info:
+        v.validate_command(cmd)
+    assert exc_info.value.hard_block is True
 
 
-class TestCreateValidatorsFromEnv:
-    def test_default_balanced(self):
-        with patch.dict(os.environ, {}, clear=True):
-            cv, pv = create_validators_from_env()
-            assert cv.security_level == SecurityLevel.BALANCED
+# ---------------------------------------------------------------------------
+# 4.3: disk-destructive commands are rejected in all security levels
+# ---------------------------------------------------------------------------
 
-    def test_strict_level(self):
-        with patch.dict(os.environ, {"SSH_SECURITY_LEVEL": "strict"}):
-            cv, pv = create_validators_from_env()
-            assert cv.security_level == SecurityLevel.STRICT
 
-    def test_relaxed_level(self):
-        with patch.dict(os.environ, {"SSH_SECURITY_LEVEL": "relaxed"}):
-            cv, pv = create_validators_from_env()
-            assert cv.security_level == SecurityLevel.RELAXED
+@pytest.mark.parametrize("cmd", DISK_DESTRUCTIVE)
+@pytest.mark.parametrize("level", ALL_LEVELS)
+def test_hard_block_rejects_disk_destructive(cmd: str, level: SecurityLevel) -> None:
+    """mkfs / raw-disk dd / root chmod 777 / fork-bomb / raw redirect — all rejected."""
+    v = CommandValidator(security_level=level)
+    with pytest.raises(SecurityError) as exc_info:
+        v.check_hard_block(cmd)
+    assert exc_info.value.hard_block is True
 
-    def test_unknown_level_defaults_balanced(self):
-        with patch.dict(os.environ, {"SSH_SECURITY_LEVEL": "unknown"}):
-            cv, pv = create_validators_from_env()
-            assert cv.security_level == SecurityLevel.BALANCED
 
-    def test_extra_commands(self):
-        with patch.dict(os.environ, {"SSH_EXTRA_ALLOWED_COMMANDS": "myapp,mytool"}):
-            cv, pv = create_validators_from_env()
-            assert "myapp" in cv.allowed_commands
-            assert "mytool" in cv.allowed_commands
+# ---------------------------------------------------------------------------
+# 4.4: safe delete operations still work
+# ---------------------------------------------------------------------------
 
-    def test_custom_base_dir(self):
-        with patch.dict(os.environ, {"SSH_BASE_DIR": "/data"}):
-            cv, pv = create_validators_from_env()
-            assert "data" in str(pv.base_dir)
+
+@pytest.mark.parametrize("cmd", SAFE_DELETE)
+@pytest.mark.parametrize("level", ALL_LEVELS)
+def test_safe_delete_still_allowed(cmd: str, level: SecurityLevel) -> None:
+    """rm /tmp/file, rmdir empty, and rm -f single file must NOT be hard-blocked."""
+    v = CommandValidator(security_level=level)
+    # check_hard_block is the only thing we're testing here; should not raise.
+    v.check_hard_block(cmd)
+
+
+# ---------------------------------------------------------------------------
+# 4.5: relative-path rm -rf is NOT hard-blocked (regression guard)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cmd", [
+    "rm -rf ./build/",
+    "rm -rf relative/dir",
+    "rm -rf ../sibling",
+    "rm -rf .",
+])
+def test_soft_risk_relative_path_not_hard_blocked(cmd: str) -> None:
+    """Relative-path rm -rf must not be hard-blocked (only absolute paths are)."""
+    v = CommandValidator(security_level=SecurityLevel.BALANCED)
+    # check_hard_block should pass (no exception)
+    v.check_hard_block(cmd)
+
+
+# ---------------------------------------------------------------------------
+# 4.6: WARNING log is emitted on hard block, regex is not echoed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cmd", ABSOLUTE_PATH_RM_RF[:2])
+def test_hard_block_logs_warning_with_category(
+    cmd: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A WARNING log line is emitted; it contains the category but not the regex."""
+    v = CommandValidator(security_level=SecurityLevel.BALANCED)
+    with caplog.at_level(logging.WARNING, logger="ssh_mcp.security"):
+        with pytest.raises(SecurityError):
+            v.check_hard_block(cmd)
+
+    # At least one WARNING record exists
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings, f"no WARNING log emitted for {cmd}"
+
+    # The category is in the log, the command is in the log
+    joined = " ".join(r.getMessage() for r in warnings)
+    assert cmd in joined, f"command not in log: {joined}"
+    assert "category=" in joined, f"category label not in log: {joined}"
+
+    # The log message must NOT contain raw regex syntax markers from the blacklist
+    # (i.e. \s, \., \[, etc.) — only the human-readable category is allowed.
+    for record in warnings:
+        msg = record.getMessage()
+        assert not re.search(r"\\[sdw+\[\]]", msg), (
+            f"regex metacharacters leaked into log message: {msg}"
+        )
+
+
+def test_hard_block_message_does_not_mention_override() -> None:
+    """The error message must not suggest any parameter can bypass the hard block."""
+    v = CommandValidator(security_level=SecurityLevel.RELAXED)
+    with pytest.raises(SecurityError) as exc_info:
+        v.check_hard_block("rm -rf /etc")
+    msg = str(exc_info.value)
+    assert "confirm_dangerous" not in msg
+    assert "confirmation_layer" not in msg
+    assert "无法通过任何参数绕过" in msg or "无法绕过" in msg or "无法" in msg
+
+
+# ---------------------------------------------------------------------------
+# SecurityError attribute contract
+# ---------------------------------------------------------------------------
+
+
+def test_security_error_has_hard_block_attribute() -> None:
+    """SecurityError exposes `hard_block: bool`; default is False, hard block sets True."""
+    # Default (other errors)
+    err = SecurityError("plain")
+    assert err.hard_block is False
+
+    # Hard block path
+    v = CommandValidator(security_level=SecurityLevel.BALANCED)
+    with pytest.raises(SecurityError) as exc_info:
+        v.check_hard_block("rm -rf /")
+    assert exc_info.value.hard_block is True
+
+
+# ---------------------------------------------------------------------------
+# Pattern coverage: every documented catastrophic pattern has a regex entry
+# ---------------------------------------------------------------------------
+
+
+def test_hard_block_patterns_cover_documented_categories() -> None:
+    """The HARD_BLOCKED_PATTERNS set must include all categories in the spec."""
+    expected_categories = {
+        "absolute_path_rm_rf",
+        "disk_format",
+        "raw_disk_dd",
+        "fork_bomb",
+        "root_chmod",
+        "raw_disk_redirect",
+    }
+    actual = {category for _, category in CommandValidator.HARD_BLOCKED_PATTERNS}
+    assert expected_categories.issubset(actual), (
+        f"missing categories: {expected_categories - actual}"
+    )

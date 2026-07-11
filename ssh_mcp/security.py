@@ -3,11 +3,14 @@ SSH-LICCO Security Module
 安全验证和防护模块 - 支持多级安全策略
 """
 
+import logging
 import os
 import re
 import shlex
 from enum import Enum
 from pathlib import Path, PurePosixPath
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityLevel(Enum):
@@ -29,9 +32,16 @@ class RiskLevel(Enum):
 
 
 class SecurityError(Exception):
-    """安全异常类"""
+    """安全异常类
 
-    pass
+    Attributes:
+        hard_block: 若为 True，表示该错误来自硬拦截（无法通过参数绕过），
+            调用方应在错误响应中不要提示任何 bypass 方案。
+    """
+
+    def __init__(self, message: str, hard_block: bool = False):
+        super().__init__(message)
+        self.hard_block = hard_block
 
 
 class CommandValidator:
@@ -376,6 +386,34 @@ class CommandValidator:
         r"pkill\s+-9\s+",  # pkill -9 (批量强杀)
     ]
 
+    # 硬拦截模式集：任何安全级别、confirm_dangerous、confirmation_layer 都不能绕过
+    # 每条 (regex, category) 配对，category 用于审计日志识别命中类别
+    # 对应 spec ssh-security "Hard Block on Catastrophic Commands"
+    HARD_BLOCKED_PATTERNS: list[tuple[str, str]] = [
+        # rm -rf / 任意绝对路径（含 -rf / -fr 两种顺序）
+        (r"rm\s+-rf\s+/(?:\s|$|\*)", "absolute_path_rm_rf"),
+        (r"rm\s+-fr\s+/(?:\s|$|\*)", "absolute_path_rm_rf"),
+        (r"rm\s+-rf\s+/[^\s]+/\*", "absolute_path_rm_rf"),
+        (r"rm\s+-fr\s+/[^\s]+/\*", "absolute_path_rm_rf"),
+        (r"rm\s+-rf\s+/[^\s]+", "absolute_path_rm_rf"),
+        (r"rm\s+-fr\s+/[^\s]+", "absolute_path_rm_rf"),
+        # mkfs 任意文件系统格式化
+        (r"mkfs\.\w+", "disk_format"),
+        # dd 覆写磁盘
+        (r"dd\s+if=/dev/(?:zero|random|urandom)\s+of=/dev/sd", "raw_disk_dd"),
+        (r"dd\s+if=/dev/(?:zero|random|urandom)\s+of=/dev/nvm", "raw_disk_dd"),
+        # bash fork-bomb（含各种空白变体）
+        (r":\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;", "fork_bomb"),
+        # chmod -R 777/000 /
+        (r"chmod\s+-R\s+777\s+/(?:\s|$)", "root_chmod"),
+        (r"chmod\s+-R\s+000\s+/(?:\s|$)", "root_chmod"),
+        # 写裸磁盘设备（含 >> 重定向）
+        (r">\s*/dev/sd[a-z]", "raw_disk_redirect"),
+        (r">\s*/dev/nvme", "raw_disk_redirect"),
+        (r">>\s*/dev/sd[a-z]", "raw_disk_redirect"),
+        (r">>\s*/dev/nvme", "raw_disk_redirect"),
+    ]
+
     # 危险关键字
     DANGEROUS_KEYWORDS = ["passwd", "shadow", "/etc/shadow", "/root/.ssh"]
 
@@ -477,6 +515,13 @@ class CommandValidator:
             re.compile(pattern) for pattern in self.RELAXED_BLOCKED_PATTERNS
         ]
 
+        # 硬拦截正则：所有安全级别都生效，confirm_dangerous 也无法绕过
+        # 存储为 (compiled_regex, category) 元组列表，category 用于审计日志
+        self._hard_block_regex: list[tuple[re.Pattern, str]] = [
+            (re.compile(pattern), category)
+            for pattern, category in self.HARD_BLOCKED_PATTERNS
+        ]
+
     @classmethod
     def from_config_file(
         cls,
@@ -539,6 +584,39 @@ class CommandValidator:
         """编译危险模式正则"""
         self.dangerous_regex = [re.compile(pattern) for pattern in self.dangerous_patterns]
 
+    def check_hard_block(self, command: str) -> None:
+        """硬拦截检查：与安全级别、confirm_dangerous、confirmation_layer 无关。
+
+        任何匹配 HARD_BLOCKED_PATTERNS 的命令都会被拒绝并抛出 SecurityError(hard_block=True)。
+        调用方应在错误响应中不要提示任何 bypass 方案。
+
+        Args:
+            command: 要检查的命令
+
+        Raises:
+            SecurityError: hard_block=True
+        """
+        if not command:
+            return
+        for regex, category in self._hard_block_regex:
+            if regex.search(command):
+                # 审计日志：仅记录命令和 category，不回显正则（避免泄露黑名单形状）
+                logger.warning(
+                    "hard-block command rejected: category=%s command=%s",
+                    category,
+                    command,
+                )
+                raise SecurityError(
+                    f"命令被硬拦截（{category}），无法通过任何参数绕过。\n"
+                    f"被阻止的命令：{command}\n"
+                    f"如确需执行，请直接登录服务器操作。",
+                    hard_block=True,
+                )
+
+    def _check_hard_block(self, command: str) -> None:
+        """validate_command 内部使用的硬拦截短路检查。"""
+        self.check_hard_block(command)
+
     def validate_command(self, command: str) -> bool:
         """
         验证命令是否安全
@@ -554,6 +632,10 @@ class CommandValidator:
         """
         if not command or not command.strip():
             raise SecurityError("命令不能为空")
+
+        # 0. 硬拦截：所有安全级别都生效，confirm_dangerous / confirmation_layer 也无法绕过
+        # 先于所有其他检查，包括 RELAXED 模式的短路径，避免出现不同模式下行为不一致
+        self._check_hard_block(command)
 
         # 分割命令获取基础命令
         try:

@@ -107,6 +107,27 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
     if confirmation_message:
         ctx.logger.info(f"Multi-layer confirmation passed: {confirmation_message}")
 
+    # 硬拦截：与安全级别、confirm_dangerous、confirmation_layer 都无关，任何情况下都生效
+    try:
+        command_validator.check_hard_block(command)
+    except SecurityError as e:
+        ctx.logger.error(f"Command hard-blocked: {e}")
+        return [
+            TextContent(
+                type="text",
+                text=f"""❌ 命令被硬拦截，无法绕过
+
+Command: {command}
+Reason: {str(e)}
+
+此操作属于灾难性命令（如 rm -rf 绝对路径、mkfs、dd 覆盘、fork-bomb 等），
+任何安全级别、任何参数（包括 confirm_dangerous=true）都无法使其通过 MCP 执行。
+如确需执行，请直接通过 SSH 登录服务器操作。
+
+Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
+            )
+        ]
+
     # 原有的安全检查逻辑（保持兼容性）
     if not confirm_dangerous:
         try:

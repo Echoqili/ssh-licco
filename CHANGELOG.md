@@ -4,6 +4,23 @@
 
 ---
 
+## [2.2.0] - 2026-07-11
+
+### 安全 ⚠️ BREAKING
+
+- **硬拦截灾难性命令**：新增 `CommandValidator.HARD_BLOCKED_PATTERNS` 和 `CommandValidator.check_hard_block()`，对以下命令模式**无条件**拦截（任何安全级别、`confirm_dangerous`、`confirmation_layer` 均无法绕过）：
+  - `rm -rf` 作用于绝对路径（包括 `/`、`/*`、`/path`、`/path/*`，`-fr` 变体同效）
+  - `mkfs.*` 任意文件系统格式化
+  - `dd if=/dev/(zero|random|urandom) of=/dev/(sd|nvme)` 覆写裸盘
+  - bash fork-bomb（`:(){ :|:& };:` 及空白变体）
+  - `chmod -R 777 /` / `chmod -R 000 /` 根目录递归改权限
+  - `> /dev/(sd|nvme)` / `>> /dev/(sd|nvme)` 裸设备重定向
+- `SecurityError` 新增 `hard_block: bool` 属性，handler 据此区分错误提示（不再误导用户尝试 `confirm_dangerous=true` 绕过）。
+- 命中硬拦截时输出 `WARNING` 审计日志（含 category 与命令），便于 SOC 监控。
+- 旧行为（依赖 `confirm_dangerous=true` 执行 `rm -rf /abs/path`）已不可行。如需清理绝对路径，请直接 SSH 登录服务器，或用 `mv <path> /tmp/.trash_<ts>/` 走 MCP。
+
+---
+
 ## [2.1.1] - 2026-07-01
 
 ### 维护

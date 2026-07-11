@@ -202,6 +202,27 @@ export SSH_EXTRA_ALLOWED_COMMANDS="git,pip,npm"
 - **[SECURITY_CONFIG_GUIDE.md](SECURITY_CONFIG_GUIDE.md)** - 安全配置详解
 - **[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)** - 生产加固四项方案（v2.1.0 新增）
 
+### 🛡️ 硬拦截灾难性命令（v2.2.0 新增）
+
+为防止任何误操作或越权调用直接打到远程 shell，ssh-licco 在所有安全级别下都**无条件**拦截以下灾难性命令模式，**无法通过 `confirm_dangerous=true`、`confirmation_layer=N`、调整 `SSH_SECURITY_LEVEL` 等任何方式绕过**：
+
+- `rm -rf` 作用于绝对路径（含 `/`、`/*`、`/path`、`/path/*`，`-fr` 变体同效）
+- `mkfs.*` 任意文件系统格式化
+- `dd if=/dev/(zero|random|urandom) of=/dev/(sd|nvme)` 覆写裸盘
+- bash fork-bomb（`:(){ :|:& };:` 及空白变体）
+- `chmod -R 777 /` / `chmod -R 000 /` 根目录递归改权限
+- `> /dev/(sd|nvme)` / `>> /dev/(sd|nvme)` 裸设备重定向
+
+如确需执行上述操作，请直接通过 SSH 登录服务器（绕过 MCP 网关）进行。安全且可逆的替代方案：
+
+```bash
+# 旧做法（v2.2.0 之前）：rm -rf /path/to/junk  ← 现已被硬拦截
+# 推荐做法：mv 到回收站，约定时间后清理
+mv /path/to/junk /tmp/.trash_$(date +%s)/
+```
+
+命中硬拦截时会输出 `WARNING` 审计日志（含 category 与命令），便于 SOC 监控。
+
 ### 🏛️ 生产加固四项（v2.1.0 新增）
 
 SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
@@ -558,7 +579,7 @@ ssh-licco 的核心依赖是：
 
 | 指标 | 状态 |
 |------|------|
-| **测试用例** | 348 passed, 0 skipped |
+| **测试用例** | 400 passed, 0 skipped |
 | **覆盖率** | 16 个源模块全覆盖 |
 | **测试框架** | pytest + pytest-asyncio |
 
