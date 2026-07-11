@@ -4,6 +4,47 @@
 
 ---
 
+## [2.4.0] - 2026-07-11
+
+### ⚠️ BREAKING：移除生产加固三件套
+
+为简化主分支，将多角色 / 多用户 / 生产加固场景的功能迁移至 `security-hardening` 分支独立维护。主分支不再包含以下能力：
+
+- **加固点 1 · 运行账号最小权限**：删除 `ssh_mcp/runtime_guard.py`，移除 `SSH_RUNTIME_GUARD` / `SSH_RUNTIME_ALLOW_ROOT` / `SSH_RUNTIME_ALLOWED_USERS` / `SSH_RUNTIME_BLOCK_SUDO` 环境变量。
+- **加固点 2 · 密钥不落地磁盘**：删除 `ssh_mcp/secret_provider.py`，移除 `SSH_SECRET_PROVIDER_ENABLED` / `SSH_SECRET_PROVIDER` / `SSH_SECRET_COMMAND_*` / `SSH_SECRET_HTTP_*` 环境变量；`KeyManager.save_key()` 不再拒绝落盘；`ConnectionConfig.private_key_material` 字段保留（仍可传内存 PEM）。
+- **加固点 3 · 双层命令拦截**：删除 `ssh_mcp/handlers/utils.py` 中的 `normalize_command_for_remote_guard()`，移除 `ssh_execute` 的 `remote_guard` 参数与 `SSH_REMOTE_GUARD` 环境变量，删除 `config/remote-guard/` 目录。
+
+**保留的能力**：加固点 4 · 灾难性命令硬拦截（`check_hard_block`）仍在，零配置零绕过；安全级别、命令白名单、限流、审计日志等常规安全机制不受影响。
+
+### 删除的文件
+
+- `ssh_mcp/runtime_guard.py`、`ssh_mcp/secret_provider.py`、`test_hardening.py`
+- `config/mcp.production-hardened.example.json`、`config/remote-guard/`（`sshd_config.example`、`ssh_licco_force_command.sh`）
+- `docs/SECURITY_HARDENING.md`
+
+### 代码清理
+
+- `ssh_mcp/handlers/connect.py`：移除 SecretManager 拉取私钥逻辑与 import。
+- `ssh_mcp/handlers/execute.py`：移除 remote_guard 拦截块与 import。
+- `ssh_mcp/handlers/utils.py`：移除 `normalize_command_for_remote_guard()` 与 `shlex` import。
+- `ssh_mcp/handlers/schemas.py`：移除 `ssh_execute` 的 `remote_guard` 参数定义。
+- `ssh_mcp/key_manager.py`：`save_key()` 移除密钥不落地检查；`load_key_from_str()` docstring 去除加固描述。
+- `ssh_mcp/connection_config.py`：`private_key_material` 字段描述改为通用文案。
+
+### 文档清理
+
+- `README.md`：删除"生产加固四项"章节、加固点 env 变量表（保留硬拦截一行）、`SECURITY_HARDENING.md` 链接、`remote_guard` 参数描述。
+- `docs/API_REFERENCE.md`：删除密钥不落地相关注释与加固点 2 说明。
+- `docs/skills/ssh-mcp-troubleshoot/SKILL.md`：删除"Method 3: SSH_REMOTE_GUARD"排查段。
+
+### 迁移说明
+
+- 需要生产加固能力的用户，请切换到 `security-hardening` 分支。
+- 主分支用户不受影响：上述功能默认即为关闭状态，本次只是移除了代码与文档。
+- `软著申请资料/` 保留原样（已提交申请材料，不随主分支变动）。
+
+---
+
 ## [2.3.1] - 2026-07-11
 
 ### 修复

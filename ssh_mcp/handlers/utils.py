@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import shlex
 from collections.abc import Awaitable, Callable
 
 from mcp.types import TextContent
@@ -67,52 +66,6 @@ async def ensure_session(
         return None
 
     return None
-
-
-def normalize_command_for_remote_guard(command: str) -> tuple[str, str | None]:
-    """加固点 3：把命令规范为远端 ForceCommand 可安全解析的形式。
-
-    remote_guard 模式下，远端 sshd 的 ForceCommand 脚本会用 `bash -c "$SSH_ORIGINAL_COMMAND"`
-    执行。如果原始命令包含 shell 元字符（| ; & $() ` 等），bash -c 解析时会拆分出
-    多条命令或子 shell，绕过 ForceCommand 脚本的白名单校验（白名单只看第一个 token）。
-
-    因此本方法在跳板机侧（第一层）就把命令强制规范为「单一命令 + 参数」形式：
-      - 禁止管道 |、命令分隔 ;、后台 &、逻辑 && ||、命令替换 $() ``、重定向 > <、子 shell ()
-      - 允许普通参数（含路径、引号包裹的字符串参数）
-      - 返回 (规范化后的命令, 错误信息)；错误信息非 None 表示被拦截
-
-    这样远端 ForceCommand 解析出的「基础命令」就是真实要执行的那个，无法通过元字符
-    注入隐藏的第二条命令。
-    """
-    if not command or not command.strip():
-        return command, "命令为空"
-
-    # 远端 guard 模式下禁止的元字符/构造
-    forbidden = ["|", ";", "&", "&&", "||", "$(", ")", "`", ">", "<", "\n", "\r"]
-    for token in forbidden:
-        if token in command:
-            return command, (
-                f"命令包含禁止的 shell 元字符 '{token}'。"
-                f"远端 guard 模式要求单一 argv，禁止管道/重定向/命令替换/子 shell。"
-            )
-
-    # 子 shell 圆括号（前面已拦 ')'，这里再拦开括号 '(' 作为保险）
-    if "(" in command:
-        return command, "命令包含禁止的子 shell 构造 '('"
-    # 命令长度校验
-    if len(command) > 4096:
-        return command, "命令过长（最大 4096 字符）"
-
-    # 通过 shlex 解析验证命令格式合法（不实际执行）
-    try:
-        parts = shlex.split(command)
-    except ValueError as e:
-        return command, f"命令格式无法解析：{e}"
-    if not parts:
-        return command, "命令解析后为空"
-
-    # 返回原命令（已通过元字符检查），远端 bash -c 会安全解析
-    return command, None
 
 
 def diagnose_exit_code(exit_code: int, log_tail: str, stderr: str) -> str:

@@ -200,7 +200,6 @@ export SSH_EXTRA_ALLOWED_COMMANDS="git,pip,npm"
 
 - **[MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)** - 完整配置指南，包含 5 种使用场景示例
 - **[SECURITY_CONFIG_GUIDE.md](SECURITY_CONFIG_GUIDE.md)** - 安全配置详解
-- **[docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)** - 生产加固四项方案（v2.1.0 新增）
 
 ### 🛡️ 硬拦截灾难性命令（v2.2.0 新增）
 
@@ -223,21 +222,6 @@ mv /path/to/junk /tmp/.trash_$(date +%s)/
 
 命中硬拦截时会输出 `WARNING` 审计日志（含 category 与命令），便于 SOC 监控。
 
-### 🏛️ 生产加固四项（v2.1.0 + v2.2.0 演进）
-
-SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
-
-| 加固点 | 开关 | 说明 |
-|--------|------|------|
-| 1. 运行账号最小权限 | `SSH_RUNTIME_GUARD=true` | 专用普通账号运行，拒绝 root/sudo 启动 |
-| 2. 密钥不落地磁盘 | `SSH_SECRET_PROVIDER_ENABLED=true` | 私钥从 KMS 临时拉取到内存，用完清零，不落盘 |
-| 3. 双层命令拦截 | `SSH_REMOTE_GUARD=true` + 远端 ForceCommand | 跳板机侧禁元字符 + 远端二次白名单校验 |
-| 4. 灾难性命令硬拦截（v2.2.0 新增） | 默认开启，不可关闭 | rm -rf 绝对路径、mkfs、raw-disk dd、fork-bomb、chmod -R 777/000 /、`> /dev/sd*` 等在 MCP 网关层被**无条件**拒绝；任何安全级别、`confirm_dangerous=true` 等均无法绕过 |
-
-> **关于 v2.1.0 引入的"高危操作审批"项**：v2.1.0 曾提供 `SSH_APPROVAL_GATE=true` + 3 个审批工具作为第 4 项加固。v2.2.0 起该项被**硬拦截取代**——审批流程依赖 AI 自报命令，存在闭环风险；硬拦截更直接，灾难性命令在 MCP 网关层就被拒绝，运维侧不需要再走"先申请再审批"流程。`SSH_APPROVAL_GATE` 环境变量与 `ssh_mcp/approval.py` / `ssh_mcp/handlers/approval.py` 代码已在 v2.2.0 删除。
-
-完整方案见 [docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)。
-
 ---
 
 ## 🛠️ 可用工具（v2.2.0 维持 9 个；v2.1.0 曾增加的 3 个审批工具因流程闭环风险已下线）
@@ -245,7 +229,7 @@ SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
 | 工具 | 描述 | 核心能力 |
 |------|------|---------|
 | `ssh_connect` | 连接管理 | 自动读取环境变量/配置，支持密码+密钥认证，可保存配置，登录后自动执行命令 |
-| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式；v2.1.0 新增 `remote_guard`（双层拦截）参数；v2.2.0 起对灾难性命令（rm -rf 绝对路径、mkfs、raw-disk dd、fork-bomb 等）做**无条件硬拦截** |
+| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式；v2.2.0 起对灾难性命令（rm -rf 绝对路径、mkfs、raw-disk dd、fork-bomb 等）做**无条件硬拦截** |
 | `ssh_disconnect` | 会话管理 | 断开指定会话 OR 列出所有活跃会话 |
 | `ssh_file_transfer` | 文件传输 | 上传/下载/列表/写入/追加/删除/创建目录/查看元信息（8 种操作）；v2.1.3+ delete 操作新增 Windows/Unix 敏感路径拦截与路径遍历防护 |
 | `ssh_host` | 主机管理 | `action=list/add/remove` 增删查主机配置 |
@@ -425,7 +409,6 @@ localhost:5432 - accepting connections
 > 下表所有变量均被代码读取。**注意**：
 > - `SSH_RATE_LIMIT` 是 **bool** 总开关（true/false），`SSH_RATE_LIMIT_MAX` 才是次数上限，两者分开配置
 > - 主机密钥检查（strict_host_key_checking）**不通过 env 配置**，请用 `ssh_connect` 工具参数或 `hosts.json`
-> - 详细分组说明见 [docs/SECURITY_HARDENING.md#环境变量速查](docs/SECURITY_HARDENING.md#环境变量速查v230-完整列表)
 
 | 分类 | 变量 | 默认 | 说明 |
 |------|------|------|------|
@@ -437,19 +420,7 @@ localhost:5432 - accepting connections
 | **限流** | `SSH_RATE_LIMIT` | `true` | 限流总开关（bool） |
 |  | `SSH_RATE_LIMIT_MAX` | `30` | 限流次数上限 |
 |  | `SSH_RATE_LIMIT_WINDOW` | `60` | 限流窗口（秒） |
-| **加固点 1** | `SSH_RUNTIME_GUARD` | `false` | runtime guard 总开关 |
-|  | `SSH_RUNTIME_ALLOW_ROOT` | `false` | 是否允许 root 启动 |
-|  | `SSH_RUNTIME_ALLOWED_USERS` | (空) | 允许启动的账号白名单 |
-|  | `SSH_RUNTIME_BLOCK_SUDO` | `true` | 是否拦截 sudo 上下文 |
-| **加固点 2** | `SSH_SECRET_PROVIDER_ENABLED` | `false` | secret provider 总开关 |
-|  | `SSH_SECRET_PROVIDER` | `env` | 凭证 provider：`env` / `command` / `http` |
-|  | `SSH_SECRET_ENV_KEY_<NAME>` | — | env provider：私钥环境变量 |
-|  | `SSH_SECRET_COMMAND_<NAME>` | — | command provider：拉取私钥的命令 |
-|  | `SSH_SECRET_HTTP_URL_<NAME>` | — | http provider：拉取私钥的 URL |
-|  | `SSH_SECRET_HTTP_TOKEN` | — | http provider：Bearer token |
-|  | `SSH_SECRET_HTTP_TIMEOUT` | `15` | http provider：HTTP 超时（秒） |
-| **加固点 3** | `SSH_REMOTE_GUARD` | `false` | 远端元字符拦截总开关 |
-| **加固点 4** | *(无 env)* | — | 灾难性命令硬拦截，零配置零绕过 |
+| **硬拦截** | *(无 env)* | — | 灾难性命令硬拦截，零配置零绕过 |
 | **连接默认** | `SSH_HOST` / `SSH_PORT` / `SSH_USER` / `SSH_PASSWORD` | `127.0.0.1` / `22` / `root` / (空) | 单 host 模式默认连接参数 |
 |  | `SSH_TIMEOUT` | `60` | 连接超时（秒） |
 |  | `SSH_KEEPALIVE_INTERVAL` | `30` | keepalive 间隔（秒） |

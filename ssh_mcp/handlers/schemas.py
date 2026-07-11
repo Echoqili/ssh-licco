@@ -137,11 +137,6 @@ TOOLS: dict[str, Tool] = {
                     "default": False,
                     "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform.",
                 },
-                "remote_guard": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "加固点 3：标记远端已启用 ForceCommand 二次校验。启用后 ssh-licco 侧会强制把命令规范为单一 argv 形式下发，禁止 shell 元字符，确保远端 bash -c 解析时无法绕过白名单。",
-                },
             },
             "required": ["command"],
         },

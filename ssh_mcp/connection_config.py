@@ -31,7 +31,7 @@ class ConnectionConfig(BaseModel):
     private_key_path: Path | None = Field(default=None, description="Path to private key file")
     private_key_material: str | None = Field(
         default=None,
-        description="内存中的私钥 PEM（密钥不落地模式：由 SecretProvider 临时拉取，不写入磁盘）",
+        description="In-memory private key PEM (used instead of private_key_path when key is provided as a string)",
     )
     passphrase: str | None = Field(default=None, description="Passphrase for private key")
     timeout: int = Field(default=30, description="Connection timeout in seconds")

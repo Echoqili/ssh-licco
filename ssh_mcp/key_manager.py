@@ -116,9 +116,6 @@ class KeyManager:
     def load_key_from_str(self, private_key_pem: str, passphrase: str | None = None) -> SSHKeyPair:
         """从内存字符串加载私钥，不接触磁盘。
 
-        用于「密钥不落地」加固场景：私钥由 SecretProvider 从 KMS 临时拉取到内存，
-        通过本方法解析为 SSHKeyPair，用完即由调用方清零。
-
         Args:
             private_key_pem: PEM 格式私钥字符串
             passphrase: 私钥口令（可选）
@@ -161,15 +158,6 @@ class KeyManager:
         )
 
     def save_key(self, key_pair: SSHKeyPair, private_key_path: Path) -> None:
-        # 加固点 2：密钥不落地磁盘
-        # 当 SSH_SECRET_PROVIDER_ENABLED=true 时，禁止把私钥写入磁盘。
-        from .secret_provider import is_secret_provider_enabled
-
-        if is_secret_provider_enabled():
-            raise PermissionError(
-                "密钥不落地模式已启用（SSH_SECRET_PROVIDER_ENABLED=true），"
-                "禁止将私钥写入磁盘。私钥应通过 SecretProvider 临时拉取到内存使用。"
-            )
         private_key_path.parent.mkdir(parents=True, exist_ok=True)
         with open(private_key_path, "w") as f:
             f.write(key_pair.private_key)

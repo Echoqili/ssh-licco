@@ -9,7 +9,6 @@ from mcp.types import TextContent
 
 from ..config_manager import SSHConfig, SSHHost
 from ..connection_config import ConnectionConfig
-from ..secret_provider import SecretManager, SecretProviderError
 from ..security import SecurityError, command_validator
 from .context import HandlerContext
 
@@ -94,35 +93,7 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
         or None
     )
 
-    # 加固点 2：密钥不落地磁盘
-    # 当 SecretManager 启用时，自动从 KMS 临时拉取私钥到内存，不读磁盘路径。
-    private_key_material: str | None = None
     private_key_path = Path(args["private_key_path"]) if args.get("private_key_path") else None
-    sm = SecretManager.instance()
-    secret_material = None
-    if sm.enabled and not private_key_path and not host_config.password:
-        # 仅在「无磁盘私钥 + 无密码」时尝试拉取（避免覆盖显式凭证）
-        secret_name = args.get("name") or getattr(host_config, "name", None) or host_config.host
-        try:
-            secret_material = sm.fetch(secret_name)
-            private_key_material = secret_material.as_str()
-            ctx.logger.info(
-                "[secret] 私钥从 KMS 临时拉取到内存"
-                f"（source={secret_material.source}, name={secret_name}），不落盘"
-            )
-        except SecretProviderError as e:
-            ctx.logger.error(f"[secret] 拉取私钥失败: {e}")
-            return [TextContent(type="text", text=f"密钥不落地模式：拉取私钥失败：{e}")]
-    elif sm.enabled and private_key_path:
-        return [
-            TextContent(
-                type="text",
-                text=(
-                    "密钥不落地模式已启用（SSH_SECRET_PROVIDER_ENABLED=true），"
-                    "禁止使用 private_key_path 指定磁盘私钥文件。请通过 SecretManager 配置凭证。"
-                ),
-            )
-        ]
 
     try:
         config = ConnectionConfig(
@@ -139,7 +110,7 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
             known_hosts_path=args.get("known_hosts_path"),
             accept_new_host_key=args.get("accept_new_host_key", True),
             private_key_path=private_key_path,
-            private_key_material=private_key_material,
+            private_key_material=None,
             passphrase=args.get("passphrase"),
             sudo_password=sudo_password,
         )
@@ -221,10 +192,7 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
             )
         ]
     finally:
-        # 加固点 2：连接建立/失败后立即清零内存中的私钥
-        # （paramiko 已在内部把私钥加载为 PKey 对象，原始 PEM 字符串不再需要）
-        if secret_material is not None:
-            sm.release(secret_material)
+        pass
 
 
 async def handle_disconnect(ctx: HandlerContext, args: dict) -> list[TextContent]:

@@ -16,7 +16,6 @@ from .utils import (
     diagnose_exit_code,
     diagnose_startup_failure,
     ensure_session,
-    normalize_command_for_remote_guard,
     sanitize_remote_path,
     should_run_background,
 )
@@ -27,32 +26,6 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
     command = args["command"]
     timeout = args.get("timeout", 120)  # 默认 120s，避免 docker pull/pg_basebackup 等长任务超时
     background = args.get("background", None)
-
-    # 加固点 3：双层命令拦截 — 第一层（跳板机侧）
-    # 当 remote_guard=True（或全局 SSH_REMOTE_GUARD=true）时，强制把命令规范为
-    # 单一 argv 形式，禁止 shell 元字符，防止远端 ForceCommand 的 bash -c 解析时
-    # 通过元字符注入绕过白名单。
-    remote_guard = (
-        args.get("remote_guard", False) or os.getenv("SSH_REMOTE_GUARD", "false").lower() == "true"
-    )
-    if remote_guard:
-        normalized, guard_err = normalize_command_for_remote_guard(command)
-        if guard_err:
-            ctx.logger.warning(f"Command blocked by remote_guard normalization: {command}")
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        f"❌ 命令被远端 guard 模式拦截（第一层）\n\n"
-                        f"Command: {command}\n"
-                        f"Reason: {guard_err}\n\n"
-                        f"远端已启用 ForceCommand 二次校验，命令必须为单一 argv 形式，\n"
-                        f"禁止 shell 元字符（| ; & $() ` > < && ||）、子 shell、管道。\n"
-                        f"如需复杂命令，请在跳板机本地拆分为多条简单命令分别执行。"
-                    ),
-                )
-            ]
-        command = normalized
 
     # Resolve session via session_id / name / host / env fallback
     session_id = await ensure_session(ctx, args, handle_connect)
