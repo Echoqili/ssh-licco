@@ -1,10 +1,11 @@
-# SSH-LICCO 生产加固方案（四项必做）
+# SSH-LICCO 生产加固方案（四项必做，v2.2.0 起第 4 项由"审批"改为"硬拦截"）
 
 > 适用场景：SSH 跳板模式部署（无本地 CLI，AI 通过 MCP 调用 ssh-licco 代发命令到远端主机）
 >
 > 安全短板：跳板机是 SSH 代理的唯一执行点，一旦被突破即可对全部被管主机下发任意命令。
 >
-> 本文档对应代码实现见 `ssh_mcp/runtime_guard.py`、`ssh_mcp/secret_provider.py`、`ssh_mcp/approval.py`、`config/remote-guard/`。
+> 本文档对应代码实现见 `ssh_mcp/runtime_guard.py`、`ssh_mcp/secret_provider.py`、`ssh_mcp/security.py`（HARD_BLOCKED_PATTERNS）、`config/remote-guard/`。
+> v2.1.0 引入的审批方案代码 `ssh_mcp/approval.py` 仍保留作为参考，但**生产不建议启用**。
 
 ---
 
@@ -173,16 +174,69 @@ Environment=SSH_REMOTE_GUARD=true
 
 ---
 
-## 加固点 4：高危操作审批
+## 加固点 4：灾难性命令硬拦截（v2.2.0 起，原"高危操作审批"被取代）
 
-**目标**：rm、重启服务、修改防火墙等高危指令增加人工审批节点，AI 不能直接一键下发高危运维命令。
+**目标**：rm -rf 绝对路径、mkfs、raw-disk dd、fork-bomb、root chmod 等灾难性命令在 MCP 网关层被**无条件**拒绝，AI 不能直接下发，也无任何参数可绕过。
 
-**为什么**：AI 误判/被诱导下发 `rm -rf /`、`reboot`、`iptables -F` 等命令会造成不可逆破坏。即便有命令白名单，这些命令本身合法（运维需要），不能简单禁用，必须加人工审批闸门。
+**为什么**：v2.1.0 的"高危操作审批"方案依赖 AI 自报命令 + 运维人员背书，存在闭环风险（AI 完全可以绕过审批直接构造一个看似无害的命令）。v2.2.0 改为硬拦截——直接以"任何安全级别、任何参数都不能绕过"的方式拒绝灾难性模式，更安全也更简单。
 
 ### 实现
 
-- 模块：`ssh_mcp/approval.py`（ApprovalGate 单例，JSON 持久化）
+- 模块：`ssh_mcp/security.py::CommandValidator.HARD_BLOCKED_PATTERNS` + `CommandValidator.check_hard_block()`
 - 工作流：
+  ```
+  AI ssh_execute(command="rm -rf /etc")
+       ↓
+  check_hard_block() 在所有其他校验之前先执行
+       ↓
+  匹配 → SecurityError(hard_block=True) → WARNING 审计日志 → 返回 ❌ 硬拦截错误
+  ```
+- 拦截模式（不依赖任何配置，无开关）：
+  - `rm -rf` 作用于绝对路径（含 `/`、`/*`、`/path`、`/path/*`，`-fr` 变体同效）
+  - `mkfs.*` 任意文件系统格式化
+  - `dd if=/dev/(zero|random|urandom) of=/dev/(sd|nvme)` 覆写裸盘
+  - bash fork-bomb（`:(){ :|:& };:` 及空白变体）
+  - `chmod -R 777 /` / `chmod -R 000 /` 根目录递归改权限
+  - `> /dev/(sd|nvme)` / `>> /dev/(sd|nvme)` 裸设备重定向
+
+### 安全特性
+
+- **零配置**：默认开启，无环境变量开关
+- **零绕过**：`SSH_SECURITY_LEVEL`、`confirm_dangerous=true`、`confirmation_layer=N` 等任何参数均无效
+- **审计日志**：命中时输出 `WARNING` 日志（含 `category` 与命令原文），便于 SOC 监控
+- **错误信息明确**：不暗示任何 bypass 路径，直接指向"请直接登录服务器操作"
+
+### 验证
+
+```python
+from ssh_mcp.security import CommandValidator, SecurityError, SecurityLevel
+
+# 1. 绝对路径 rm -rf 应被硬拦截
+v = CommandValidator(security_level=SecurityLevel.BALANCED)
+try:
+    v.validate_command("rm -rf /etc")
+    assert False, "should be blocked"
+except SecurityError as e:
+    assert e.hard_block is True
+
+# 2. mkfs 应被硬拦截
+try:
+    v.check_hard_block("mkfs.ext4 /dev/sda1")
+    assert False
+except SecurityError as e:
+    assert e.hard_block is True
+
+# 3. 相对路径 rm -rf 不被硬拦截（仍走软门）
+v.check_hard_block("rm -rf ./build/")  # 不抛异常
+
+# 4. 单文件 rm 不被拦截
+v.check_hard_block("rm /tmp/test.log")  # 不抛异常
+```
+
+### v2.1.0 的审批方案（已下线，仅作历史参考）
+
+- 旧模块：`ssh_mcp/approval.py`（ApprovalGate 单例，JSON 持久化）
+- 旧工作流：
   ```
   AI ssh_execute(高危命令) → 审批门禁拦截（无 approval_id）
        ↓
@@ -192,51 +246,12 @@ Environment=SSH_REMOTE_GUARD=true
        ↓
   AI ssh_execute(command, approval_id) → 门禁校验通过，执行（一次性消费）
   ```
-- 新增 MCP 工具：
-  - `ssh_request_approval`：AI 提交审批申请
-  - `ssh_approve_command`：运维人员审批
-  - `ssh_list_approvals`：查看待审批/历史记录
-- `ssh_execute` 新增 `approval_id` 参数；`_check_approval_gate()` 在 CRITICAL/HIGH 风险命令执行前校验
-
-### 安全特性
-
-- **一次性消费**：approval_id 校验通过后立即标记 `consumed`，不可复用
-- **命令严格匹配**：申请时的命令与执行时的命令经 shlex 规范化后必须完全一致，防止「申请 A、执行 B」
-- **TTL 失效**：默认 1 小时，超时 pending/approved 自动过期
-- **持久化**：审批记录 JSON 持久化（`SSH_APPROVAL_STORE`），进程重启不丢失
-- **审计**：记录申请人、审批人、申请时间、决定时间、消费时间
-
-### 启用方式
-
-```bash
-Environment=SSH_APPROVAL_GATE=true
-Environment=SSH_APPROVAL_STORE=/var/lib/ssh-licco/approvals.json
-Environment=SSH_APPROVAL_TTL=3600
-```
-
-### 验证
-
-```bash
-# 1. AI 直接执行高危命令应被拦截
-# ssh_execute(command="rm -rf /tmp/old_logs")
-# → "❌ 高危操作审批门禁拦截...请先调用 ssh_request_approval"
-
-# 2. AI 申请审批
-# ssh_request_approval(command="rm -rf /tmp/old_logs", reason="清理过期日志")
-# → approval_id=eb4c261d..., status=pending
-
-# 3. 运维人员审批
-# ssh_approve_command(approval_id="eb4c261d...", decision="approved", reviewer="ops-admin")
-# → status=approved
-
-# 4. AI 携带 approval_id 执行
-# ssh_execute(command="rm -rf /tmp/old_logs", approval_id="eb4c261d...")
-# → 执行成功，approval_id 标记为 consumed
-
-# 5. 重复使用 approval_id 应失败
-# ssh_execute(command="rm -rf /tmp/old_logs", approval_id="eb4c261d...")
-# → "审批校验失败...此 approval_id 已被使用过（一次性消费）"
-```
+- 旧 MCP 工具（已从 `list_tools()` 移除）：
+  - `ssh_request_approval`
+  - `ssh_approve_command`
+  - `ssh_list_approvals`
+- 旧 `ssh_execute` 参数：`approval_id`（v2.2.0 起已从 inputSchema 移除）
+- 旧代码保留：`ssh_mcp/approval.py`、`ssh_mcp/handlers/approval.py` 仍存在，作为参考实现；不建议在生产启用 `SSH_APPROVAL_GATE=true`
 
 ---
 
@@ -255,9 +270,9 @@ Environment=SSH_APPROVAL_TTL=3600
 | `SSH_SECRET_HTTP_URL_<NAME>` | — | http provider：拉取 `<NAME>` 私钥的 URL |
 | `SSH_SECRET_HTTP_TOKEN` | — | http provider：Bearer token |
 | `SSH_REMOTE_GUARD` | `false` | 加固点 3 第一层总开关 |
-| `SSH_APPROVAL_GATE` | `false` | 加固点 4 总开关 |
-| `SSH_APPROVAL_STORE` | `~/.ssh_licco/approvals.json` | 审批记录持久化路径 |
-| `SSH_APPROVAL_TTL` | `3600` | 审批有效期（秒） |
+| `SSH_APPROVAL_GATE` | `false` | **已废弃（v2.2.0）**：原加固点 4 审批门禁总开关，工具已下线，配置仅作历史参考 |
+| `SSH_APPROVAL_STORE` | `~/.ssh_licco/approvals.json` | **已废弃（v2.2.0）**：原审批记录持久化路径 |
+| `SSH_APPROVAL_TTL` | `3600` | **已废弃（v2.2.0）**：原审批有效期（秒） |
 
 ---
 
@@ -266,6 +281,7 @@ Environment=SSH_APPROVAL_TTL=3600
 - [ ] 加固点 1：创建 `sshlicco` 专用账号，sudoers 不授权，systemd `User=sshlicco`，`SSH_RUNTIME_GUARD=true`
 - [ ] 加固点 2：选定 KMS provider（推荐 command + Vault），`SSH_SECRET_PROVIDER_ENABLED=true`，确认跳板机磁盘无私钥文件
 - [ ] 加固点 3：每台被管主机部署 ForceCommand 脚本 + 白名单，配置 sshd `Match User sshlicco`，跳板机侧 `SSH_REMOTE_GUARD=true`
-- [ ] 加固点 4：`SSH_APPROVAL_GATE=true`，配置审批记录存储路径，告知运维人员审批流程
+- [ ] 加固点 4（v2.2.0 起）：**灾难性命令硬拦截**默认开启，零配置、零绕过，无需额外设置。可执行 `python -c "from ssh_mcp.security import CommandValidator, SecurityLevel; CommandValidator(SecurityLevel.BALANCED).validate_command('rm -rf /etc')"` 验证
+- [ ] ~~`SSH_APPROVAL_GATE=true`~~（v2.2.0 起已废弃，工具已下线，**不要在生产启用**）
 - [ ] 跑 `python test_hardening.py` 确认四项加固逻辑通过
 - [ ] 审计日志开启：`SSH_AUDIT_LOG_PATH=/var/log/ssh-licco/audit.log`

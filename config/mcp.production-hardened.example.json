@@ -1,8 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/mcp-config",
-  "version": "1.0.0",
-  "description": "SSH LICCO 生产加固配置示例（v2.1.0 跳板机模式）",
+  "version": "1.1.0",
+  "description": "SSH LICCO 生产加固配置示例（v2.2.0 跳板机模式，加固点 4 由'审批'改为'硬拦截'）",
   "_help": "复制此文件并修改。所有加固点默认关闭，生产显式开启。详见 docs/SECURITY_HARDENING.md",
+  "_deprecated": {
+    "SSH_APPROVAL_GATE": "v2.2.0 起已废弃，工具 ssh_request_approval/ssh_approve_command/ssh_list_approvals 已从 MCP 移除；'硬拦截'作为加固点 4 替代方案，无需配置。",
+    "SSH_APPROVAL_STORE": "v2.2.0 起已废弃（依赖 SSH_APPROVAL_GATE）",
+    "SSH_APPROVAL_TTL": "v2.2.0 起已废弃（依赖 SSH_APPROVAL_GATE）"
+  },
 
   "mcpServers": {
     "ssh-licco": {
@@ -24,11 +29,7 @@
         "SSH_SECRET_COMMAND_PROD_WEB1": "vault kv get -field=private_key secret/ssh/prod-web1",
         "SSH_SECRET_COMMAND_PROD_DB": "vault kv get -field=private_key secret/ssh/prod-db",
 
-        "SSH_REMOTE_GUARD": "true",
-
-        "SSH_APPROVAL_GATE": "true",
-        "SSH_APPROVAL_STORE": "/var/lib/ssh-licco/approvals.json",
-        "SSH_APPROVAL_TTL": "3600"
+        "SSH_REMOTE_GUARD": "true"
       }
     }
   }

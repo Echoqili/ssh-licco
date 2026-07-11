@@ -223,7 +223,7 @@ mv /path/to/junk /tmp/.trash_$(date +%s)/
 
 命中硬拦截时会输出 `WARNING` 审计日志（含 category 与命令），便于 SOC 监控。
 
-### 🏛️ 生产加固四项（v2.1.0 新增）
+### 🏛️ 生产加固四项（v2.1.0 + v2.2.0 演进）
 
 SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
 
@@ -232,18 +232,20 @@ SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
 | 1. 运行账号最小权限 | `SSH_RUNTIME_GUARD=true` | 专用普通账号运行，拒绝 root/sudo 启动 |
 | 2. 密钥不落地磁盘 | `SSH_SECRET_PROVIDER_ENABLED=true` | 私钥从 KMS 临时拉取到内存，用完清零，不落盘 |
 | 3. 双层命令拦截 | `SSH_REMOTE_GUARD=true` + 远端 ForceCommand | 跳板机侧禁元字符 + 远端二次白名单校验 |
-| 4. 高危操作审批 | `SSH_APPROVAL_GATE=true` | rm/reboot/iptables 等高危命令需人工审批，AI 不能直接下发 |
+| 4. 灾难性命令硬拦截（v2.2.0 新增） | 默认开启，不可关闭 | rm -rf 绝对路径、mkfs、raw-disk dd、fork-bomb、chmod -R 777/000 /、`> /dev/sd*` 等在 MCP 网关层被**无条件**拒绝；任何安全级别、`confirm_dangerous=true` 等均无法绕过 |
+
+> **关于 v2.1.0 引入的"高危操作审批"项**：v2.1.0 曾提供 `SSH_APPROVAL_GATE=true` + 3 个审批工具作为第 4 项加固。v2.2.0 起该项被**硬拦截取代**——审批流程依赖 AI 自报命令，存在闭环风险；硬拦截更直接，灾难性命令在 MCP 网关层就被拒绝，运维侧不需要再走"先申请再审批"流程。`SSH_APPROVAL_GATE` 环境变量与 `ssh_mcp/approval.py` 代码仍保留作为参考，但不建议在生产启用。
 
 完整方案见 [docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)。
 
 ---
 
-## 🛠️ 可用工具（v2.1.0 扩充至 12 个）
+## 🛠️ 可用工具（v2.2.0 维持 9 个；v2.1.0 曾增加的 3 个审批工具因流程闭环风险已下线）
 
 | 工具 | 描述 | 核心能力 |
 |------|------|---------|
 | `ssh_connect` | 连接管理 | 自动读取环境变量/配置，支持密码+密钥认证，可保存配置，登录后自动执行命令 |
-| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式；v2.1.0 新增 `approval_id`（高危审批）与 `remote_guard`（双层拦截）参数 |
+| `ssh_execute` | 命令执行 | 自动连接、智能后台检测、长任务等待、超时控制，支持 nohup/screen/tmux 三种后台模式；v2.1.0 新增 `remote_guard`（双层拦截）参数；v2.2.0 起对灾难性命令（rm -rf 绝对路径、mkfs、raw-disk dd、fork-bomb 等）做**无条件硬拦截** |
 | `ssh_disconnect` | 会话管理 | 断开指定会话 OR 列出所有活跃会话 |
 | `ssh_file_transfer` | 文件传输 | 上传/下载/列表/写入/追加/删除/创建目录/查看元信息（8 种操作）；v2.1.3+ delete 操作新增 Windows/Unix 敏感路径拦截与路径遍历防护 |
 | `ssh_host` | 主机管理 | `action=list/add/remove` 增删查主机配置 |
@@ -251,9 +253,8 @@ SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
 | `ssh_generate_key` | 密钥生成 | RSA / Ed25519 密钥对 |
 | `ssh_session` | screen/tmux 会话 | 持久化远程会话管理（create/send/capture/list/kill），SSH 断开后进程依然存活 |
 | `ssh_process` | 进程管理 | 启动/停止/查询远程进程，SSH 端口转发（tunnel_open/tunnel_close/tunnel_list） |
-| `ssh_request_approval` | 高危审批申请（v2.1.0 新增） | AI 提交高危命令审批申请，返回 approval_id 等待人工审批 |
-| `ssh_approve_command` | 高危审批决定（v2.1.0 新增） | 运维人员人工审批 AI 申请，approved/rejected |
-| `ssh_list_approvals` | 审批记录查询（v2.1.0 新增） | 列出待审批队列或全部历史记录 |
+
+> **关于 v2.1.0 引入的 3 个审批工具**（`ssh_request_approval` / `ssh_approve_command` / `ssh_list_approvals`）：已从 MCP `list_tools()` 移除。审批流程依赖 AI 自报命令、运维侧背书，存在闭环风险；v2.2.0 的硬拦截更直接——灾难性命令在 MCP 网关层就被拒绝，运维侧不需要再走"先申请再审批"流程。相关代码（`ssh_mcp/approval.py`、`ssh_mcp/handlers/approval.py`）保留作为参考，但不暴露给 MCP。
 
 ### 📖 详细文档
 
