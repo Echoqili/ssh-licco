@@ -156,12 +156,12 @@ sudo systemctl restart sshd
 }
 ```
 
-**Method 3: Add extra allowed patterns (for special characters)**
-```json
-{
-  "SSH_EXTRA_ALLOWED_PATTERNS": "|,>,<,&,;"
-}
-```
+**Method 3: 加固点 3（`SSH_REMOTE_GUARD=true`）会拒绝元字符**
+
+如确需复杂命令：
+- 在配置 `SSH_EXTRA_ALLOWED_COMMANDS` 之外，**不要**继续尝试向 env 加 `SSH_EXTRA_ALLOWED_PATTERNS`——该变量不存在（v2.3.0 之前是 phantom）
+- 在跳板机本地拆分为多条简单命令分别执行
+- 或关闭 `SSH_REMOTE_GUARD`（生产不推荐）
 
 **Security Levels**:
 | Level | Env Value | Behavior |

@@ -189,8 +189,7 @@ MCP (Model Context Protocol) uses **stdio** (stdin/stdout) for JSON-RPC communic
 |----------|---------|-------------|
 | SSH_SECURITY_LEVEL | balanced | Security level (strict/balanced/relaxed) |
 | SSH_EXTRA_ALLOWED_COMMANDS | - | Additional allowed commands (comma-separated) |
-| SSH_EXTRA_ALLOWED_PATTERNS | - | Additional allowed patterns (e.g. `\|,>,<,&,;`) |
-| SSH_RATE_LIMIT | true | Enable rate limiting |
+| SSH_RATE_LIMIT | true | Enable rate limiting (bool: true/false) |
 | SSH_RATE_LIMIT_MAX | 30 | Max requests per window |
 | SSH_RATE_LIMIT_WINDOW | 60 | Time window in seconds |
 | SSH_AUDIT_LOG_PATH | - | Audit log file path |

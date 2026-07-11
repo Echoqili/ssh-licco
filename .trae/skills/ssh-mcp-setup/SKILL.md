@@ -189,8 +189,7 @@ MCP (Model Context Protocol) uses **stdio** (stdin/stdout) for JSON-RPC communic
 |----------|---------|-------------|
 | SSH_SECURITY_LEVEL | balanced | Security level (strict/balanced/relaxed) |
 | SSH_EXTRA_ALLOWED_COMMANDS | - | Additional allowed commands (comma-separated) |
-| SSH_EXTRA_ALLOWED_PATTERNS | - | Additional allowed patterns (e.g. `\|,>,<,&,;`) |
-| SSH_RATE_LIMIT | true | Enable rate limiting |
+| SSH_RATE_LIMIT | true | Enable rate limiting (bool: true/false) |
 | SSH_RATE_LIMIT_MAX | 30 | Max requests per window |
 | SSH_RATE_LIMIT_WINDOW | 60 | Time window in seconds |
 | SSH_AUDIT_LOG_PATH | - | Audit log file path |
@@ -335,8 +334,7 @@ ssh-copy-id user@server
       "env": {
         "SSH_HOST": "dev-server",
         "SSH_SECURITY_LEVEL": "relaxed",
-        "SSH_RATE_LIMIT": "false",
-        "SSH_EXTRA_ALLOWED_PATTERNS": "|,>,<,&,;"
+        "SSH_RATE_LIMIT": "false"
       }
     }
   }
@@ -408,8 +406,7 @@ node install.js
 ### Commands Blocked by Security
 1. Check `SSH_SECURITY_LEVEL` setting
 2. Add specific allowed commands: `SSH_EXTRA_ALLOWED_COMMANDS`
-3. Add allowed patterns: `SSH_EXTRA_ALLOWED_PATTERNS`
-4. Temporarily use relaxed mode for testing
+3. Temporarily use relaxed mode for testing
 
 ## Project Structure
 

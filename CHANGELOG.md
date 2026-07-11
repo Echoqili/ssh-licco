@@ -4,6 +4,29 @@
 
 ---
 
+## [2.3.1] - 2026-07-11
+
+### 修复
+
+- **生产配置限流 bug 修复**：`config/mcp.production-hardened.example.json` 中 `SSH_RATE_LIMIT=30` 被代码误读为布尔值 `"30".lower() == "true"` → `False`，导致限流在生产配置下实际为关闭状态。修正为 `SSH_RATE_LIMIT=true`（总开关）+ 新增 `SSH_RATE_LIMIT_MAX=30`（次数上限），两者分开配置。
+- **删除 phantom env 变量**：
+  - `SSH_STRICT_HOST_KEY_CHECKING` 在两个示例配置文件中均无对应代码读取（`ConnectionConfig.strict_host_key_checking` 字段由 `ssh_connect` 参数或 `hosts.json` 设置），从 `mcp.config.example.json` 与 `config/mcp.production-hardened.example.json` 移除。
+  - `SSH_EXTRA_ALLOWED_PATTERNS` 同样无代码读取（`os.getenv` 0 命中），从 `docs/skills/ssh-mcp-setup/SKILL.md`、`.trae/skills/ssh-mcp-setup/SKILL.md`、`docs/skills/ssh-mcp-dev/SKILL.md`、`.trae/skills/ssh-mcp-dev/SKILL.md`、`docs/skills/ssh-mcp-troubleshoot/SKILL.md`、`.trae/skills/ssh-mcp-troubleshoot/SKILL.md` 移除。
+
+### 文档
+
+- `config/mcp.production-hardened.example.json`：加 `_notes` 块说明 `rate_limit_naming` 与 `host_key_checking` 配置去向。
+- `docs/SECURITY_HARDENING.md`：环境变量速查从 11 项扩为 21+ 项完整表（按"安全与限流 / 加固点 1 / 加固点 2 / 加固点 3 / 加固点 4 / 默认连接参数"分组），并加"phantom 变量提示"；Checklist 删除已彻底废弃的 `SSH_APPROVAL_GATE` 提示。
+- `README.md`：新增"完整环境变量速查（v2.3.0）"总表。
+- 全部 4 个 SKILL.md（dev/setup/troubleshoot × docs/.trae 双份）补齐 `SSH_RATE_LIMIT` bool 类型说明，统一移除 `SSH_EXTRA_ALLOWED_PATTERNS`。
+
+### 影响
+
+- 已部署用户：使用 `config/mcp.production-hardened.example.json` 之前版本的，请同步更新 env 配置（`SSH_RATE_LIMIT=true` + `SSH_RATE_LIMIT_MAX=30`），否则限流实际未生效。
+- 调试图：若之前依赖 `SSH_STRICT_HOST_KEY_CHECKING` env 变量来开关主机密钥检查（实际不生效），请改用 `ssh_connect` 工具的 `known_hosts_path` / `accept_new_host_key` 参数，或 `hosts.json` 的 `strict_host_key_checking` 字段。
+
+---
+
 ## [2.3.0] - 2026-07-11
 
 ### 移除 ⚠️ BREAKING

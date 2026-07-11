@@ -197,8 +197,7 @@ python sync_version.py 0.5.6
 |----------|---------|-------------|
 | `SSH_SECURITY_LEVEL` | balanced | Security level (strict/balanced/relaxed) |
 | `SSH_EXTRA_ALLOWED_COMMANDS` | - | Additional allowed commands |
-| `SSH_EXTRA_ALLOWED_PATTERNS` | - | Additional allowed patterns (e.g. `\|,>,<,&,;`) |
-| `SSH_RATE_LIMIT` | true | Enable rate limiting |
+| `SSH_RATE_LIMIT` | true | Enable rate limiting (bool: true/false) |
 | `SSH_RATE_LIMIT_MAX` | 30 | Max requests per window |
 | `SSH_RATE_LIMIT_WINDOW` | 60 | Time window in seconds |
 | `SSH_AUDIT_LOG_PATH` | - | Audit log file path |

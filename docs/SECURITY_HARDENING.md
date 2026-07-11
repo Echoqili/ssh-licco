@@ -243,21 +243,72 @@ v2.1.0 曾提供 `SSH_APPROVAL_GATE=true` + 3 个审批工具（`ssh_request_app
 
 ---
 
-## 环境变量速查
+## 环境变量速查（v2.3.0 完整列表）
+
+> **重要**：下表所有变量均被代码读取。如果发现本文档外的 env 变量，那是 phantom（不生效）— 已被删除。
+> **限流命名注意**：`SSH_RATE_LIMIT` 是 bool 总开关，`SSH_RATE_LIMIT_MAX` 是次数上限，两者分开配置。
+> **主机密钥检查**：不通过 env 配置，请用 `ssh_connect` 工具的 `known_hosts_path` / `accept_new_host_key` 参数，或 `hosts.json` 的 `strict_host_key_checking` 字段。
+
+### 安全与限流
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `SSH_RUNTIME_GUARD` | `false` | 加固点 1 总开关，生产置 `true` |
+| `SSH_SECURITY_LEVEL` | `balanced` | 安全级别：`strict`/`balanced`/`relaxed`（v2.1.0+） |
+| `SSH_BASE_DIR` | `/home` | 路径校验基目录，文件传输/命令执行路径必须在此之下 |
+| `SSH_EXTRA_ALLOWED_COMMANDS` | (空) | 额外允许的命令白名单（逗号分隔） |
+| `SSH_ALLOWED_COMMANDS_FILE` | (空) | 允许命令白名单 JSON 文件路径，加载后与 `SSH_EXTRA_ALLOWED_COMMANDS` 合并 |
+| `SSH_AUDIT_LOG_PATH` | (空) | 审计日志文件路径，留空则不写审计日志 |
+| `SSH_RATE_LIMIT` | `true` | 限流总开关（bool：true/false） |
+| `SSH_RATE_LIMIT_MAX` | `30` | 限流次数上限（每窗口） |
+| `SSH_RATE_LIMIT_WINDOW` | `60` | 限流窗口（秒） |
+
+### 加固点 1：runtime guard（专用账号）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `SSH_RUNTIME_GUARD` | `false` | 总开关，生产置 `true` |
 | `SSH_RUNTIME_ALLOW_ROOT` | `false` | 是否允许 root 启动（不推荐开） |
 | `SSH_RUNTIME_ALLOWED_USERS` | (空) | 允许启动的账号白名单，逗号分隔 |
-| `SSH_RUNTIME_BLOCK_SUDO` | `true` | 是否拦截 sudo 上下文启动 |
-| `SSH_SECRET_PROVIDER_ENABLED` | `false` | 加固点 2 总开关 |
-| `SSH_SECRET_PROVIDER` | `env` | 凭证 provider：`env`/`command`/`http` |
+| `SSH_RUNTIME_BLOCK_SUDO` | `true` | 是否拦截 sudo 上下文启动（通过 `SUDO_*` / `PKEXEC_*` / `DOAS_*` env 变量检测） |
+
+### 加固点 2：secret provider（密钥不落地）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `SSH_SECRET_PROVIDER_ENABLED` | `false` | 总开关 |
+| `SSH_SECRET_PROVIDER` | `env` | 凭证 provider：`env` / `command` / `http` |
 | `SSH_SECRET_ENV_KEY_<NAME>` | — | env provider：连接 `<NAME>` 的私钥环境变量 |
 | `SSH_SECRET_COMMAND_<NAME>` | — | command provider：拉取 `<NAME>` 私钥的命令 |
 | `SSH_SECRET_HTTP_URL_<NAME>` | — | http provider：拉取 `<NAME>` 私钥的 URL |
 | `SSH_SECRET_HTTP_TOKEN` | — | http provider：Bearer token |
-| `SSH_REMOTE_GUARD` | `false` | 加固点 3 第一层总开关 |
+| `SSH_SECRET_HTTP_TIMEOUT` | `15` | http provider：HTTP 请求超时（秒） |
+
+### 加固点 3：remote guard（双层命令拦截，跳板机侧）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `SSH_REMOTE_GUARD` | `false` | 第一层总开关；开启后命令必须为单一 argv，禁止 shell 元字符 |
+
+### 加固点 4：灾难性命令硬拦截（v2.2.0+，零配置）
+
+无任何环境变量。命中模式即拒绝，无开关、无绕过。
+
+### 默认连接参数（单 host 单账号模式）
+
+> **多 host 模式**：推荐用 `config/hosts.json` 或 `ssh_host` 工具管理；env 模式仅适合单 host。
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `SSH_HOST` | `127.0.0.1` | 默认 SSH 服务器地址（env 单 host 模式） |
+| `SSH_PORT` | `22` | 默认 SSH 端口 |
+| `SSH_USER` | `root` | 默认 SSH 用户名 |
+| `SSH_PASSWORD` | (空) | 默认 SSH 密码 |
+| `SSH_TIMEOUT` | `60` | 连接超时（秒） |
+| `SSH_KEEPALIVE_INTERVAL` | `30` | keepalive 间隔（秒） |
+| `SSH_SESSION_TIMEOUT` | `7200` | 会话超时（秒），最小时长 300s |
+| `SSH_CLIENT_TYPE` | `paramiko` | SSH 客户端实现：`paramiko` / `asyncssh` |
+| `SSH_FORCE_ENV_CONFIG` | `false` | 强制以 env 配置覆盖 hosts.json（env 优先） |
+| `SSH_SUDO_PASSWORD` | (空) | sudo 密码，配合 `use_sudo=true` 走 `sudo -S` 自动包装（密码走 stdin 不进 ps） |
 
 ---
 
@@ -267,6 +318,5 @@ v2.1.0 曾提供 `SSH_APPROVAL_GATE=true` + 3 个审批工具（`ssh_request_app
 - [ ] 加固点 2：选定 KMS provider（推荐 command + Vault），`SSH_SECRET_PROVIDER_ENABLED=true`，确认跳板机磁盘无私钥文件
 - [ ] 加固点 3：每台被管主机部署 ForceCommand 脚本 + 白名单，配置 sshd `Match User sshlicco`，跳板机侧 `SSH_REMOTE_GUARD=true`
 - [ ] 加固点 4（v2.2.0 起）：**灾难性命令硬拦截**默认开启，零配置、零绕过，无需额外设置。可执行 `python -c "from ssh_mcp.security import CommandValidator, SecurityLevel; CommandValidator(SecurityLevel.BALANCED).validate_command('rm -rf /etc')"` 验证
-- [ ] ~~`SSH_APPROVAL_GATE=true`~~（v2.2.0 起已废弃，工具已下线，**不要在生产启用**）
 - [ ] 跑 `python test_hardening.py` 确认四项加固逻辑通过
 - [ ] 审计日志开启：`SSH_AUDIT_LOG_PATH=/var/log/ssh-licco/audit.log`

@@ -420,6 +420,44 @@ localhost:5432 - accepting connections
 
 - **[MCP_CONFIG_GUIDE.md](MCP_CONFIG_GUIDE.md)** - 包含所有配置选项的详细说明
 
+### 🌐 完整环境变量速查（v2.3.0）
+
+> 下表所有变量均被代码读取。**注意**：
+> - `SSH_RATE_LIMIT` 是 **bool** 总开关（true/false），`SSH_RATE_LIMIT_MAX` 才是次数上限，两者分开配置
+> - 主机密钥检查（strict_host_key_checking）**不通过 env 配置**，请用 `ssh_connect` 工具参数或 `hosts.json`
+> - 详细分组说明见 [docs/SECURITY_HARDENING.md#环境变量速查](docs/SECURITY_HARDENING.md#环境变量速查v230-完整列表)
+
+| 分类 | 变量 | 默认 | 说明 |
+|------|------|------|------|
+| **安全** | `SSH_SECURITY_LEVEL` | `balanced` | 安全级别：`strict` / `balanced` / `relaxed` |
+|  | `SSH_BASE_DIR` | `/home` | 路径校验基目录 |
+|  | `SSH_EXTRA_ALLOWED_COMMANDS` | (空) | 额外允许的命令（逗号分隔） |
+|  | `SSH_ALLOWED_COMMANDS_FILE` | (空) | 命令白名单 JSON 文件路径 |
+|  | `SSH_AUDIT_LOG_PATH` | (空) | 审计日志文件路径 |
+| **限流** | `SSH_RATE_LIMIT` | `true` | 限流总开关（bool） |
+|  | `SSH_RATE_LIMIT_MAX` | `30` | 限流次数上限 |
+|  | `SSH_RATE_LIMIT_WINDOW` | `60` | 限流窗口（秒） |
+| **加固点 1** | `SSH_RUNTIME_GUARD` | `false` | runtime guard 总开关 |
+|  | `SSH_RUNTIME_ALLOW_ROOT` | `false` | 是否允许 root 启动 |
+|  | `SSH_RUNTIME_ALLOWED_USERS` | (空) | 允许启动的账号白名单 |
+|  | `SSH_RUNTIME_BLOCK_SUDO` | `true` | 是否拦截 sudo 上下文 |
+| **加固点 2** | `SSH_SECRET_PROVIDER_ENABLED` | `false` | secret provider 总开关 |
+|  | `SSH_SECRET_PROVIDER` | `env` | 凭证 provider：`env` / `command` / `http` |
+|  | `SSH_SECRET_ENV_KEY_<NAME>` | — | env provider：私钥环境变量 |
+|  | `SSH_SECRET_COMMAND_<NAME>` | — | command provider：拉取私钥的命令 |
+|  | `SSH_SECRET_HTTP_URL_<NAME>` | — | http provider：拉取私钥的 URL |
+|  | `SSH_SECRET_HTTP_TOKEN` | — | http provider：Bearer token |
+|  | `SSH_SECRET_HTTP_TIMEOUT` | `15` | http provider：HTTP 超时（秒） |
+| **加固点 3** | `SSH_REMOTE_GUARD` | `false` | 远端元字符拦截总开关 |
+| **加固点 4** | *(无 env)* | — | 灾难性命令硬拦截，零配置零绕过 |
+| **连接默认** | `SSH_HOST` / `SSH_PORT` / `SSH_USER` / `SSH_PASSWORD` | `127.0.0.1` / `22` / `root` / (空) | 单 host 模式默认连接参数 |
+|  | `SSH_TIMEOUT` | `60` | 连接超时（秒） |
+|  | `SSH_KEEPALIVE_INTERVAL` | `30` | keepalive 间隔（秒） |
+|  | `SSH_SESSION_TIMEOUT` | `7200` | 会话超时（秒） |
+|  | `SSH_CLIENT_TYPE` | `paramiko` | SSH 客户端实现：`paramiko` / `asyncssh` |
+|  | `SSH_FORCE_ENV_CONFIG` | `false` | 强制 env 配置覆盖 hosts.json |
+|  | `SSH_SUDO_PASSWORD` | (空) | sudo 密码，配合 `use_sudo=true` 走 `sudo -S` |
+
 ---
 
 ## ⚠️ 依赖版本兼容性

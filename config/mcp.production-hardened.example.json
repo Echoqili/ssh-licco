@@ -1,8 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/mcp-config",
-  "version": "1.2.0",
-  "description": "SSH LICCO 生产加固配置示例（v2.2.0 跳板机模式，加固点 4 为'灾难性命令硬拦截'，零配置零绕过）",
+  "version": "1.3.0",
+  "description": "SSH LICCO 生产加固配置示例（v2.3.0 跳板机模式，加固点 4 为'灾难性命令硬拦截'，零配置零绕过）",
   "_help": "复制此文件并修改。所有加固点默认关闭，生产显式开启。详见 docs/SECURITY_HARDENING.md",
+  "_notes": {
+    "rate_limit_naming": "SSH_RATE_LIMIT 是 bool（true/false）总开关，SSH_RATE_LIMIT_MAX 才是次数上限。两者必须分开配置：SSH_RATE_LIMIT=true 才算开启限流。",
+    "host_key_checking": "strict_host_key_checking 不通过 env 配置，请用 ssh_connect 工具的 known_hosts_path / accept_new_host_key 参数，或 hosts.json 的 strict_host_key_checking 字段。"
+  },
 
   "mcpServers": {
     "ssh-licco": {
@@ -10,8 +14,8 @@
       "env": {
         "SSH_SECURITY_LEVEL": "strict",
         "SSH_BASE_DIR": "/home",
-        "SSH_STRICT_HOST_KEY_CHECKING": "true",
-        "SSH_RATE_LIMIT": "30",
+        "SSH_RATE_LIMIT": "true",
+        "SSH_RATE_LIMIT_MAX": "30",
         "SSH_RATE_LIMIT_WINDOW": "60",
         "SSH_AUDIT_LOG_PATH": "/var/log/ssh-licco/audit.log",
 
