@@ -13,7 +13,6 @@ from ..security import SecurityError, command_validator
 from .connect import handle_connect
 from .context import HandlerContext
 from .utils import (
-    check_approval_gate,
     diagnose_exit_code,
     diagnose_startup_failure,
     ensure_session,
@@ -54,14 +53,6 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
                 )
             ]
         command = normalized
-
-    # 加固点 4：高危操作审批门禁
-    # 当 SSH_APPROVAL_GATE=true 且命令被判定为高危时，必须携带有效 approval_id 才能执行。
-    approval_id = args.get("approval_id")
-    approval_err = check_approval_gate(command, approval_id)
-    if approval_err:
-        ctx.logger.warning(f"Command blocked by approval gate: {command}")
-        return [TextContent(type="text", text=approval_err)]
 
     # Resolve session via session_id / name / host / env fallback
     session_id = await ensure_session(ctx, args, handle_connect)

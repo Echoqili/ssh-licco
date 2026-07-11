@@ -41,17 +41,16 @@ ssh_mcp/
     ├── __init__.py            # HANDLERS 注册表
     ├── base.py                # HandlerProtocol / 可选基类
     ├── context.py             # HandlerContext 共享状态容器
-    ├── schemas.py             # 12 个 Tool 定义
+    ├── schemas.py             # 9 个 Tool 定义
     ├── utils.py               # _ensure_session、路径处理、诊断等共享辅助
     ├── connect.py             # ssh_connect、ssh_disconnect
-    ├── execute.py             # ssh_execute（含 background、sudo、审批、remote_guard）
+    ├── execute.py             # ssh_execute（含 background、sudo、remote_guard）
     ├── file_transfer.py       # ssh_file_transfer
     ├── host.py                # ssh_host
     ├── docker.py              # ssh_docker
     ├── key.py                 # ssh_generate_key
     ├── session.py             # ssh_session (screen/tmux)
     ├── process.py             # ssh_process + tunnel_open/close/list
-    └── approval.py            # ssh_request_approval、ssh_approve_command、ssh_list_approvals
 ```
 
 ## 关键设计决策
@@ -147,14 +146,13 @@ async def _handle_connect(self, args: dict) -> list[TextContent]:
 按依赖从少到多顺序：
 
 1. `key.py`（ssh\_generate\_key）
-2. `approval.py`（三个审批工具）
-3. `host.py`（ssh\_host）
-4. `connect.py`（ssh\_connect、ssh\_disconnect）
-5. `file_transfer.py`
-6. `session.py`
-7. `execute.py`（最大，含 background 逻辑）
-8. `docker.py`（依赖 execute background）
-9. `process.py`（依赖 tunnels、execute background）
+2. `host.py`（ssh\_host）
+3. `connect.py`（ssh\_connect、ssh\_disconnect）
+4. `file_transfer.py`
+5. `session.py`
+6. `execute.py`（最大，含 background 逻辑）
+7. `docker.py`（依赖 execute background）
+8. `process.py`（依赖 tunnels、execute background）
 
 每完成一个模块，就将 `server.py` 中对应 `_handle_*` 改为委托，并运行测试。
 
@@ -205,7 +203,7 @@ return await handler(self._ctx, arguments)
 
    * `ssh_host`（list/add/remove）
 
-   * `ssh_request_approval` / `ssh_approve_command` / `ssh_list_approvals`
+   * `ssh_execute`（含 remote_guard 规范化）
 
 ## 相关文件
 

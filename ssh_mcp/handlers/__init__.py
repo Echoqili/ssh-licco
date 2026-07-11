@@ -7,7 +7,6 @@ from collections.abc import Awaitable, Callable
 from mcp.types import TextContent
 
 from . import schemas
-from .approval import handle_approve_command, handle_list_approvals, handle_request_approval
 from .connect import handle_connect, handle_disconnect
 from .context import HandlerContext
 from .docker import handle_docker
@@ -30,9 +29,6 @@ HANDLERS: dict[str, Handler] = {
     "ssh_generate_key": handle_generate_key,
     "ssh_session": handle_session,
     "ssh_process": handle_process,
-    "ssh_request_approval": handle_request_approval,
-    "ssh_approve_command": handle_approve_command,
-    "ssh_list_approvals": handle_list_approvals,
 }
 
 __all__ = ["HANDLERS", "schemas"]

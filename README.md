@@ -234,7 +234,7 @@ SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
 | 3. 双层命令拦截 | `SSH_REMOTE_GUARD=true` + 远端 ForceCommand | 跳板机侧禁元字符 + 远端二次白名单校验 |
 | 4. 灾难性命令硬拦截（v2.2.0 新增） | 默认开启，不可关闭 | rm -rf 绝对路径、mkfs、raw-disk dd、fork-bomb、chmod -R 777/000 /、`> /dev/sd*` 等在 MCP 网关层被**无条件**拒绝；任何安全级别、`confirm_dangerous=true` 等均无法绕过 |
 
-> **关于 v2.1.0 引入的"高危操作审批"项**：v2.1.0 曾提供 `SSH_APPROVAL_GATE=true` + 3 个审批工具作为第 4 项加固。v2.2.0 起该项被**硬拦截取代**——审批流程依赖 AI 自报命令，存在闭环风险；硬拦截更直接，灾难性命令在 MCP 网关层就被拒绝，运维侧不需要再走"先申请再审批"流程。`SSH_APPROVAL_GATE` 环境变量与 `ssh_mcp/approval.py` 代码仍保留作为参考，但不建议在生产启用。
+> **关于 v2.1.0 引入的"高危操作审批"项**：v2.1.0 曾提供 `SSH_APPROVAL_GATE=true` + 3 个审批工具作为第 4 项加固。v2.2.0 起该项被**硬拦截取代**——审批流程依赖 AI 自报命令，存在闭环风险；硬拦截更直接，灾难性命令在 MCP 网关层就被拒绝，运维侧不需要再走"先申请再审批"流程。`SSH_APPROVAL_GATE` 环境变量与 `ssh_mcp/approval.py` / `ssh_mcp/handlers/approval.py` 代码已在 v2.2.0 删除。
 
 完整方案见 [docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)。
 
@@ -254,7 +254,7 @@ SSH 跳板模式部署的生产必做加固，补齐跳板机单点风险：
 | `ssh_session` | screen/tmux 会话 | 持久化远程会话管理（create/send/capture/list/kill），SSH 断开后进程依然存活 |
 | `ssh_process` | 进程管理 | 启动/停止/查询远程进程，SSH 端口转发（tunnel_open/tunnel_close/tunnel_list） |
 
-> **关于 v2.1.0 引入的 3 个审批工具**（`ssh_request_approval` / `ssh_approve_command` / `ssh_list_approvals`）：已从 MCP `list_tools()` 移除。审批流程依赖 AI 自报命令、运维侧背书，存在闭环风险；v2.2.0 的硬拦截更直接——灾难性命令在 MCP 网关层就被拒绝，运维侧不需要再走"先申请再审批"流程。相关代码（`ssh_mcp/approval.py`、`ssh_mcp/handlers/approval.py`）保留作为参考，但不暴露给 MCP。
+> **关于 v2.1.0 引入的 3 个审批工具**（`ssh_request_approval` / `ssh_approve_command` / `ssh_list_approvals`）：已从 MCP `list_tools()` 移除，**代码已在 v2.2.0 删除**（`ssh_mcp/approval.py`、`ssh_mcp/handlers/approval.py`）。审批流程依赖 AI 自报命令、运维侧背书，存在闭环风险；v2.2.0 的硬拦截更直接——灾难性命令在 MCP 网关层就被拒绝，运维侧不需要再走"先申请再审批"流程。
 
 ### 📖 详细文档
 

@@ -137,10 +137,6 @@ TOOLS: dict[str, Tool] = {
                     "default": False,
                     "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform.",
                 },
-                "approval_id": {
-                    "type": "string",
-                    "description": "加固点 4：高危操作审批 ID。当 SSH_APPROVAL_GATE=true 且命令被判定为高危时，必须先调用 ssh_request_approval 获取 approval_id，再带上此参数执行。否则高危命令会被拒绝。",
-                },
                 "remote_guard": {
                     "type": "boolean",
                     "default": False,
@@ -494,63 +490,6 @@ TOOLS: dict[str, Tool] = {
                 },
             },
             "required": ["session_id", "action"],
-        },
-    ),
-    "ssh_request_approval": Tool(
-        name="ssh_request_approval",
-        description="加固点 4：高危操作审批 — AI 提交审批申请。当 SSH_APPROVAL_GATE=true 时，rm -rf、reboot、iptables 等高危命令必须先调用本工具申请审批，获得 approval_id 后再调用 ssh_execute 携带 approval_id 执行。AI 不能直接下发高危命令。",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "需要审批的高危命令（必须与后续 ssh_execute 的 command 完全一致，否则校验失败）。",
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "申请理由：为什么需要执行此高危命令、预期影响、回滚方案。",
-                },
-            },
-            "required": ["command", "reason"],
-        },
-    ),
-    "ssh_approve_command": Tool(
-        name="ssh_approve_command",
-        description="加固点 4：高危操作审批 — 运维人员人工审批 AI 提交的申请。返回审批结果。审批通过后 AI 可用获得的 approval_id 执行命令（一次性，用后即焚）。",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "approval_id": {
-                    "type": "string",
-                    "description": "待审批的 approval_id（由 ssh_request_approval 返回）。",
-                },
-                "decision": {
-                    "type": "string",
-                    "enum": ["approved", "rejected"],
-                    "description": "审批决定：approved=同意执行，rejected=拒绝。",
-                },
-                "reviewer": {
-                    "type": "string",
-                    "description": "审批人标识（运维人员姓名/账号），用于审计。",
-                },
-                "comment": {"type": "string", "description": "审批意见（可选）。"},
-            },
-            "required": ["approval_id", "decision", "reviewer"],
-        },
-    ),
-    "ssh_list_approvals": Tool(
-        name="ssh_list_approvals",
-        description="加固点 4：高危操作审批 — 列出审批记录。运维人员查看待处理队列或历史记录。action=pending 只看待审批，action=all 查看全部（最近 100 条）。",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["pending", "all"],
-                    "default": "pending",
-                    "description": "pending=仅待审批，all=全部记录（最近 100 条）。",
-                }
-            },
         },
     ),
 }

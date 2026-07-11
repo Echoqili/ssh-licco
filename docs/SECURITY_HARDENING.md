@@ -1,11 +1,11 @@
-# SSH-LICCO 生产加固方案（四项必做，v2.2.0 起第 4 项由"审批"改为"硬拦截"）
+# SSH-LICCO 生产加固方案（四项必做，第 4 项为 v2.2.0 起的"灾难性命令硬拦截"）
 
 > 适用场景：SSH 跳板模式部署（无本地 CLI，AI 通过 MCP 调用 ssh-licco 代发命令到远端主机）
 >
 > 安全短板：跳板机是 SSH 代理的唯一执行点，一旦被突破即可对全部被管主机下发任意命令。
 >
 > 本文档对应代码实现见 `ssh_mcp/runtime_guard.py`、`ssh_mcp/secret_provider.py`、`ssh_mcp/security.py`（HARD_BLOCKED_PATTERNS）、`config/remote-guard/`。
-> v2.1.0 引入的审批方案代码 `ssh_mcp/approval.py` 仍保留作为参考，但**生产不建议启用**。
+> v2.1.0 引入的审批方案相关代码（`ssh_mcp/approval.py`、`ssh_mcp/handlers/approval.py`）已在 v2.2.0 删除——因依赖 AI 自报命令 + 运维侧背书存在闭环风险，被"硬拦截"取代。
 
 ---
 
@@ -233,25 +233,13 @@ v.check_hard_block("rm -rf ./build/")  # 不抛异常
 v.check_hard_block("rm /tmp/test.log")  # 不抛异常
 ```
 
-### v2.1.0 的审批方案（已下线，仅作历史参考）
+### v2.1.0 的审批方案（已被删除）
 
-- 旧模块：`ssh_mcp/approval.py`（ApprovalGate 单例，JSON 持久化）
-- 旧工作流：
-  ```
-  AI ssh_execute(高危命令) → 审批门禁拦截（无 approval_id）
-       ↓
-  AI ssh_request_approval(command, reason) → 生成 approval_id，status=pending
-       ↓
-  运维人员 ssh_approve_command(approval_id, decision=approved, reviewer=...)
-       ↓
-  AI ssh_execute(command, approval_id) → 门禁校验通过，执行（一次性消费）
-  ```
-- 旧 MCP 工具（已从 `list_tools()` 移除）：
-  - `ssh_request_approval`
-  - `ssh_approve_command`
-  - `ssh_list_approvals`
-- 旧 `ssh_execute` 参数：`approval_id`（v2.2.0 起已从 inputSchema 移除）
-- 旧代码保留：`ssh_mcp/approval.py`、`ssh_mcp/handlers/approval.py` 仍存在，作为参考实现；不建议在生产启用 `SSH_APPROVAL_GATE=true`
+v2.1.0 曾提供 `SSH_APPROVAL_GATE=true` + 3 个审批工具（`ssh_request_approval` / `ssh_approve_command` / `ssh_list_approvals`）作为"高危操作审批"流程。该方案在 v2.2.0 起被"灾难性命令硬拦截"完全取代，**相关代码已删除**（`ssh_mcp/approval.py`、`ssh_mcp/handlers/approval.py`）。
+
+**删除原因**：审批流程依赖 AI 自报命令 + 运维人员背书，存在闭环风险——AI 可以完全绕过审批，直接构造一个看似无害的命令；运维侧背书流于形式。硬拦截更直接：灾难性命令在 MCP 网关层就被无条件拒绝，运维侧不需要再走"先申请再审批"流程。
+
+**升级方式**：v2.1.x → v2.2.0 仅需升级包版本，无需任何配置变更。`SSH_APPROVAL_GATE`、`SSH_APPROVAL_STORE`、`SSH_APPROVAL_TTL` 环境变量已不再被读取，可从部署配置中移除。
 
 ---
 
@@ -270,9 +258,6 @@ v.check_hard_block("rm /tmp/test.log")  # 不抛异常
 | `SSH_SECRET_HTTP_URL_<NAME>` | — | http provider：拉取 `<NAME>` 私钥的 URL |
 | `SSH_SECRET_HTTP_TOKEN` | — | http provider：Bearer token |
 | `SSH_REMOTE_GUARD` | `false` | 加固点 3 第一层总开关 |
-| `SSH_APPROVAL_GATE` | `false` | **已废弃（v2.2.0）**：原加固点 4 审批门禁总开关，工具已下线，配置仅作历史参考 |
-| `SSH_APPROVAL_STORE` | `~/.ssh_licco/approvals.json` | **已废弃（v2.2.0）**：原审批记录持久化路径 |
-| `SSH_APPROVAL_TTL` | `3600` | **已废弃（v2.2.0）**：原审批有效期（秒） |
 
 ---
 

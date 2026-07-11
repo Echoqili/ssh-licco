@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import shlex
 from collections.abc import Awaitable, Callable
@@ -114,53 +113,6 @@ def normalize_command_for_remote_guard(command: str) -> tuple[str, str | None]:
 
     # 返回原命令（已通过元字符检查），远端 bash -c 会安全解析
     return command, None
-
-
-def check_approval_gate(command: str, approval_id: str | None) -> str | None:
-    """加固点 4：高危操作审批门禁。
-
-    当 SSH_APPROVAL_GATE=true 时，高危命令（CRITICAL/HIGH 风险）必须携带有效
-    approval_id（由 ssh_request_approval 工具申请、人工 approve 后获得）才能执行。
-
-    返回 None 表示放行；返回字符串表示拒绝原因（作为 MCP 返回文本）。
-    """
-    if os.getenv("SSH_APPROVAL_GATE", "false").lower() != "true":
-        return None  # 审批门禁未启用
-
-    from ..security import RiskLevel, command_validator
-
-    risk = command_validator.assess_risk_level(command)
-
-    # 仅 CRITICAL / HIGH 风险需要审批；MEDIUM/LOW/SAFE 直接放行
-    if risk not in (RiskLevel.CRITICAL, RiskLevel.HIGH):
-        return None
-
-    if not approval_id:
-        return (
-            f"❌ 高危操作审批门禁拦截\n\n"
-            f"Command: {command}\n"
-            f"Risk: {risk.value}\n\n"
-            f"此命令被判定为「{risk.value}」风险，启用了人工审批门禁（SSH_APPROVAL_GATE=true）。\n"
-            f"AI 不能直接下发此类高危运维命令，必须先申请审批：\n\n"
-            f"  1. 调用 ssh_request_approval 工具，提交 command 与 reason；\n"
-            f"  2. 等待人工审批通过，获得 approval_id；\n"
-            f"  3. 用 ssh_execute 携带 approval_id 重新执行。\n\n"
-            f"高危命令类别：rm -rf、reboot/shutdown、iptables/防火墙修改、mkfs、dd 覆盘等。"
-        )
-
-    # 校验 approval_id 有效性
-    from ..approval import ApprovalGate
-
-    gate = ApprovalGate.instance()
-    ok, reason = gate.verify(approval_id, command)
-    if not ok:
-        return (
-            f"❌ 审批校验失败\n\n"
-            f"approval_id: {approval_id}\n"
-            f"Reason: {reason}\n\n"
-            f"请重新申请审批（ssh_request_approval）或确认 approval_id 是否匹配当前命令。"
-        )
-    return None
 
 
 def diagnose_exit_code(exit_code: int, log_tail: str, stderr: str) -> str:
