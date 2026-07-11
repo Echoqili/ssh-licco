@@ -4,6 +4,40 @@
 
 ---
 
+## [2.3.0] - 2026-07-11
+
+### 移除 ⚠️ BREAKING
+
+- **删除 `SSH_APPROVAL_GATE` 审批方案全部代码**（v2.1.0 引入，v2.2.0 标记为废弃）：
+  - 删除 `ssh_mcp/approval.py`（`ApprovalGate` 单例与 `ApprovalRecord` 数据类）
+  - 删除 `ssh_mcp/handlers/approval.py`（`handle_request_approval` / `handle_approve_command` / `handle_list_approvals` 三个 MCP 工具 handler）
+  - `ssh_mcp/handlers/__init__.py` 的 `HANDLERS` 注册表移除 3 个工具（共 12 → 9）
+  - `ssh_mcp/handlers/utils.py` 移除 `check_approval_gate()` 函数
+  - `ssh_mcp/handlers/execute.py` 移除 `check_approval_gate()` 调用与 `approval_id` 参数传递
+  - `ssh_mcp/handlers/schemas.py` 移除 `approval_id` 输入参数 + 3 个 `ssh_request_approval` / `ssh_approve_command` / `ssh_list_approvals` Tool 定义
+- **删除 3 个环境变量**（不再被代码读取，可从部署配置中移除）：
+  - `SSH_APPROVAL_GATE`
+  - `SSH_APPROVAL_STORE`
+  - `SSH_APPROVAL_TTL`
+- **删除原因**：审批流程依赖 AI 自报命令 + 运维人员背书，存在闭环风险（AI 可绕过审批构造看似无害的命令；运维侧背书流于形式）。v2.2.0 的"灾难性命令硬拦截"在 MCP 网关层直接拒绝灾难性模式，更安全更直接。
+
+### 文档
+
+- `MCP_CONFIG_GUIDE.md`：删除"## 🎯 使用场景配置"5 个角色化场景（Web / Python / DB / 系统管理员 / 生产），在没对接 MCP 网关前不做角色严格声明。
+- `docs/SECURITY_HARDENING.md`：env 变量表移除 3 个废弃项；"v2.1.0 审批方案"小节改写为"已被删除"。
+- `README.md`：2 处"保留作为参考"改为"已在 v2.2.0 删除"。
+- `config/mcp.production-hardened.example.json`：移除 `_deprecated` 块，version 1.1.0 → 1.2.0。
+- `.trae/documents/split-server-py-plan.md`：移除 approval.py 文件树项、迁移步骤、Tool count 12 → 9。
+
+### 迁移指南
+
+v2.2.x → v2.3.0：
+- 删除部署配置中的 `SSH_APPROVAL_GATE` / `SSH_APPROVAL_STORE` / `SSH_APPROVAL_TTL` 环境变量
+- 如有自定义脚本调用了 `ssh_request_approval` / `ssh_approve_command` / `ssh_list_approvals` 三个工具，请改用 v2.2.0 起的硬拦截机制——灾难性命令直接被 MCP 网关拒绝，无需审批流
+- `approval_id` 入参已从 `ssh_execute` 的 inputSchema 移除，调用代码请删除该字段
+
+---
+
 ## [2.2.0] - 2026-07-11
 
 ### 安全 ⚠️ BREAKING
