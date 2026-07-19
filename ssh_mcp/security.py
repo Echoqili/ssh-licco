@@ -859,15 +859,17 @@ class CommandValidator:
 # -----------------------------------------------------------------------------
 
 def parse_deletion_command(command: str) -> tuple[bool, list[str]]:
-    """解析命令是否为需要备份确认的递归删除操作，并返回目标路径列表。
+    """解析命令是否为需要备份确认的删除操作，并返回目标路径列表。
 
     支持的形式（含 sudo 前缀）：
+      - rm <path>
+      - rm -f <path>
       - rm -rf <path>
       - rm -r <path>
-      - rm -fr <path>
+      - rmdir <path>
       - rm --recursive --force <path>
 
-    仅当检测到递归删除（含 -r/--recursive）且有明确目标时返回 True。
+    只要有明确删除目标（排除 --help/--version 等无目标用法）就返回 True。
     绝对路径的 rm -rf 会在硬拦截阶段被阻止，因此此处主要针对相对路径或
     已通过安全策略显式允许的删除操作。
 
@@ -875,7 +877,7 @@ def parse_deletion_command(command: str) -> tuple[bool, list[str]]:
         command: 原始 shell 命令
 
     Returns:
-        tuple[bool, list[str]]: (是否为递归删除, 目标路径列表)
+        tuple[bool, list[str]]: (是否为删除操作, 目标路径列表)
     """
     try:
         parts = shlex.split(command)
@@ -892,27 +894,25 @@ def parse_deletion_command(command: str) -> tuple[bool, list[str]]:
         return False, []
 
     base = parts[0]
-    flags: set[str] = set()
     targets: list[str] = []
 
     for part in parts[1:]:
+        # 忽略帮助/版本信息类选项（无实际删除目标）
+        if part in ("--help", "--version", "-V"):
+            return False, []
+        # 普通短选项（非 -- 长选项）不收集为 target
         if part.startswith("-") and len(part) > 1 and not part.startswith("--"):
-            flags.update(part[1:])
-        elif part == "--recursive":
-            flags.add("r")
-        elif part == "--force":
-            flags.add("f")
-        elif part == "--dir":
-            flags.add("d")
-        elif not part.startswith("--"):
-            targets.append(part)
+            continue
+        # 显式终止选项 `--` 本身不是 target
+        if part == "--":
+            continue
+        # 长选项（如 --recursive）不是 target
+        if part.startswith("--"):
+            continue
+        targets.append(part)
 
-    # rmdir 只删除空目录，风险较低，不强制要求备份
-    if base == "rmdir":
-        return False, []
-
-    # 仅对递归删除要求备份确认
-    if "r" in flags and targets:
+    # 有明确删除目标才触发备份确认
+    if targets:
         return True, targets
 
     return False, []
