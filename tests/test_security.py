@@ -271,3 +271,12 @@ def test_format_backup_prompt_mentions_backup_before_delete() -> None:
     assert "backup_before_delete=true" in prompt
     assert "backup_before_delete=false" in prompt
     assert "./data" in prompt
+
+
+def test_format_backup_prompt_for_rmdir() -> None:
+    """rmdir 的提示文案应使用“检测到目录删除操作”。"""
+    from ssh_mcp.security import format_backup_prompt
+    prompt = format_backup_prompt("rmdir ./empty_dir", ["./empty_dir"])
+    assert "检测到目录删除操作" in prompt
+    assert "检测到递归删除操作" not in prompt
+    assert "backup_before_delete=true" in prompt
