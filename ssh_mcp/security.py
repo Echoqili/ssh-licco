@@ -854,6 +854,118 @@ class CommandValidator:
         )
 
 
+# -----------------------------------------------------------------------------
+# 删除操作备份辅助函数
+# -----------------------------------------------------------------------------
+
+def parse_deletion_command(command: str) -> tuple[bool, list[str]]:
+    """解析命令是否为需要备份确认的递归删除操作，并返回目标路径列表。
+
+    支持的形式（含 sudo 前缀）：
+      - rm -rf <path>
+      - rm -r <path>
+      - rm -fr <path>
+      - rm --recursive --force <path>
+
+    仅当检测到递归删除（含 -r/--recursive）且有明确目标时返回 True。
+    绝对路径的 rm -rf 会在硬拦截阶段被阻止，因此此处主要针对相对路径或
+    已通过安全策略显式允许的删除操作。
+
+    Args:
+        command: 原始 shell 命令
+
+    Returns:
+        tuple[bool, list[str]]: (是否为递归删除, 目标路径列表)
+    """
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return False, []
+
+    if not parts:
+        return False, []
+
+    # 支持 sudo rm ... / sudo rmdir ... 前缀
+    if parts[0] == "sudo" and len(parts) > 1 and parts[1] in ("rm", "rmdir"):
+        parts = parts[1:]
+    elif parts[0] not in ("rm", "rmdir"):
+        return False, []
+
+    base = parts[0]
+    flags: set[str] = set()
+    targets: list[str] = []
+
+    for part in parts[1:]:
+        if part.startswith("-") and len(part) > 1 and not part.startswith("--"):
+            flags.update(part[1:])
+        elif part == "--recursive":
+            flags.add("r")
+        elif part == "--force":
+            flags.add("f")
+        elif part == "--dir":
+            flags.add("d")
+        elif not part.startswith("--"):
+            targets.append(part)
+
+    # rmdir 只删除空目录，风险较低，不强制要求备份
+    if base == "rmdir":
+        return False, []
+
+    # 仅对递归删除要求备份确认
+    if "r" in flags and targets:
+        return True, targets
+
+    return False, []
+
+
+def generate_backup_command(targets: list[str]) -> str:
+    """为删除目标生成前置备份命令。
+
+    备份目录：/tmp/ssh_mcp_backup_<timestamp>/
+    使用 cp -a 保留文件属性，失败时通过 && 阻止后续删除执行。
+
+    Args:
+        targets: 删除目标路径列表
+
+    Returns:
+        str: 备份命令；若目标均无效则返回空字符串
+    """
+    from datetime import datetime
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = f"/tmp/ssh_mcp_backup_{timestamp}"
+    valid_targets = [t for t in targets if t and t not in (".", "..")]
+    if not valid_targets:
+        return ""
+
+    quoted_targets = " ".join(shlex.quote(t) for t in valid_targets)
+    return (
+        f"mkdir -p {shlex.quote(backup_dir)} && "
+        f"cp -a {quoted_targets} {shlex.quote(backup_dir)}/ && "
+        f"echo 'Backed up to {shlex.quote(backup_dir)}/'"
+    )
+
+
+def format_backup_prompt(command: str, targets: list[str]) -> str:
+    """生成备份确认提示文案。"""
+    targets_str = ", ".join(targets)
+    return f"""⚠️ 检测到递归删除操作
+
+📋 将要执行的命令：
+   {command}
+
+🗂️  将要删除的目标：
+   {targets_str}
+
+💾 请选择是否先备份再删除：
+   • 先备份再删除：设置 backup_before_delete=true
+   • 直接删除：设置 backup_before_delete=false
+
+备份将保存到 /tmp/ssh_mcp_backup_<timestamp>/ 目录，保留原始文件属性。
+
+🛑 如不确定，建议先备份；终止操作请直接忽略本次调用。"""
+
+
 class PathValidator:
     """路径验证器 - 防止路径遍历攻击"""
 

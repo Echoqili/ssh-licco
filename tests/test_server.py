@@ -441,6 +441,123 @@ class TestHandleExecute:
         assert len(result) == 1
         assert "not found" in result[0].text.lower()
 
+    @pytest.mark.asyncio
+    async def test_deletion_backup_prompt_when_not_specified(self, server):
+        """递归删除命令在未指定 backup_before_delete 时应返回备份确认提示。"""
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "command": "rm -rf ./data",
+                "confirm_dangerous": True,
+                "confirmation_layer": 2,
+            },
+        )
+        assert len(result) == 1
+        text = result[0].text
+        assert "backup_before_delete=true" in text
+        assert "backup_before_delete=false" in text
+        assert "./data" in text
+
+    @pytest.mark.asyncio
+    async def test_deletion_backup_prepended_when_enabled(self, server):
+        """backup_before_delete=true 时应先执行备份再执行删除。"""
+        mock_session = MagicMock()
+        mock_session.config.host = "1.2.3.4"
+        mock_session.config.port = 22
+        captured = {}
+
+        async def fake_execute(command, timeout=None, stdin_data=None, get_pty=False):
+            captured["command"] = command
+            return {"exit_code": 0, "stdout": "done", "stderr": ""}
+
+        mock_session.execute_command = fake_execute
+        server.session_manager = MagicMock()
+        server.session_manager.get_session = AsyncMock(return_value=mock_session)
+
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "command": "rm -rf ./data",
+                "confirm_dangerous": True,
+                "confirmation_layer": 2,
+                "backup_before_delete": True,
+            },
+        )
+        assert len(result) == 1
+        executed = captured["command"]
+        assert executed.startswith("mkdir -p /tmp/ssh_mcp_backup_")
+        assert "cp -a ./data " in executed
+        assert "rm -rf ./data" in executed
+
+    @pytest.mark.asyncio
+    async def test_deletion_no_backup_when_disabled(self, server):
+        """backup_before_delete=false 时应直接执行删除，不附加备份命令。"""
+        mock_session = MagicMock()
+        mock_session.config.host = "1.2.3.4"
+        mock_session.config.port = 22
+        captured = {}
+
+        async def fake_execute(command, timeout=None, stdin_data=None, get_pty=False):
+            captured["command"] = command
+            return {"exit_code": 0, "stdout": "done", "stderr": ""}
+
+        mock_session.execute_command = fake_execute
+        server.session_manager = MagicMock()
+        server.session_manager.get_session = AsyncMock(return_value=mock_session)
+
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "command": "rm -rf ./data",
+                "confirm_dangerous": True,
+                "confirmation_layer": 2,
+                "backup_before_delete": False,
+            },
+        )
+        assert len(result) == 1
+        assert captured["command"] == "rm -rf ./data"
+
+    @pytest.mark.asyncio
+    async def test_deletion_backup_prepended_when_user_inputs_true_string(self, server):
+        """模拟用户回复字符串 'true'，备份命令应被 prepend 到 rm 命令之前。"""
+        mock_session = MagicMock()
+        mock_session.config.host = "1.2.3.4"
+        mock_session.config.port = 22
+        captured = {}
+
+        async def fake_execute(command, timeout=None, stdin_data=None, get_pty=False):
+            captured["command"] = command
+            return {"exit_code": 0, "stdout": "done", "stderr": ""}
+
+        mock_session.execute_command = fake_execute
+        server.session_manager = MagicMock()
+        server.session_manager.get_session = AsyncMock(return_value=mock_session)
+
+        result = await handle_execute(
+            server._ctx,
+            {
+                "session_id": "s1",
+                "command": "rm -rf ./data",
+                "confirm_dangerous": True,
+                "confirmation_layer": 2,
+                "backup_before_delete": "true",  # 模拟用户输入的字符串
+            },
+        )
+        assert len(result) == 1
+        executed = captured["command"]
+        backup_marker = "mkdir -p /tmp/ssh_mcp_backup_"
+        cp_marker = "cp -a ./data "
+        rm_marker = "rm -rf ./data"
+        assert executed.startswith(backup_marker)
+        assert cp_marker in executed
+        assert rm_marker in executed
+        # 关键：备份必须出现在删除之前
+        assert executed.index(backup_marker) < executed.index(rm_marker)
+        assert executed.index(cp_marker) < executed.index(rm_marker)
+
 
 class TestHandleDockerBuild:
     """v1.2.2: _handle_docker_build → _handle_docker({"action": "build", ...})"""

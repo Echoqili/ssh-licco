@@ -17,6 +17,7 @@ from mcp.types import TextContent, Tool
 from .audit_logger import get_audit_logger
 from .config_manager import ConfigManager, SSHConfig, SSHHost
 from .connection_config import ConnectionConfig
+from .handlers import HANDLERS, schemas
 from .handlers.context import HandlerContext
 from .key_manager import KeyManager
 from .session_manager import SessionManager
@@ -213,190 +214,7 @@ class SSHMCPServer:
     def _setup_handlers(self):
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
-            return [
-                Tool(
-                    name="ssh_connect",
-                    description="Establish an SSH connection to a remote server. If no parameters are provided, auto-connects using environment variables or saved config. Supports password, private key, and agent authentication. Optionally save the config and/or execute a command after connecting.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "host": {"type": "string", "description": "SSH server hostname or IP. If omitted, auto-reads from env vars or saved config."},
-                            "port": {"type": "integer", "description": "SSH port", "default": 22},
-                            "username": {"type": "string", "description": "SSH username. If omitted, auto-reads from env vars."},
-                            "password": {"type": "string", "description": "SSH password for password-based auth."},
-                            "private_key_path": {"type": "string", "description": "Path to private key file for key-based auth."},
-                            "passphrase": {"type": "string", "description": "Passphrase for encrypted private key."},
-                            "auth_method": {"type": "string", "enum": ["password", "private_key", "agent"], "default": "private_key", "description": "Authentication method."},
-                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name."},
-                            "save_config": {"type": "boolean", "description": "Save connection settings to local config file for future use.", "default": False},
-                            "command": {"type": "string", "description": "Optional command to execute immediately after connecting."},
-                            "accept_new_host_key": {"type": "boolean", "default": True, "description": "Auto-accept new host keys."},
-                            "sudo_password": {"type": "string", "description": "Sudo password (optional). When set, ssh_execute with use_sudo=true will auto-wrap commands with sudo -S, avoiding plaintext password in process list."}
-                        }
-                    }
-                ),
-                Tool(
-                    name="ssh_execute",
-                    description="Execute a command on a remote server. If session_id is omitted, auto-connects using environment variables. Supports background execution for long-running tasks (auto-detected or manual). Use session_type='screen' or 'tmux' for persistent sessions that survive SSH disconnect.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "session_id": {"type": "string", "description": "Session ID from ssh_connect. If omitted, connects via name/host/env vars."},
-                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
-                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
-                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
-                            "username": {"type": "string", "description": "SSH username (used with host)."},
-                            "password": {"type": "string", "description": "SSH password (used with host)."},
-                            "command": {"type": "string", "description": "Shell command to execute on the remote server (required)."},
-                            "timeout": {"type": "integer", "description": "Command timeout in seconds. Default 120s. For long tasks (docker pull, pg_basebackup), set higher or use background=true.", "default": 120},
-                            "background": {"type": "boolean", "description": "Run in background for long-running tasks. Auto-detected if not specified."},
-                            "workdir": {"type": "string", "description": "Working directory for background tasks.", "default": "/tmp"},
-                            "log_file": {"type": "string", "description": "Log file path for background task output.", "default": "/tmp/background_task.log"},
-                            "wait": {"type": "boolean", "description": "Wait for background task to complete.", "default": False},
-                            "wait_timeout": {"type": "integer", "description": "Max wait time in seconds when wait=True.", "default": 60},
-                            "session_type": {"type": "string", "enum": ["nohup", "screen", "tmux"], "default": "nohup", "description": "Background session type: nohup (default), screen, or tmux (persistent)."},
-                            "use_sudo": {"type": "boolean", "default": False, "description": "Wrap command with sudo -S using sudo_password from ssh_connect. Password is passed via stdin, not visible in process list."},
-                            "confirm_dangerous": {"type": "boolean", "default": False, "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform."}
-                        },
-                        "required": ["command"]
-                    }
-                ),
-                Tool(
-                    name="ssh_disconnect",
-                    description="Close an active SSH session. If no session_id is provided, lists all currently active sessions with connection details.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "session_id": {"type": "string", "description": "Session ID to disconnect. If omitted, lists all active sessions."}
-                        }
-                    }
-                ),
-                Tool(
-                    name="ssh_file_transfer",
-                    description="Transfer and manage files between local and remote server via SFTP. Supports upload, download, list, write (write content directly to remote file), append, delete, mkdir, stat, and remote_copy (server-to-server direct transfer via scp/rsync, avoiding local relay).",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
-                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
-                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
-                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
-                            "username": {"type": "string", "description": "SSH username (used with host)."},
-                            "password": {"type": "string", "description": "SSH password (used with host)."},
-                            "direction": {"type": "string", "enum": ["upload", "download", "list", "write", "append", "delete", "mkdir", "stat", "remote_copy"], "description": "Action: upload, download, list, write (content->remote file), append, delete, mkdir, stat, remote_copy (server-to-server direct transfer)."},
-                            "local_path": {"type": "string", "description": "Local file path. Required for upload/download."},
-                            "remote_path": {"type": "string", "description": "Remote file/directory path. Required for all directions. For remote_copy, this is the source path on the connected server."},
-                            "content": {"type": "string", "description": "Content to write/append to remote file. Required for write/append."},
-                            "target_host": {"type": "string", "description": "remote_copy: Target server hostname/IP."},
-                            "target_port": {"type": "integer", "description": "remote_copy: Target SSH port.", "default": 22},
-                            "target_user": {"type": "string", "description": "remote_copy: Target SSH username.", "default": "root"},
-                            "target_path": {"type": "string", "description": "remote_copy: Destination path on target server."},
-                            "target_password": {"type": "string", "description": "remote_copy: Target server password (uses sshpass). If omitted, assumes key-based auth is configured."},
-                            "use_rsync": {"type": "boolean", "default": False, "description": "remote_copy: Use rsync instead of scp (better for large directories, supports resume)."}
-                        },
-                        "required": ["session_id", "direction"]
-                    }
-                ),
-                Tool(
-                    name="ssh_host",
-                    description="Manage SSH server configurations in hosts.json. Use action=list to view all hosts, action=add to register a new server, action=remove to delete a server.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "action": {"type": "string", "enum": ["list", "add", "remove"], "description": "Action: list all hosts, add a new host, or remove a host."},
-                            "name": {"type": "string", "description": "Friendly name for the server. Required for add and remove."},
-                            "host": {"type": "string", "description": "Server hostname or IP. Required for add."},
-                            "port": {"type": "integer", "description": "SSH port number.", "default": 22},
-                            "username": {"type": "string", "description": "SSH login username.", "default": "root"},
-                            "password": {"type": "string", "description": "SSH password (optional for key auth)."},
-                            "timeout": {"type": "integer", "description": "Connection timeout in seconds.", "default": 60}
-                        },
-                        "required": ["action"]
-                    }
-                ),
-                Tool(
-                    name="ssh_docker",
-                    description="Manage Docker on the remote server. Supports ps (list containers), images (list images), build (build an image in background), and logs (view container logs).",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
-                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
-                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
-                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
-                            "username": {"type": "string", "description": "SSH username (used with host)."},
-                            "password": {"type": "string", "description": "SSH password (used with host)."},
-                            "action": {"type": "string", "enum": ["ps", "images", "build", "logs"], "description": "Docker action: ps=list containers, images=list images, build=build an image, logs=view container logs."},
-                            "image_name": {"type": "string", "description": "Docker image name. Required for build, optional filter for images."},
-                            "container_name": {"type": "string", "description": "Container name or ID. Required for logs."},
-                            "dockerfile_path": {"type": "string", "description": "Path to Dockerfile for build.", "default": "./Dockerfile"},
-                            "context": {"type": "string", "description": "Build context directory for build.", "default": "."},
-                            "tail": {"type": "integer", "description": "Number of log lines to retrieve.", "default": 100}
-                        },
-                        "required": ["session_id", "action"]
-                    }
-                ),
-                Tool(
-                    name="ssh_generate_key",
-                    description="Generate a new SSH key pair (RSA or Ed25519) for secure key-based authentication. Optionally save to a file path.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "key_type": {"type": "string", "enum": ["rsa", "ed25519"], "default": "ed25519", "description": "Key algorithm type."},
-                            "key_size": {"type": "integer", "description": "Key size for RSA.", "default": 4096},
-                            "comment": {"type": "string", "description": "Optional comment to identify the key."},
-                            "save_path": {"type": "string", "description": "Optional path to save the generated key files."}
-                        }
-                    }
-                ),
-                Tool(
-                    name="ssh_session",
-                    description="Manage persistent screen/tmux sessions on the remote server for long-running interactive tasks (deploy, build, test, REPL). Sessions survive SSH disconnect. Actions: create (new detached session running a command), send (send keys/command to a session), capture (read current screen), list (list sessions), kill (kill a session).",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
-                            "host_name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
-                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/host_name, can override hosts.json entry."},
-                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
-                            "username": {"type": "string", "description": "SSH username (used with host)."},
-                            "password": {"type": "string", "description": "SSH password (used with host)."},
-                            "action": {"type": "string", "enum": ["create", "send", "capture", "list", "kill"], "description": "create=new detached session, send=send keys/command to a session, capture=read current screen content, list=list sessions, kill=kill a session."},
-                            "name": {"type": "string", "description": "Session name. Required for create/send/capture/kill. Only letters, digits, _, ., - allowed."},
-                            "command": {"type": "string", "description": "Command to run initially (create) or to send (send)."},
-                            "session_type": {"type": "string", "enum": ["screen", "tmux"], "default": "screen", "description": "Use screen or tmux backend."},
-                            "lines": {"type": "integer", "default": 50, "description": "Number of lines to capture (tmux capture-pane -S)."}
-                        },
-                        "required": ["session_id", "action"]
-                    }
-                ),
-                Tool(
-                    name="ssh_process",
-                    description="Manage background processes and SSH tunnels on the remote server. Actions: start (launch a detached background process, returns PID), stop (stop a process by PID), status (check if a PID is running), list (list tracked background tasks), tunnel_open (local port forward to remote host:port), tunnel_close (close a tunnel), tunnel_list (list active tunnels).",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "session_id": {"type": "string", "description": "Active SSH session ID. If omitted, connects via name/host/env vars."},
-                            "name": {"type": "string", "description": "Use a pre-configured host from hosts.json by name. Alternative to session_id."},
-                            "host": {"type": "string", "description": "SSH server hostname or IP. Alternative to session_id/name, can override hosts.json entry."},
-                            "port": {"type": "integer", "description": "SSH port (used with host).", "default": 22},
-                            "username": {"type": "string", "description": "SSH username (used with host)."},
-                            "password": {"type": "string", "description": "SSH password (used with host)."},
-                            "action": {"type": "string", "enum": ["start", "stop", "status", "list", "tunnel_open", "tunnel_close", "tunnel_list"], "description": "Process/tunnel action."},
-                            "command": {"type": "string", "description": "Command to run (start)."},
-                            "pid": {"type": "string", "description": "Process ID (stop/status)."},
-                            "task_id": {"type": "string", "description": "Task ID (stop/status, alternative to pid)."},
-                            "signal": {"type": "string", "default": "TERM", "description": "Signal to send on stop (TERM, KILL, INT, etc.)."},
-                            "workdir": {"type": "string", "default": "/tmp", "description": "Working directory (start)."},
-                            "log_file": {"type": "string", "description": "Log file path (start). Default /tmp/bg_<taskid>.log"},
-                            "local_port": {"type": "integer", "description": "Local listen port (tunnel_open)."},
-                            "remote_host": {"type": "string", "description": "Remote target host (tunnel_open)."},
-                            "remote_port": {"type": "integer", "description": "Remote target port (tunnel_open)."}
-                        },
-                        "required": ["session_id", "action"]
-                    }
-                ),
-            ]
+            return list(schemas.TOOLS.values())
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: Any) -> list[TextContent]:
@@ -404,27 +222,12 @@ class SSHMCPServer:
             if not allowed:
                 return [TextContent(type="text", text=msg)]
 
+            handler = HANDLERS.get(name)
+            if handler is None:
+                return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
             try:
-                if name == "ssh_connect":
-                    return await self._handle_connect(arguments)
-                elif name == "ssh_execute":
-                    return await self._handle_execute(arguments)
-                elif name == "ssh_disconnect":
-                    return await self._handle_disconnect(arguments)
-                elif name == "ssh_file_transfer":
-                    return await self._handle_file_transfer(arguments)
-                elif name == "ssh_host":
-                    return await self._handle_host(arguments)
-                elif name == "ssh_docker":
-                    return await self._handle_docker(arguments)
-                elif name == "ssh_generate_key":
-                    return await self._handle_generate_key(arguments)
-                elif name == "ssh_session":
-                    return await self._handle_session(arguments)
-                elif name == "ssh_process":
-                    return await self._handle_process(arguments)
-                else:
-                    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+                return await handler(self._ctx, arguments)
             except Exception as e:
                 return [TextContent(type="text", text=f"Error: {str(e)}")]
 

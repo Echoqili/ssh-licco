@@ -9,7 +9,13 @@ import uuid
 
 from mcp.types import TextContent
 
-from ..security import SecurityError, command_validator
+from ..security import (
+    SecurityError,
+    command_validator,
+    format_backup_prompt,
+    generate_backup_command,
+    parse_deletion_command,
+)
 from .connect import handle_connect
 from .context import HandlerContext
 from .utils import (
@@ -122,9 +128,28 @@ Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
             f"Risk: {risk_level.value} - {risk_desc}"
         )
 
-    # Auto-detect background if not specified
+    # Auto-detect background based on the original command before any backup wrapping.
+    # This prevents backup prefixes (e.g. mkdir -p) from falsely triggering background mode.
     if background is None:
         background = should_run_background(command)
+
+    # 删除操作备份确认：在真正执行前让用户决定是否先备份
+    is_deletion, delete_targets = parse_deletion_command(command)
+    if is_deletion:
+        backup_before_delete = args.get("backup_before_delete")
+        if backup_before_delete is None:
+            ctx.logger.warning(f"Deletion command requires backup confirmation: {command}")
+            return [TextContent(type="text", text=format_backup_prompt(command, delete_targets))]
+
+        if backup_before_delete:
+            backup_cmd = generate_backup_command(delete_targets)
+            if backup_cmd:
+                ctx.logger.info(
+                    f"Prepending backup before deletion: {backup_cmd} | original: {command}"
+                )
+                command = f"{backup_cmd} && {command}"
+        else:
+            ctx.logger.warning(f"User chose to delete without backup: {command}")
 
     if background:
         return await execute_background(ctx, session_id, command, args, timeout)
