@@ -949,7 +949,9 @@ def generate_backup_command(targets: list[str]) -> str:
 def format_backup_prompt(command: str, targets: list[str]) -> str:
     """生成备份确认提示文案。"""
     targets_str = ", ".join(targets)
-    return f"""⚠️ 检测到递归删除操作
+    # rmdir 删除的是目录但非递归；rm -r/rf 属于递归删除。
+    operation_type = "目录删除操作" if command.lstrip().startswith("rmdir") else "递归删除操作"
+    return f"""⚠️ 检测到{operation_type}
 
 📋 将要执行的命令：
    {command}
