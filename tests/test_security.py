@@ -219,9 +219,13 @@ def test_hard_block_patterns_cover_documented_categories() -> None:
     ("rm --recursive --force ./data", ["./data"]),
     ("sudo rm -rf /home/user/tmp", ["/home/user/tmp"]),
     ("rm -rf -- ./data", ["./data"]),
+    ("rm /tmp/single.log", ["/tmp/single.log"]),
+    ("rm -f /tmp/single.log", ["/tmp/single.log"]),
+    ("rmdir /tmp/empty_dir", ["/tmp/empty_dir"]),
+    ("sudo rmdir /tmp/empty_dir", ["/tmp/empty_dir"]),
 ])
-def test_parse_deletion_command_detects_recursive_rm(cmd: str, expected_targets: list[str]) -> None:
-    """递归 rm 命令应被识别为需要备份确认的删除操作。"""
+def test_parse_deletion_command_detects_deletion(cmd: str, expected_targets: list[str]) -> None:
+    """普通 rm / rmdir / 递归 rm 都应被识别为需要备份确认的删除操作。"""
     from ssh_mcp.security import parse_deletion_command
     is_deletion, targets = parse_deletion_command(cmd)
     assert is_deletion is True
@@ -229,14 +233,15 @@ def test_parse_deletion_command_detects_recursive_rm(cmd: str, expected_targets:
 
 
 @pytest.mark.parametrize("cmd", [
-    "rm /tmp/single.log",
-    "rm -f /tmp/single.log",
-    "rmdir /tmp/empty_dir",
+    "rm",
+    "rm --help",
+    "rm --version",
+    "rmdir",
     "cp -r ./a ./b",
     "echo hello",
 ])
-def test_parse_deletion_command_ignores_safe_commands(cmd: str) -> None:
-    """非递归删除或无关命令不应触发备份确认。"""
+def test_parse_deletion_command_ignores_non_deletion_commands(cmd: str) -> None:
+    """无目标、帮助/版本或无关命令不应触发备份确认。"""
     from ssh_mcp.security import parse_deletion_command
     is_deletion, targets = parse_deletion_command(cmd)
     assert is_deletion is False
