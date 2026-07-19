@@ -137,6 +137,10 @@ TOOLS: dict[str, Tool] = {
                     "default": False,
                     "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform.",
                 },
+                "backup_before_delete": {
+                    "type": "boolean",
+                    "description": "For recursive deletion commands (rm -r/rf), explicitly choose whether to backup targets before deleting. Set true to backup to /tmp/ssh_mcp_backup_<timestamp>/ then delete; set false to delete directly. Required when a recursive deletion is detected.",
+                },
             },
             "required": ["command"],
         },

@@ -205,3 +205,64 @@ def test_hard_block_patterns_cover_documented_categories() -> None:
     assert expected_categories.issubset(actual), (
         f"missing categories: {expected_categories - actual}"
     )
+
+
+# -----------------------------------------------------------------------------
+# Deletion command parsing and backup generation
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cmd,expected_targets", [
+    ("rm -rf ./data", ["./data"]),
+    ("rm -r ./data", ["./data"]),
+    ("rm -fr ./data ./logs", ["./data", "./logs"]),
+    ("rm --recursive --force ./data", ["./data"]),
+    ("sudo rm -rf /home/user/tmp", ["/home/user/tmp"]),
+    ("rm -rf -- ./data", ["./data"]),
+])
+def test_parse_deletion_command_detects_recursive_rm(cmd: str, expected_targets: list[str]) -> None:
+    """递归 rm 命令应被识别为需要备份确认的删除操作。"""
+    from ssh_mcp.security import parse_deletion_command
+    is_deletion, targets = parse_deletion_command(cmd)
+    assert is_deletion is True
+    assert targets == expected_targets
+
+
+@pytest.mark.parametrize("cmd", [
+    "rm /tmp/single.log",
+    "rm -f /tmp/single.log",
+    "rmdir /tmp/empty_dir",
+    "cp -r ./a ./b",
+    "echo hello",
+])
+def test_parse_deletion_command_ignores_safe_commands(cmd: str) -> None:
+    """非递归删除或无关命令不应触发备份确认。"""
+    from ssh_mcp.security import parse_deletion_command
+    is_deletion, targets = parse_deletion_command(cmd)
+    assert is_deletion is False
+    assert targets == []
+
+
+def test_generate_backup_command_quotes_targets() -> None:
+    """备份命令应正确引用目标路径并包含时间戳目录。"""
+    from ssh_mcp.security import generate_backup_command
+    cmd = generate_backup_command(["./data", "./my logs"])
+    assert cmd.startswith("mkdir -p /tmp/ssh_mcp_backup_")
+    # shlex.quote 只在需要时加引号；重点是含空格的路径必须被引用
+    assert "cp -a ./data './my logs'" in cmd
+    assert "echo 'Backed up to /tmp/ssh_mcp_backup_" in cmd
+
+
+def test_generate_backup_command_returns_empty_for_invalid_targets() -> None:
+    """目标均为无效值时应返回空字符串。"""
+    from ssh_mcp.security import generate_backup_command
+    assert generate_backup_command(["", ".", ".."]) == ""
+
+
+def test_format_backup_prompt_mentions_backup_before_delete() -> None:
+    """提示文案应明确告知用户 backup_before_delete 参数。"""
+    from ssh_mcp.security import format_backup_prompt
+    prompt = format_backup_prompt("rm -rf ./data", ["./data"])
+    assert "backup_before_delete=true" in prompt
+    assert "backup_before_delete=false" in prompt
+    assert "./data" in prompt
