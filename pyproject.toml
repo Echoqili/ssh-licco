@@ -1,6 +1,6 @@
 [project]
 name = "ssh-licco"
-version = "2.5.2"
+version = "2.5.3"
 description = "SSH Model Context Protocol Server - Enable SSH functionality for AI models"
 readme = "README.md"
 requires-python = ">=3.10"

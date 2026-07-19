@@ -1,8 +1,8 @@
 # SSH-LICCO 版本信息
 # 所有代码中的版本信息都从这里读取
-# 版本号：2.5.2
+# 版本号：2.5.3
 
-__version__ = "2.5.2"
+__version__ = "2.5.3"
 __author__ = "Li Qi"
 __email__ = "1985694657@qq.com"
 __license__ = "MIT"
