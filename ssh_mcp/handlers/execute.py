@@ -152,9 +152,13 @@ Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
             ctx.logger.warning(f"User chose to delete without backup: {command}")
 
     if background:
+        ctx.logger.info(
+            f"[execute] background mode chosen for session={session_id} timeout={timeout}s"
+        )
         return await execute_background(ctx, session_id, command, args, timeout)
 
     # Normal execution
+    ctx.logger.info(f"[execute] normal mode session={session_id} timeout={timeout}s")
     session = await ctx.session_manager.get_session(session_id)
     if not session:
         return [TextContent(type="text", text=f"Session not found: {session_id}")]
@@ -181,8 +185,16 @@ Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
         stdin_data = sudo_pwd + "\n"
         get_pty = True
 
+    ctx.logger.info(
+        f"[execute] invoking session.execute_command for session={session_id} "
+        f"timeout={timeout}s get_pty={get_pty}"
+    )
     result = await session.execute_command(
         command, timeout=timeout, stdin_data=stdin_data, get_pty=get_pty
+    )
+    ctx.logger.info(
+        f"[execute] session.execute_command returned for session={session_id} "
+        f"exit_code={result.get('exit_code')}"
     )
 
     if ctx.audit:
@@ -214,6 +226,10 @@ async def execute_background(
     ctx: HandlerContext, session_id: str, command: str, args: dict, timeout: int
 ) -> list[TextContent]:
     """Execute a command as a background task with proper nohup + bash -c wrapping."""
+    ctx.logger.info(
+        f"[execute-background] starting task session={session_id} timeout={timeout}s "
+        f"command={command[:200]}"
+    )
     workdir = args.get("workdir", "/tmp")
     log_file = args.get("log_file", "/tmp/background_task.log")
     wait = args.get("wait", False)
@@ -298,10 +314,22 @@ async def execute_background(
     try:
         # Execute as a single command (background=False) — the wrapper
         # includes sleep + status check, so it returns in ~1 second.
+        ctx.logger.info(
+            f"[execute-background] launching nohup wrapper for session={session_id} "
+            f"task_id={task_id} timeout={timeout + 5}s"
+        )
         result = await ctx.session_manager.execute_command(
             session_id, check_cmd, timeout=timeout + 5, background=False
         )
+        ctx.logger.info(
+            f"[execute-background] wrapper returned for session={session_id} "
+            f"task_id={task_id} exit_code={result.get('exit_code')}"
+        )
     except Exception as e:
+        ctx.logger.error(
+            f"[execute-background] failed to start task for session={session_id} "
+            f"task_id={task_id}: {type(e).__name__}: {e}"
+        )
         return [TextContent(type="text", text=f"Error starting background task: {str(e)}")]
 
     start_stdout = (result.get("stdout") or "").strip()
@@ -327,6 +355,11 @@ async def execute_background(
             in_log = True
         elif in_log:
             log_tail += line + "\n"
+
+    ctx.logger.info(
+        f"[execute-background] parsed status for session={session_id} "
+        f"task_id={task_id} pid={pid} status={status} exit_code_str={exit_code_str}"
+    )
 
     # ── 状态判定：区分 5 种情况 ──
     #
@@ -540,6 +573,11 @@ async def wait_for_task_completion(
     elapsed = 0
     interval = 2
 
+    ctx.logger.info(
+        f"[wait-task] start waiting session={session_id} task_id={task_id} "
+        f"timeout={timeout}s log_file={log_file}"
+    )
+
     while elapsed < timeout:
         await asyncio.sleep(interval)
         elapsed += interval
@@ -551,6 +589,12 @@ async def wait_for_task_completion(
         )
         result = await ctx.session_manager.execute_command(session_id, check_cmd, timeout=10)
         status = result.get("stdout", "").strip()
+
+        if elapsed % 10 == 0:
+            ctx.logger.debug(
+                f"[wait-task] heartbeat session={session_id} task_id={task_id} "
+                f"elapsed={elapsed}s status={status}"
+            )
 
         if status == "COMPLETED" or status == "NOT_FOUND":
             # 读取退出码
@@ -569,6 +613,10 @@ async def wait_for_task_completion(
             status_label = (
                 "Completed Successfully" if exit_code == 0 else f"Failed (exit code {exit_code})"
             )
+            ctx.logger.info(
+                f"[wait-task] completed session={session_id} task_id={task_id} "
+                f"elapsed={elapsed}s exit_code={exit_code}"
+            )
             return f"""Task {status_label}!
 
 Task ID: {task_id}
@@ -581,6 +629,10 @@ Command Output:
 {log_content}
 """
 
+    ctx.logger.warning(
+        f"[wait-task] timeout session={session_id} task_id={task_id} "
+        f"elapsed={elapsed}s timeout={timeout}s"
+    )
     return f"""Task Still Running (Timeout)
 
 Task ID: {task_id}

@@ -210,7 +210,33 @@ class SSHSession:
         async with self._connect_lock:
             self._state = SessionState.EXECUTING
             self._last_activity = datetime.now()
+            start_time = asyncio.get_event_loop().time()
+            heartbeat_task = None
+            truncated_cmd = command[:200].replace("\n", " ")
+
             try:
+                self._logger.info(
+                    f"[cmd-start] session={self.session_id} "
+                    f"host={self.config.host}:{self.config.port} "
+                    f"timeout={timeout}s background={background} get_pty={get_pty} "
+                    f"command={truncated_cmd}"
+                )
+
+                async def _heartbeat() -> None:
+                    try:
+                        elapsed = 0
+                        while True:
+                            await asyncio.sleep(10)
+                            elapsed += 10
+                            self._logger.debug(
+                                f"[cmd-heartbeat] session={self.session_id} "
+                                f"elapsed={elapsed}s still executing: {truncated_cmd}"
+                            )
+                    except asyncio.CancelledError:
+                        pass
+
+                heartbeat_task = asyncio.create_task(_heartbeat())
+
                 result = await self._executor.submit(
                     self._execute_command_sync,
                     command,
@@ -220,18 +246,42 @@ class SSHSession:
                     get_pty,
                     timeout=timeout + 5,
                 )
+
+                elapsed = asyncio.get_event_loop().time() - start_time
+                self._logger.info(
+                    f"[cmd-done] session={self.session_id} elapsed={elapsed:.1f}s "
+                    f"exit_code={result.get('exit_code')} command={truncated_cmd}"
+                )
                 return result
+            except asyncio.TimeoutError:
+                elapsed = asyncio.get_event_loop().time() - start_time
+                self._logger.error(
+                    f"[cmd-timeout] session={self.session_id} elapsed={elapsed:.1f}s "
+                    f"timeout={timeout}s command={truncated_cmd}"
+                )
+                raise
             except ConnectionError:
                 # 连接错误，标记为断开状态
                 self._state = SessionState.DISCONNECTED
                 raise
             except Exception as e:
+                elapsed = asyncio.get_event_loop().time() - start_time
+                self._logger.error(
+                    f"[cmd-error] session={self.session_id} elapsed={elapsed:.1f}s "
+                    f"error={type(e).__name__}: {e} command={truncated_cmd}"
+                )
                 # 其他异常也检查连接状态
                 if not self.is_connected:
                     self._state = SessionState.DISCONNECTED
                     raise ConnectionError(f"SSH connection lost during command execution: {str(e)}")
                 raise
             finally:
+                if heartbeat_task is not None:
+                    heartbeat_task.cancel()
+                    try:
+                        await heartbeat_task
+                    except asyncio.CancelledError:
+                        pass
                 if self.is_connected:
                     self._state = SessionState.CONNECTED
 

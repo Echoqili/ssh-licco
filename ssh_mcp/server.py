@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import shlex
 import threading
@@ -20,6 +19,7 @@ from .connection_config import ConnectionConfig
 from .handlers import HANDLERS, schemas
 from .handlers.context import HandlerContext
 from .key_manager import KeyManager
+from .logging_config import get_logger
 from .session_manager import SessionManager
 
 try:
@@ -27,7 +27,7 @@ try:
 except Exception:
     from . import __version__
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Tunnel:
