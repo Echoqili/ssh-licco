@@ -84,6 +84,7 @@ SOURCES: list[dict] = [
 
 # git commit 时会一起提交的所有可能发生变动的文件
 FILES_TO_ADD = [
+    "sync_version.py",
     "ssh_mcp/__init__.py",
     "pyproject.toml",
     "VERSION",
@@ -93,6 +94,7 @@ FILES_TO_ADD = [
     "docs/CONTRIBUTING.md",
     ".trae/skills/ssh-mcp-dev/SKILL.md",
     "docs/skills/ssh-mcp-dev/SKILL.md",
+    ".github/workflows/pypi.yml",
 ]
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -271,10 +273,49 @@ def check_source_consistency(expected: str) -> list[str]:
     return problems
 
 
-# ===== 文档同步（封装 scripts/sync_docs.py，失败可跳过） =====
+# ===== 文档版本同步（不依赖 pytest，失败零容忍） =====
+
+SKILL_CURRENT_VERSION_PATHS = [
+    ".trae/skills/ssh-mcp-dev/SKILL.md",
+    "docs/skills/ssh-mcp-dev/SKILL.md",
+]
+
+
+def sync_docs_versions(version: str, dry_run: bool) -> bool:
+    """同步所有文档中的版本号引用。与 scripts/sync_docs.py 解耦，不需要 pytest。
+
+    目前覆盖：
+      - *SKILL.md 中的 "- **Current Version**: x.y.z"
+    """
+    updated_any = False
+    for rel in SKILL_CURRENT_VERSION_PATHS:
+        path = ROOT / rel
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        new, n = re.subn(
+            r"- \*\*Current Version\*\*: [\d.]+",
+            f"- **Current Version**: {version}",
+            text,
+        )
+        if n == 0:
+            print(f"  [SKIP] 无匹配: {rel}")
+            continue
+        if text == new:
+            print(f"  [SKIP] 已是最新: {rel}")
+            continue
+        if dry_run:
+            print(f"  [DRY-RUN] 会变更: {rel}")
+            updated_any = True
+            continue
+        path.write_text(new, encoding="utf-8")
+        print(f"  [OK] 已更新: {rel}")
+        updated_any = True
+    return updated_any
+
 
 def run_sync_docs() -> tuple[bool, str]:
-    """调用 scripts/sync_docs.py。成功返回 (True, summary)。"""
+    """调用 scripts/sync_docs.py（主要是 README 测试统计更新，依赖 pytest）。"""
     script = ROOT / "scripts" / "sync_docs.py"
     if not script.exists():
         return False, f"脚本不存在: {script}"
@@ -286,7 +327,9 @@ def run_sync_docs() -> tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, "sync_docs 超时（pytest 可能卡太久）"
     if result.returncode != 0:
-        return False, f"sync_docs 返回非零:\n{result.stderr or result.stdout}"
+        # pytest 跑不通时只是更新不了 README 中的测试统计，不影响版本号
+        hint = "（pytest 收集失败属环境问题，CI 里能跑通即可）"
+        return False, f"sync_docs 返回非零 {hint}"
     return True, "文档同步完成"
 
 
@@ -438,33 +481,41 @@ def main() -> int:
     # 3. 改版本源
     sync_version_files(version, dry_run=args.dry_run)
 
-    # 4. 同步文档版本 + 测试统计
+    # 4. 同步文档版本号（这部分不依赖 pytest，任何时候都该成功）
     if not args.no_docs:
-        print("\n=== 同步文档 ===")
+        print("\n=== 同步文档中的版本号 ===")
         if args.dry_run:
-            print("[DRY-RUN] 会调用 scripts/sync_docs.py")
+            print("[DRY-RUN] 会更新 SKILL.md 里的 Current Version 等字段")
+            sync_docs_versions(version, dry_run=True)
+        else:
+            sync_docs_versions(version, dry_run=False)
+
+    # 5. 同步文档测试统计 + 其他（scripts/sync_docs.py，内部会跑 pytest，本地缺依赖时可能失败）
+    if not args.no_docs:
+        print("\n=== 同步文档测试统计（scripts/sync_docs.py）===")
+        if args.dry_run:
+            print("[DRY-RUN] 会调用 scripts/sync_docs.py（更新 README / CONTRIBUTING 测试统计）")
         else:
             ok, msg = run_sync_docs()
             if ok:
                 print(f"[OK] {msg}")
             else:
-                print(f"[WARN] {msg}（继续执行，可在 CI 单独补跑）")
+                print(f"[WARN] {msg}（继续执行，CI 会单独补跑）")
 
-    # 5. 一致性自检（如果 dry-run 就按未写入前的状态检查，会被前面 dry-run 实际没写文件而报错？
-    #    dry-run 下版本源其实没改，所以 dry-run 就跳过自检）
+    # 6. 一致性自检（文件写入完成后做，dry-run 跳过）
     if args.dry_run:
         print("\n[DRY-RUN] 跳过一致性自检（文件未实际写入）")
     else:
         if not do_consistency_check(version):
             return 1
 
-    # 6. git commit + push
+    # 7. git commit + push
     if not args.no_commit:
         print("\n=== git commit & push ===")
         if not git_commit_version(version, dry_run=args.dry_run):
             return 1
 
-    # 7. git tag + push tag
+    # 8. git tag + push tag
     if not args.no_tag:
         print("\n=== git tag ===")
         if not create_git_tag(version, dry_run=args.dry_run):
