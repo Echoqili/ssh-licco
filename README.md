@@ -30,7 +30,7 @@
 
 ### 开发资源
 - **[🎓 Skills 文档](docs/skills/)** - 开发、运维、安装指南
-- **[📦 发布指南](docs/skills/RELEASE_SKILL.md)** - 版本发布流程
+- **[📦 发布指南](#-发布指南一体化命令)** - 一体化版本发布命令
 - **[🐛 GitHub Issues](https://github.com/Echoqili/ssh-licco/issues)** - 问题反馈
 
 ---
@@ -627,6 +627,58 @@ pytest tests/test_security.py -v
 # 查看覆盖率
 pytest --cov=ssh_mcp --cov-report=term-missing
 ```
+
+---
+
+## 📦 发布指南（一体化命令）
+
+项目提供 `sync_version.py` 作为**唯一**版本发布入口，一条命令完成所有版本源同步 + 文档更新 + 一致性自检 + git commit/tag/push，杜绝漏改 `VERSION` / `package.json` / `SKILL.md` 等文件。
+
+### 一键发布
+
+```bash
+# 升 patch（z）：2.7.1 → 2.7.2
+python sync_version.py 2.7.2
+
+# 升 minor（y）：2.7.1 → 2.8.0
+python sync_version.py 2.8.0
+
+# 升 major（x）：2.7.1 → 3.0.0
+python sync_version.py 3.0.0
+```
+
+默认行为：改版本源 → 同步文档版本 → 一致性自检 → `commit` → `push` → 打 `tag` → `push tag`。
+
+### 常用选项
+
+```bash
+# 预览会发生的变更，不写文件、不 commit
+python sync_version.py 2.7.2 --dry-run
+
+# 只改文件，不提交、不打 tag
+python sync_version.py 2.7.2 --no-commit --no-tag
+
+# 只做一致性自检（CI 中使用）
+python sync_version.py --check
+```
+
+### 覆盖的版本源
+
+| 文件 | 字段 | 说明 |
+|------|------|------|
+| `ssh_mcp/__init__.py` | `__version__` | **唯一真源**，其他文件都与其对齐 |
+| `pyproject.toml` | `version` | Python 包构建版本 |
+| `VERSION` | 纯文本 | `.github/workflows/pypi.yml` 实际读取的版本 |
+| `package.json` | `version` | npm 包版本 |
+| `package-lock.json` | `version` × 2 | npm lock 根版本 + `packages[""].version` |
+| `.trae/skills/*/SKILL.md` | `Current Version` | 文档中的版本标注 |
+| `docs/skills/*/SKILL.md` | `Current Version` | 文档中的版本标注 |
+
+### CI 预检
+
+`.github/workflows/pypi.yml` 在构建前会执行 `python sync_version.py --check`，任何版本源不一致都会**直接中断发布流程**，防止打错版本号。
+
+> 完整发布流程（含 PyPI 上传、MCP Registry 发布）见 [docs/skills/RELEASE_SKILL.md](docs/skills/RELEASE_SKILL.md)。
 
 ---
 
