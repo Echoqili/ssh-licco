@@ -35,6 +35,10 @@ jobs:
         pip install build twine
         pip install -e ".[dev]"
 
+    - name: Verify version consistency
+      # 防止像 v2.7.0 那样漏了 VERSION / SKILL.md / package.json 导致版本对不上
+      run: python sync_version.py --check
+
     - name: Sync docs
       # 仅在非 tag 触发时向 master 回写文档（tag 触发时本地已保证文档同步）
       if: github.ref_type != 'tag'
