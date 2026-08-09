@@ -692,6 +692,7 @@ class SSHSession:
 
 class SessionManager:
     # 🔒 安全限制：最大并发会话数（防止资源耗尽 DoS）
+    # 可通过环境变量 SSH_MAX_SESSIONS / SSH_MAX_SESSIONS_PER_HOST 覆盖
     MAX_SESSIONS = 20
     MAX_SESSIONS_PER_HOST = 5  # 每个主机最多 5 个并发会话
 
@@ -701,6 +702,12 @@ class SessionManager:
         self._shutdown_event = asyncio.Event()
         self._timeout_cleanup_task: asyncio.Task | None = None
         self._logger = get_logger("SessionManager")
+        # 环境变量覆盖每主机会话上限与全局会话上限（与 sshd MaxSessions 解耦）
+        # 注意：这是 MCP 应用层限制，独立于 sshd 的 MaxSessions
+        self.MAX_SESSIONS = max(1, int(os.getenv("SSH_MAX_SESSIONS", str(type(self).MAX_SESSIONS))))
+        self.MAX_SESSIONS_PER_HOST = max(
+            1, int(os.getenv("SSH_MAX_SESSIONS_PER_HOST", str(type(self).MAX_SESSIONS_PER_HOST)))
+        )
         self._start_timeout_cleanup()
         self._session_counter = 0  # 用于统计和限制
 
