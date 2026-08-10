@@ -141,7 +141,7 @@ class Tunnel:
 
 class SSHMCPServer:
     def __init__(self):
-        self.server = Server("ssh-licco", __version__)
+        self.server = Server("ssh-licco", version=__version__)
         self.session_manager = SessionManager()
         self.key_manager = KeyManager()
         self.config_manager = ConfigManager()
