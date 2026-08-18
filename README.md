@@ -589,7 +589,7 @@ ssh-licco 的核心依赖是：
 
 | 指标 | 状态 |
 |------|------|
-| **测试用例** | 424 passed, 0 skipped |
+| **测试用例** | 244 passed, 0 skipped |
 | **覆盖率** | 16 个源模块全覆盖 |
 | **测试框架** | pytest + pytest-asyncio |
 
