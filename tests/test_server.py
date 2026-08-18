@@ -11,7 +11,7 @@ from ssh_mcp.handlers.execute import handle_execute
 from ssh_mcp.handlers.file_transfer import handle_file_transfer
 from ssh_mcp.handlers.host import handle_host
 from ssh_mcp.handlers.key import handle_generate_key
-from ssh_mcp.handlers.utils import should_run_background
+from ssh_mcp.handlers.utils import ensure_session, should_run_background
 from ssh_mcp.server import SSHMCPServer
 
 
@@ -714,3 +714,48 @@ class TestHandleTaskStatus:
             },
         )
         assert len(result) == 1
+
+
+class TestEnsureSessionStaleId:
+    """session_id 失效时的透明重建：不再直接返回必失败的 id"""
+
+    @staticmethod
+    def _ctx(get_session_return=None):
+        ctx = MagicMock()
+        ctx.session_manager = MagicMock()
+        ctx.session_manager.get_session = AsyncMock(return_value=get_session_return)
+        ctx.logger = MagicMock()
+        ctx.env_config = None
+        return ctx
+
+    @pytest.mark.asyncio
+    async def test_live_session_id_returned_directly(self):
+        ctx = self._ctx(get_session_return=MagicMock())
+        sid = await ensure_session(ctx, {"session_id": "s1"}, AsyncMock())
+        assert sid == "s1"
+        ctx.session_manager.get_session.assert_awaited_once_with("s1")
+
+    @pytest.mark.asyncio
+    async def test_stale_id_rebuilds_via_host(self):
+        """失效 id + 同请求携带 host 参数 → 走回退链透明重建"""
+        from mcp.types import TextContent
+
+        ctx = self._ctx(get_session_return=None)
+
+        async def fake_connect(c, a):
+            return [TextContent(type="text", text="Connected to 1.2.3.4\nSession ID: fresh-id")]
+
+        sid = await ensure_session(ctx, {"session_id": "stale", "host": "1.2.3.4"}, fake_connect)
+        assert sid == "fresh-id"
+        ctx.logger.warning.assert_called_once()  # 失效告警已记录
+
+    @pytest.mark.asyncio
+    async def test_stale_id_without_fallback_returns_original(self):
+        """失效 id 且无任何回退信息 → 返回原 id，由上层报准确的 Session not found"""
+
+        async def unexpected_connect(c, a):
+            raise AssertionError("no name/host/env configured, connect should not be called")
+
+        ctx = self._ctx(get_session_return=None)
+        sid = await ensure_session(ctx, {"session_id": "stale"}, unexpected_connect)
+        assert sid == "stale"

@@ -18,16 +18,30 @@ async def ensure_session(
     """Ensure an active session exists.
 
     Priority:
-    1. session_id if provided
+    1. session_id if provided (validated; stale ids fall through to rebuild)
     2. name/host_name from hosts.json
     3. host directly (with optional port/username/password)
     4. env-config fallback (auto-connect)
 
     Returns session_id on success, None on failure.
     """
+    stale_session_id = None
     session_id = args.get("session_id")
     if session_id:
-        return session_id
+        # 校验 session_id 存活；get_session 内部会对死会话做透明重建（复用同 id）
+        try:
+            session = await ctx.session_manager.get_session(session_id)
+        except Exception:
+            session = None
+        if session:
+            return session_id
+        # session_id 已失效（MCP 进程重启 / 重建失败 / entry 被回收）：
+        # 不直接采用必失败的 id，而是走 name/host/env 回退链透明重建，
+        # 避免 "Session not found" 中断调用方
+        stale_session_id = session_id
+        ctx.logger.warning(
+            f"session_id {session_id} 已失效，尝试通过 name/host/env 配置重建会话"
+        )
 
     # Use named host from hosts.json (name or host_name)
     host_name = args.get("name") or args.get("host_name")
@@ -65,7 +79,8 @@ async def ensure_session(
                 return line.split("Session ID:")[1].strip()
         return None
 
-    return None
+    # 回退链也无法建连：返回原 session_id，让上层报准确的 "Session not found: {id}"
+    return stale_session_id
 
 
 def diagnose_exit_code(exit_code: int, log_tail: str, stderr: str) -> str:

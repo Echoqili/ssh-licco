@@ -57,8 +57,7 @@ class SSHSession:
         self._connect_lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
         self._background_channels: list = []  # 保持 background channel 引用，防止 GC 关闭 channel
-        self._reconnect_count = 0  # 重连次数统计
-        self._max_reconnects = 3  # 最大重连次数
+        self._reconnect_count = 0  # 连续重建失败计数（成功后清零，仅用于日志观察）
         self._logger = get_logger("SSHSession")
 
     @property
@@ -734,10 +733,12 @@ class SessionManager:
             timeout_sessions = []
 
             for session_id, session in self._sessions.items():
-                if session.is_connected:
-                    idle_time = now - session._last_activity
-                    if idle_time > timedelta(seconds=session.config.session_timeout):
-                        timeout_sessions.append(session_id)
+                # idle 超时对存活与失联会话一视同仁：
+                # - 存活会话超时 → 正常回收（原逻辑）
+                # - dead entry 超时 → 兜底回收，防止重建一直失败的 entry 永久滞留
+                idle_time = now - session._last_activity
+                if idle_time > timedelta(seconds=session.config.session_timeout):
+                    timeout_sessions.append(session_id)
 
             for session_id in timeout_sessions:
                 try:
@@ -763,13 +764,16 @@ class SessionManager:
                         return session._get_session_info()
 
             # 🔒 安全检查：会话并发数限制
-            if len(self._sessions) >= self.MAX_SESSIONS:
+            # 只统计存活会话：dead entry 不占用并发额度（重建失败时 entry 会被保留供重试），
+            # 避免 5 个死会话占满 MAX_SESSIONS_PER_HOST 导致新连接全部被拒
+            live_sessions = [s for s in self._sessions.values() if s.is_connected]
+            if len(live_sessions) >= self.MAX_SESSIONS:
                 raise ConnectionException(
                     f"达到最大会话数限制 ({self.MAX_SESSIONS})，请先关闭一些会话"
                 )
 
             # 🔒 安全检查：每个主机会话数限制
-            host_sessions = sum(1 for s in self._sessions.values() if s.config.host == config.host)
+            host_sessions = sum(1 for s in live_sessions if s.config.host == config.host)
             if host_sessions >= self.MAX_SESSIONS_PER_HOST:
                 raise ConnectionException(
                     f"主机 {config.host} 已达到最大会话数限制 ({self.MAX_SESSIONS_PER_HOST})"
@@ -785,7 +789,7 @@ class SessionManager:
         async with self._lock:
             session = self._sessions.get(session_id)
 
-            # 🔄 自动重连机制：如果 session 存在但已断开，尝试重连
+            # 🔄 自动重连机制：如果 session 存在但已断开，尝试透明重建
             if session and not session.is_connected and auto_reconnect:
                 # 非真实 SSHSession 实例（如测试 Mock）不尝试重连，直接清理
                 if not isinstance(session, SSHSession):
@@ -799,44 +803,35 @@ class SessionManager:
                         del self._sessions[session_id]
                     return None
 
-                # 检查重连次数限制
-                if session._reconnect_count >= session._max_reconnects:
-                    self._logger.error(
-                        f"Session {session_id} 重连次数已达上限 ({session._max_reconnects})，不再重连"
-                    )
-                    await session.disconnect()
-                    if session_id in self._sessions:
-                        del self._sessions[session_id]
-                    return None
-
                 self._logger.warning(
-                    f"Session {session_id} 已断开，尝试自动重连（重连次数：{session._reconnect_count}/{session._max_reconnects}）"
+                    f"Session {session_id} 已断开，尝试透明重建（连续失败次数：{session._reconnect_count}）"
                 )
                 try:
-                    # 保存配置信息用于重连
+                    # 保存配置信息用于重建
                     config = session.config
                     session._reconnect_count += 1
-
-                    # 清理旧 session
                     await session.disconnect()
-                    if session_id in self._sessions:
-                        del self._sessions[session_id]
 
-                    # 创建新 session（使用相同的 session_id）
+                    # 🔄 透明重建：用相同配置创建新 session 并复用原 session_id，
+                    # 调用方持有的 session_id 始终有效，无需感知底层重建。
+                    # 旧逻辑的"重连次数上限/重建失败即删除 entry"会导致 session_id
+                    # 永久失效（表现即 "Session not found"），已移除；
+                    # 重建失败时保留 dead entry（含连接配置），下次调用继续重试，
+                    # 长期失联的 dead entry 由 _cleanup_timeout_sessions 按 idle 超时兜底回收
                     new_session = SSHSession(config)
                     new_session.session_id = session_id  # 复用原来的 session_id
-                    new_session._reconnect_count = session._reconnect_count  # 保持重连次数
                     await new_session.connect()
+                    new_session._reconnect_count = 0  # 重建成功，清零连续失败计数
                     self._sessions[session_id] = new_session
-                    self._logger.info(f"Session {session_id} 自动重连成功")
+                    self._logger.info(f"Session {session_id} 透明重建成功")
                     return new_session
                 except Exception as e:
-                    self._logger.error(f"Session {session_id} 自动重连失败: {e}")
-                    if session_id in self._sessions:
-                        del self._sessions[session_id]
+                    self._logger.error(f"Session {session_id} 透明重建失败: {e}")
+                    # 不删除 entry：保留 dead session 及其配置，供后续调用重试
+                    self._sessions[session_id] = session
                     return None
 
-            # 🧹 清理完全失效的 session
+            # 🧹 清理完全失效的 session（仅 auto_reconnect=False 的显式清理路径）
             if session and not session.is_connected:
                 self._logger.warning(
                     f"Session {session_id} 已断开，清理（host={session.config.host}）"
@@ -845,6 +840,11 @@ class SessionManager:
                 if session_id in self._sessions:
                     del self._sessions[session_id]
                 return None
+
+            # 存活会话：会话被正常使用即视为健康，重置连续失败计数，
+            # 避免历史上的瞬时网络抖动累计导致会话被判死
+            if session and session.is_connected:
+                session._reconnect_count = 0
 
             return session
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -147,14 +147,12 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     async def test_get_session_disconnected_auto_clean(self):
-        """get_session 遇到已断开的 session 时，应自动清理并返回 None（不抛 AttributeError）"""
+        """get_session 遇到非真实 SSHSession 对象（如测试 Mock）时，应清理并返回 None"""
         manager = SessionManager()
         mock_session = MagicMock()
         mock_session.is_connected = False
         mock_session.config.host = "1.2.3.4"
-        # 让重连计数已达上限，走"清理并返回 None"分支（避免 MagicMock 比较 '>=' 报错）
-        mock_session._reconnect_count = 99
-        mock_session._max_reconnects = 1
+        # MagicMock 不是 SSHSession 实例，走"跳过重连并清理"分支
         # disconnect 是协程，需用 AsyncMock
         mock_session.disconnect = AsyncMock(return_value=None)
         manager._sessions["dead-id"] = mock_session
@@ -167,6 +165,111 @@ class TestSessionManager:
         manager = SessionManager()
         result = await manager.get_session("nonexistent")
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_session_dead_transparent_rebuild(self, conn_config):
+        """死会话透明重建：复用原 session_id、成功后连续失败计数清零（不再删除 entry）"""
+
+        class FakeSession(SSHSession):
+            async def connect(self):
+                self._state = SessionState.CONNECTED
+                self.client = MagicMock()
+                return self._get_session_info()
+
+        manager = SessionManager()
+        # dead 必须是 FakeSession 实例（不调用 connect 即保持断开态），
+        # 否则补丁后 isinstance 检查会走清理分支
+        dead = FakeSession(conn_config)
+        dead._reconnect_count = 99  # 即使远超旧的重连上限也应重建
+        manager._sessions["sid"] = dead
+
+        with patch("ssh_mcp.session_manager.SSHSession", FakeSession):
+            result = await manager.get_session("sid")
+
+        assert isinstance(result, FakeSession)
+        assert result is not dead  # 底层对象已替换
+        assert result.session_id == "sid"  # 调用方持有的 session_id 保持有效
+        assert manager._sessions["sid"] is result
+        assert result._reconnect_count == 0
+
+    @pytest.mark.asyncio
+    async def test_get_session_rebuild_failure_keeps_entry(self, conn_config):
+        """重建失败不删除 entry：session_id 保留，主机恢复后下次调用重建成功"""
+
+        class FlakySession(SSHSession):
+            fail_connect = True
+
+            async def connect(self):
+                if type(self).fail_connect:
+                    raise ConnectionError("host unreachable")
+                self._state = SessionState.CONNECTED
+                self.client = MagicMock()
+                return self._get_session_info()
+
+        manager = SessionManager()
+        dead = FlakySession(conn_config)  # 未连接 → 死会话
+        manager._sessions["sid"] = dead
+
+        with patch("ssh_mcp.session_manager.SSHSession", FlakySession):
+            # 阶段一：主机不可达，重建失败但 entry 保留
+            result = await manager.get_session("sid")
+            assert result is None
+            assert manager._sessions["sid"] is dead  # entry 保留供后续重试
+            assert dead._reconnect_count == 1  # 连续失败计数累加（日志观察用）
+
+            # 阶段二：主机恢复，同一 session_id 透明重建成功
+            FlakySession.fail_connect = False
+            result = await manager.get_session("sid")
+            assert result is not None
+            assert result.session_id == "sid"
+            assert manager._sessions["sid"] is result
+
+    @pytest.mark.asyncio
+    async def test_get_session_live_resets_reconnect_count(self, conn_config):
+        """存活会话被正常获取时重置连续失败计数，历史抖动不累计"""
+        manager = SessionManager()
+        live = SSHSession(conn_config)
+        live._state = SessionState.CONNECTED
+        live.client = MagicMock()
+        live._reconnect_count = 2
+        manager._sessions["sid"] = live
+
+        result = await manager.get_session("sid")
+        assert result is live
+        assert live._reconnect_count == 0
+
+    @pytest.mark.asyncio
+    async def test_create_session_dead_entries_do_not_count_toward_limit(self, conn_config):
+        """dead entry 不占用并发额度：同主机多个死会话不应阻止新建"""
+
+        class FakeSession(SSHSession):
+            async def connect(self):
+                self._state = SessionState.CONNECTED
+                self.client = MagicMock()
+                return self._get_session_info()
+
+        manager = SessionManager()
+        for i in range(manager.MAX_SESSIONS_PER_HOST):
+            dead = SSHSession(conn_config)  # 从未连接 → 死会话
+            manager._sessions[f"dead-{i}"] = dead
+
+        with patch("ssh_mcp.session_manager.SSHSession", FakeSession):
+            info = await manager.create_session(conn_config)  # 不应抛 ConnectionException
+
+        assert info.session_id in manager._sessions
+
+    @pytest.mark.asyncio
+    async def test_cleanup_timeout_sessions_reaps_dead_entries(self, conn_config):
+        """dead entry 超过 idle 超时后由清理循环兜底回收，不会永久滞留"""
+        manager = SessionManager()
+        dead = SSHSession(conn_config)
+        dead._last_activity = datetime.now() - timedelta(
+            seconds=conn_config.session_timeout + 100
+        )
+        manager._sessions["sid"] = dead
+
+        await manager._cleanup_timeout_sessions()
+        assert "sid" not in manager._sessions
 
     @pytest.mark.asyncio
     async def test_close_session(self):
