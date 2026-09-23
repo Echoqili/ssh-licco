@@ -11,7 +11,14 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 from .audit_logger import get_audit_logger
 from .config_manager import ConfigManager, SSHConfig, SSHHost
@@ -212,24 +219,45 @@ class SSHMCPServer:
         return True, ""
 
     def _setup_handlers(self):
-        @self.server.list_tools()
-        async def list_tools() -> list[Tool]:
-            return list(schemas.TOOLS.values())
+        self.server.add_request_handler(
+            "tools/list", PaginatedRequestParams, self._handle_list_tools
+        )
+        self.server.add_request_handler(
+            "tools/call", CallToolRequestParams, self._handle_call_tool
+        )
 
-        @self.server.call_tool()
-        async def call_tool(name: str, arguments: Any) -> list[TextContent]:
-            allowed, msg = self._check_rate_limit()
-            if not allowed:
-                return [TextContent(type="text", text=msg)]
+    async def _handle_list_tools(
+        self, ctx: Any, params: PaginatedRequestParams
+    ) -> ListToolsResult:
+        return ListToolsResult(tools=list(schemas.TOOLS.values()))
 
-            handler = HANDLERS.get(name)
-            if handler is None:
-                return [TextContent(type="text", text=f"Unknown tool: {name}")]
+    async def _handle_call_tool(
+        self, ctx: Any, params: CallToolRequestParams
+    ) -> CallToolResult:
+        allowed, msg = self._check_rate_limit()
+        if not allowed:
+            return CallToolResult(
+                content=[TextContent(type="text", text=msg)], is_error=False
+            )
 
-            try:
-                return await handler(self._ctx, arguments)
-            except Exception as e:
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
+        handler = HANDLERS.get(params.name)
+        if handler is None:
+            return CallToolResult(
+                content=[
+                    TextContent(type="text", text=f"Unknown tool: {params.name}")
+                ],
+                is_error=True,
+            )
+
+        try:
+            result = await handler(self._ctx, params.arguments or {})
+            content = result if isinstance(result, list) else [result]
+            return CallToolResult(content=content, is_error=False)
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error: {str(e)}")],
+                is_error=True,
+            )
 
     async def _handle_connect(self, args: dict) -> list[TextContent]:
         """合并 ssh_config + ssh_login + ssh_connect"""

@@ -108,6 +108,9 @@ config/ssh-hosts.json
 config/hosts.json
 config/mcp.user.config.json
 
+# Project-level MCP config (contains plaintext SSH credentials; .vscode/mcp.json user-edited)
+.vscode-mcp.json
+
 # Workflow skill (temporary)
 git-workflow-skill.md
 
