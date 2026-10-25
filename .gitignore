@@ -68,6 +68,7 @@ push_*.py
 republish_*.py
 rerun_*.py
 test_*.py
+!tests/test_*.py
 trigger_*.py
 verify_*.py
 wait_*.py

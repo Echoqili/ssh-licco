@@ -53,8 +53,17 @@ TOOLS: dict[str, Tool] = {
                 },
                 "accept_new_host_key": {
                     "type": "boolean",
+                    "default": False,
+                    "description": "Explicitly opt in to accepting unknown host keys. Disabled by default; provision trusted known_hosts before connecting.",
+                },
+                "strict_host_key_checking": {
+                    "type": "boolean",
                     "default": True,
-                    "description": "Auto-accept new host keys.",
+                    "description": "Reject hosts absent from known_hosts. Keep enabled in production.",
+                },
+                "known_hosts_path": {
+                    "type": "string",
+                    "description": "Optional trusted known_hosts file, in addition to the user's default known_hosts.",
                 },
                 "sudo_password": {
                     "type": "string",
@@ -135,7 +144,7 @@ TOOLS: dict[str, Tool] = {
                 "confirm_dangerous": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Bypass security validation for known-dangerous commands (e.g. rm -rf /path). Use with caution — only for operations you explicitly intend to perform.",
+                    "description": "Acknowledge a risky operation. Does not bypass the command allowlist, shell syntax restrictions, or hard blocks.",
                 },
                 "backup_before_delete": {
                     "type": "boolean",
@@ -230,7 +239,7 @@ TOOLS: dict[str, Tool] = {
                 },
                 "target_password": {
                     "type": "string",
-                    "description": "remote_copy: Target server password (uses sshpass). If omitted, assumes key-based auth is configured.",
+                    "description": "Deprecated: password-based remote_copy is disabled. Configure key-based authentication on the source server.",
                 },
                 "use_rsync": {
                     "type": "boolean",

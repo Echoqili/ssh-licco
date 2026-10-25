@@ -4,10 +4,11 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-from paramiko import AuthenticationException, AutoAddPolicy, SSHClient, SSHException
+from paramiko import AuthenticationException, SSHClient, SSHException
 
 from ..connection_config import ConnectionConfig
 from ..exceptions import CommandExecutionException
+from ..host_keys import configure_host_keys
 from ..logging_config import get_logger
 from .interface import (
     ClientType,
@@ -87,7 +88,7 @@ class ParamikoClient(SSHClientInterface):
 
         try:
             self.client = SSHClient()
-            self.client.set_missing_host_key_policy(AutoAddPolicy())
+            configure_host_keys(self.client, self.config)
 
             connect_kwargs = {
                 "hostname": self.config.host,

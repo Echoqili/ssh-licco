@@ -154,11 +154,15 @@ pip install -e .
 
 ## 🔐 安全配置
 
+新增加固默认值与迁移说明见 **[安全边界与加固配置](docs/SECURITY.md)**：
+连接默认验证主机密钥，确认参数不再绕过命令策略，文件传输执行目录隔离。
+下表是项目的模式说明，不是第三方平台的安全评分。
+
 > **重要**：从 v0.2.1 开始，ssh-licco 提供多级安全策略，可根据使用场景灵活配置。
 
 ### 多级安全策略
 
-| 级别 | 名称 | 适用场景 | 安全评分 |
+| 级别 | 名称 | 适用场景 | 防护强度 |
 |------|------|----------|----------|
 | **STRICT** | 严格模式 | 生产环境、公共服务器 | 最高 ⭐⭐⭐ |
 | **BALANCED** | 平衡模式 | 开发环境、个人服务器（默认） | 高 ⭐⭐ |
@@ -414,7 +418,8 @@ localhost:5432 - accepting connections
 | 分类 | 变量 | 默认 | 说明 |
 |------|------|------|------|
 | **安全** | `SSH_SECURITY_LEVEL` | `balanced` | 安全级别：`strict` / `balanced` / `relaxed` |
-|  | `SSH_BASE_DIR` | `/home` | 路径校验基目录 |
+|  | `SSH_BASE_DIR` | `/home` | Unix 远程 SFTP 路径校验基目录 |
+|  | `SSH_LOCAL_BASE_DIR` | 当前工作目录 | 本地文件上传源与下载目标的允许目录 |
 |  | `SSH_EXTRA_ALLOWED_COMMANDS` | (空) | 额外允许的命令（逗号分隔） |
 |  | `SSH_ALLOWED_COMMANDS_FILE` | (空) | 命令白名单 JSON 文件路径 |
 |  | `SSH_AUDIT_LOG_PATH` | (空) | 审计日志文件路径 |

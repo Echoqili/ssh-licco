@@ -43,7 +43,7 @@ async def handle_execute(ctx: HandlerContext, args: dict) -> list[TextContent]:
         ]
 
     # Security validation with multi-layer confirmation
-    # confirm_dangerous=True 时跳过安全检查（用户明确确认执行危险操作）
+    # Confirmation acknowledges risk; it never overrides the configured policy.
     confirm_dangerous = args.get("confirm_dangerous", False)
     confirmation_layer = args.get("confirmation_layer", 1)  # 当前确认层级
 
@@ -98,35 +98,11 @@ Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
             )
         ]
 
-    # 原有的安全检查逻辑（保持兼容性）
-    if not confirm_dangerous:
-        try:
-            command_validator.validate_command(command)
-        except SecurityError as e:
-            ctx.logger.error(f"Command blocked: {e}")
-            return [
-                TextContent(
-                    type="text",
-                    text=f"""❌ 命令已被安全机制阻止
-
-Command: {command}
-Reason: {str(e)}
-
-Solutions:
-1. Set SSH_SECURITY_LEVEL=relaxed in MCP env config
-2. Add SSH_EXTRA_ALLOWED_COMMANDS with the blocked command
-3. Set confirm_dangerous=true in ssh_execute args to bypass (use with caution!)
-
-Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
-                )
-            ]
-    else:
-        # 风险评估和日志记录
-        risk_level, risk_desc = command_validator.get_risk_description(command)
-        ctx.logger.warning(
-            f"Dangerous command execution approved: {command} | "
-            f"Risk: {risk_level.value} - {risk_desc}"
-        )
+    try:
+        command_validator.validate_command(command)
+    except SecurityError as e:
+        ctx.logger.warning("Command rejected by security policy")
+        return [TextContent(type="text", text=f"命令已被安全机制阻止: {e}")]
 
     # Auto-detect background based on the original command before any backup wrapping.
     # This prevents backup prefixes (e.g. mkdir -p) from falsely triggering background mode.
@@ -238,7 +214,7 @@ async def execute_background(
 
     # Validate the base command
     try:
-        command_validator.validate_command(command.split()[0] if command.split() else "")
+        command_validator.validate_command(command)
     except SecurityError as e:
         return [TextContent(type="text", text=f"Security error: {str(e)}")]
 

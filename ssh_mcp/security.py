@@ -47,6 +47,15 @@ class SecurityError(Exception):
 class CommandValidator:
     """命令验证器 - 防止命令注入攻击"""
 
+    # Strict defaults omit interpreters and tools with general execution features.
+    # Explicit operator additions remain possible through the configured allowlist.
+    STRICT_ALLOWED_COMMANDS = {
+        "ls", "pwd", "cat", "head", "tail", "grep", "egrep", "fgrep",
+        "wc", "cut", "sort", "uniq", "tr", "uname", "whoami", "id",
+        "uptime", "ps", "free", "df", "du", "stat", "readlink", "realpath",
+        "echo", "printf", "true", "false",
+    }
+
     # 基础允许的命令白名单（所有模式都允许）
     BASE_ALLOWED_COMMANDS: set[str] = {
         # Shell
@@ -356,6 +365,9 @@ class CommandValidator:
 
     # 危险字符模式（balanced 模式检查）
     DANGEROUS_PATTERNS_BALANCED = [
+        r"&",  # additional commands, including && and background execution
+        r"\n",
+        r"\r",
         r"\|",  # 管道
         r";",  # 命令分隔
         r"\$\(",  # 命令替换
@@ -569,7 +581,11 @@ class CommandValidator:
 
     def _build_allowed_commands(self) -> set[str]:
         """构建允许的命令集合"""
-        allowed = self.BASE_ALLOWED_COMMANDS.copy()
+        allowed = (
+            self.STRICT_ALLOWED_COMMANDS.copy()
+            if self.security_level == SecurityLevel.STRICT
+            else self.BASE_ALLOWED_COMMANDS.copy()
+        )
 
         # 在 relaxed 模式添加扩展命令（兼容性保留，relaxed 实际用黑名单）
         if self.security_level == SecurityLevel.RELAXED:
@@ -968,6 +984,20 @@ def format_backup_prompt(command: str, targets: list[str]) -> str:
 🛑 如不确定，建议先备份；终止操作请直接忽略本次调用。"""
 
 
+def validate_local_path(user_path: str) -> Path:
+    """Confine transfers to a local root, resolving symlinks before use."""
+    if not isinstance(user_path, str) or not user_path.strip() or "\x00" in user_path:
+        raise SecurityError("Invalid local path")
+    base = Path(os.getenv("SSH_LOCAL_BASE_DIR", str(Path.cwd()))).expanduser().resolve()
+    candidate = Path(user_path).expanduser()
+    resolved = (candidate if candidate.is_absolute() else base / candidate).resolve()
+    if not resolved.is_relative_to(base):
+        raise SecurityError(f"Local path is outside SSH_LOCAL_BASE_DIR: {base}")
+    if any(part.lower() in {".ssh", ".aws", ".gnupg"} for part in resolved.parts):
+        raise SecurityError("Local credential directories cannot be transferred")
+    return resolved
+
+
 class PathValidator:
     """路径验证器 - 防止路径遍历攻击"""
 
@@ -1062,7 +1092,7 @@ class PathValidator:
 
         # 1. 检查路径遍历（strict 和 balanced 模式）
         if self.security_level in [SecurityLevel.STRICT, SecurityLevel.BALANCED]:
-            if not str(full_path).startswith(str(self.base_dir)):
+            if not full_path.is_relative_to(self.base_dir):
                 raise SecurityError(
                     "路径遍历攻击被阻止！\n"
                     f"请求路径：{user_path}\n"
@@ -1072,9 +1102,8 @@ class PathValidator:
 
         # 2. 检查禁止路径（strict 和 balanced 模式）
         if self.forbidden_paths:
-            path_str = str(full_path)
             for forbidden in self.forbidden_paths:
-                if path_str.startswith(forbidden):
+                if full_path.is_relative_to(PurePosixPath(forbidden)):
                     raise SecurityError(
                         f"禁止访问敏感路径：{forbidden}\n这是为了保护系统关键文件。"
                     )
