@@ -1,6 +1,6 @@
 {
   "name": "ssh-licco",
-  "version": "2.7.3",
+  "version": "2.8.0",
   "description": "SSH MCP Server - Remote server management via SSH protocol",
   "main": "ssh-licco.js",
   "bin": {

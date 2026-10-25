@@ -123,7 +123,21 @@ Current security level: {os.getenv("SSH_SECURITY_LEVEL", "balanced")}""",
                 ctx.logger.info(
                     f"Prepending backup before deletion: {backup_cmd} | original: {command}"
                 )
-                command = f"{backup_cmd} && {command}"
+                if background:
+                    # Complete the trusted backup before handing the original,
+                    # validated command to the background launcher's policy checks.
+                    session = await ctx.session_manager.get_session(session_id)
+                    if not session:
+                        return [TextContent(type="text", text=f"Session not found: {session_id}")]
+                    backup_result = await session.execute_command(backup_cmd, timeout=timeout)
+                    if backup_result.get("exit_code") != 0:
+                        return [TextContent(
+                            type="text",
+                            text="Backup failed; deletion was not started.\n"
+                                 + backup_result.get("stderr", ""),
+                        )]
+                else:
+                    command = f"{backup_cmd} && {command}"
         else:
             ctx.logger.warning(f"User chose to delete without backup: {command}")
 

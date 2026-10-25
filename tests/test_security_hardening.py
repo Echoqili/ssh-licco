@@ -254,3 +254,29 @@ async def test_remote_copy_rejects_destination_shell_syntax(context, target_path
             },
         )
     context.session_manager.get_session.return_value.execute_command.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backup_exit", [0, 1])
+async def test_background_deletion_backs_up_before_launch(context, backup_exit):
+    session = context.session_manager.get_session.return_value
+    session.execute_command.return_value = {
+        "exit_code": backup_exit, "stdout": "", "stderr": "backup failed" if backup_exit else ""
+    }
+    with (
+        patch("ssh_mcp.handlers.execute.ensure_session", AsyncMock(return_value="s1")),
+        patch("ssh_mcp.handlers.execute.command_validator", CommandValidator()),
+        patch("ssh_mcp.handlers.execute.execute_background", AsyncMock(return_value=[])) as launch,
+    ):
+        result = await handle_execute(context, {
+            "command": "rm -f ./disposable.txt", "background": True,
+            "confirm_dangerous": True, "confirmation_layer": 99, "backup_before_delete": True,
+        })
+    session.execute_command.assert_awaited_once()
+    assert "cp -a ./disposable.txt" in session.execute_command.call_args.args[0]
+    if backup_exit == 0:
+        launch.assert_awaited_once()
+        assert launch.call_args.args[2] == "rm -f ./disposable.txt"
+    else:
+        launch.assert_not_awaited()
+        assert "backup" in result[0].text.lower()

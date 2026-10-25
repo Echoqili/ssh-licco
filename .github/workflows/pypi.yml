@@ -39,6 +39,11 @@ jobs:
       # 防止像 v2.7.0 那样漏了 VERSION / SKILL.md / package.json 导致版本对不上
       run: python sync_version.py --check
 
+    - name: Run release checks
+      run: |
+        python -m pytest tests -q
+        node --test tests/install.test.cjs
+
     - name: Sync docs
       # 仅在非 tag 触发时向 master 回写文档（tag 触发时本地已保证文档同步）
       if: github.ref_type != 'tag'
@@ -105,6 +110,7 @@ jobs:
       if: steps.check-pypi.outputs.skip_publish != 'true'
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
         attestations: false
 
   publish-mcp-registry:

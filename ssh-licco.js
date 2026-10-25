@@ -40,7 +40,7 @@ function diagnosePythonEnvironment() {
             const result = spawnSync(pythonCmd, ['--version'], { 
                 encoding: 'utf8',
                 stdio: 'pipe',
-                shell: process.platform === 'win32'
+                shell: false
             });
             
             if (result.status === 0) {
@@ -80,7 +80,7 @@ function autoInstall() {
     if (!fs.existsSync(VENV_DIR)) {
         const result = spawnSync(pythonCmd, ['-m', 'venv', VENV_DIR], { 
             stdio: 'inherit',
-            shell: process.platform === 'win32'
+            shell: false
         });
         if (result.status !== 0) {
             console.error('❌ Failed to create venv');
@@ -97,12 +97,12 @@ function autoInstall() {
     if (fs.existsSync(path.join(PKG_PATH, 'pyproject.toml'))) {
         installResult = spawnSync(pipPath, ['install', '-e', PKG_PATH], { 
             stdio: 'inherit',
-            shell: process.platform === 'win32'
+            shell: false
         });
     } else {
         installResult = spawnSync(pipPath, ['install', 'ssh-licco'], { 
             stdio: 'inherit',
-            shell: process.platform === 'win32'
+            shell: false
         });
     }
     

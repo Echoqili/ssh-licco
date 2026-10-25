@@ -49,7 +49,7 @@ function diagnosePythonEnvironment() {
             const result = spawnSync(pythonCmd, ['--version'], { 
                 encoding: 'utf8',
                 stdio: 'pipe',
-                shell: process.platform === 'win32'
+                shell: false
             });
             
             if (result.status === 0) {
@@ -92,7 +92,7 @@ function checkAnaconda(pythonCmd) {
         const result = spawnSync(pythonCmd, ['-c', 'import sys; print("anaconda" in sys.version.lower() or "conda" in sys.version.lower() or "miniconda" in sys.version.lower())'], { 
             encoding: 'utf8',
             stdio: 'pipe',
-            shell: process.platform === 'win32'
+            shell: false
         });
         
         if (result.status === 0) {
@@ -107,7 +107,7 @@ function checkAnaconda(pythonCmd) {
         const result = spawnSync(pythonCmd, ['-c', 'import sys; print(sys.version)'], { 
             encoding: 'utf8',
             stdio: 'pipe',
-            shell: process.platform === 'win32'
+            shell: false
         });
         
         if (result.status === 0) {
@@ -165,7 +165,7 @@ function main() {
     
     const venvResult = spawnSync(pythonCmd, ['-m', 'venv', VENV_DIR], { 
         stdio: 'inherit',
-        shell: process.platform === 'win32'
+        shell: false
     });
     
     if (venvResult.status !== 0) {
@@ -187,13 +187,13 @@ function main() {
         console.log('   Installing from source...');
         installResult = spawnSync(pipPath, ['install', '-e', PKG_PATH], { 
             stdio: 'inherit',
-            shell: process.platform === 'win32'
+            shell: false
         });
     } else {
         console.log('   Installing from PyPI...');
         installResult = spawnSync(pipPath, ['install', 'ssh-licco'], { 
             stdio: 'inherit',
-            shell: process.platform === 'win32'
+            shell: false
         });
     }
     
