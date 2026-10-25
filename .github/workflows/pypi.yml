@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      release_ref:
+        description: 'Existing release tag to build (leave empty for current ref)'
+        required: false
+        default: ''
 
 concurrency:
   group: pypi-publish-${{ github.ref }}
@@ -23,7 +28,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        token: ${{ secrets.MCP_GITHUB_TOKEN }}
+        ref: ${{ inputs.release_ref || github.ref }}
     
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -46,11 +51,11 @@ jobs:
 
     - name: Sync docs
       # 仅在非 tag 触发时向 master 回写文档（tag 触发时本地已保证文档同步）
-      if: github.ref_type != 'tag'
+      if: github.ref_type != 'tag' && inputs.release_ref == ''
       run: python scripts/sync_docs.py
 
     - name: Check for changes
-      if: github.ref_type != 'tag'
+      if: github.ref_type != 'tag' && inputs.release_ref == ''
       id: check-changes
       run: |
         git add -u
@@ -61,7 +66,7 @@ jobs:
         fi
 
     - name: Commit and push updates
-      if: github.ref_type != 'tag' && steps.check-changes.outputs.changes == 'true'
+      if: github.ref_type != 'tag' && inputs.release_ref == '' && steps.check-changes.outputs.changes == 'true'
       run: |
         git config --local user.name "github-actions[bot]"
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -122,6 +127,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.release_ref || github.ref }}
     
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -133,8 +140,9 @@ jobs:
         pip install requests
     
     - name: Publish to MCP Registry
+      if: hashFiles('scripts/publish_mcp_registry.py') != ''
       env:
-        GITHUB_TOKEN: ${{ secrets.MCP_GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         python scripts/publish_mcp_registry.py
       continue-on-error: true
