@@ -11,11 +11,12 @@ from enum import Enum
 from pathlib import Path
 
 import paramiko
-from paramiko import AutoAddPolicy, HostKeys, RejectPolicy, SSHClient, WarningPolicy
+from paramiko import SSHClient
 
 from .connection_config import ConnectionConfig
 from .exceptions import ConnectionException
 from .executor import get_executor
+from .host_keys import configure_host_keys
 from .logging_config import get_logger
 
 
@@ -100,29 +101,7 @@ class SSHSession:
     def _connect_sync(self) -> None:
         self.client = SSHClient()
 
-        # 🔒 主机密钥验证策略（修复 MITM 漏洞）
-        if self.config.accept_new_host_key:
-            # ⚠️ 测试模式：自动接受新主机密钥（仅用于开发/测试）
-            self.client.set_missing_host_key_policy(AutoAddPolicy())
-        elif self.config.strict_host_key_checking:
-            # 🔒 严格模式：使用已知主机密钥文件验证
-            host_keys = HostKeys()
-
-            # 优先使用配置的 known_hosts 路径
-            if self.config.known_hosts_path:
-                known_hosts_file = Path(os.path.expanduser(str(self.config.known_hosts_path)))
-            else:
-                # 默认使用 ~/.ssh/known_hosts
-                known_hosts_file = Path.home() / ".ssh" / "known_hosts"
-
-            if known_hosts_file.exists():
-                host_keys.load(str(known_hosts_file))
-
-            self.client.get_host_keys().update(host_keys)
-            self.client.set_missing_host_key_policy(RejectPolicy())
-        else:
-            # 宽松模式：使用警告策略
-            self.client.set_missing_host_key_policy(WarningPolicy())
+        configure_host_keys(self.client, self.config)
 
         connect_kwargs = {
             "hostname": self.config.host,
@@ -394,19 +373,12 @@ class SSHSession:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
 
-        # 🔒 安全验证：本地路径验证（防止路径遍历）
-        try:
-            from .security import SecurityError, path_validator
+        from .security import SecurityError, validate_local_path
 
-            safe_local = path_validator.validate_path(local_path)
-        except (ImportError, SecurityError):
-            # 如果 security 模块不可用或路径验证失败，使用基础安全检查
-            if ".." in local_path or local_path.startswith("~"):
-                return {
-                    "success": False,
-                    "message": "Invalid local path: path traversal detected",
-                    "session_id": self.session_id,
-                }
+        try:
+            local_path = str(validate_local_path(local_path))
+        except SecurityError as e:
+            return {"success": False, "message": str(e), "session_id": self.session_id}
 
         async with self._connect_lock:
             self._last_activity = datetime.now()
@@ -414,12 +386,28 @@ class SSHSession:
                 self._upload_file_sync, local_path, remote_path, timeout=60
             )
 
+    def _safe_sftp_path(self, sftp, remote_path: str) -> str:
+        from .remote_paths import _validate_remote_path
+        from .security import SecurityError, path_validator
+
+        safe, reason = _validate_remote_path(remote_path)
+        if not safe:
+            raise SecurityError(reason)
+        # Canonicalize on the remote host, including relative paths and symlinks.
+        resolved = sftp.normalize(remote_path)
+        safe, reason = _validate_remote_path(resolved)
+        if not safe:
+            raise SecurityError(reason)
+        path_validator.validate_path(resolved)
+        return resolved
+
     def _upload_file_sync(self, local_path: str, remote_path: str) -> dict:
         assert self.client is not None
+        sftp = None
         try:
             sftp = self.client.open_sftp()
+            remote_path = self._safe_sftp_path(sftp, remote_path)
             sftp.put(local_path, remote_path)
-            sftp.close()
             return {
                 "success": True,
                 "message": f"File uploaded: {local_path} -> {remote_path}",
@@ -431,23 +419,20 @@ class SSHSession:
                 "message": f"Upload failed: {str(e)}",
                 "session_id": self.session_id,
             }
+        finally:
+            if sftp is not None:
+                sftp.close()
 
     async def download_file(self, remote_path: str, local_path: str) -> dict:
         if not self.is_connected:
             raise ConnectionError("Not connected to SSH server")
 
-        # 🔒 安全验证：下载目标路径验证（防止写入到禁止目录）
-        try:
-            from .security import SecurityError, path_validator
+        from .security import SecurityError, validate_local_path
 
-            safe_local = path_validator.validate_path(local_path)
-        except (ImportError, SecurityError):
-            if ".." in local_path or local_path.startswith("~"):
-                return {
-                    "success": False,
-                    "message": "Invalid local path: path traversal detected",
-                    "session_id": self.session_id,
-                }
+        try:
+            local_path = str(validate_local_path(local_path))
+        except SecurityError as e:
+            return {"success": False, "message": str(e), "session_id": self.session_id}
 
         async with self._connect_lock:
             self._last_activity = datetime.now()
@@ -457,10 +442,11 @@ class SSHSession:
 
     def _download_file_sync(self, remote_path: str, local_path: str) -> dict:
         assert self.client is not None
+        sftp = None
         try:
             sftp = self.client.open_sftp()
+            remote_path = self._safe_sftp_path(sftp, remote_path)
             sftp.get(remote_path, local_path)
-            sftp.close()
             return {
                 "success": True,
                 "message": f"File downloaded: {remote_path} -> {local_path}",
@@ -472,6 +458,9 @@ class SSHSession:
                 "message": f"Download failed: {str(e)}",
                 "session_id": self.session_id,
             }
+        finally:
+            if sftp is not None:
+                sftp.close()
 
     async def list_directory(self, remote_path: str = ".") -> dict:
         if not self.is_connected:
@@ -482,10 +471,11 @@ class SSHSession:
 
     def _list_directory_sync(self, remote_path: str) -> dict:
         assert self.client is not None
+        sftp = None
         try:
             sftp = self.client.open_sftp()
+            remote_path = self._safe_sftp_path(sftp, remote_path)
             files = sftp.listdir(remote_path)
-            sftp.close()
             return {
                 "success": True,
                 "files": files,
@@ -498,6 +488,9 @@ class SSHSession:
                 "message": f"List failed: {str(e)}",
                 "session_id": self.session_id,
             }
+        finally:
+            if sftp is not None:
+                sftp.close()
 
     async def write_file(self, remote_path: str, content: str, append: bool = False) -> dict:
         """通过 SFTP 写入或追加内容到远程文件"""
@@ -514,6 +507,7 @@ class SSHSession:
         sftp = None
         try:
             sftp = self.client.open_sftp()
+            remote_path = self._safe_sftp_path(sftp, remote_path)
             mode = "a" if append else "w"
             with sftp.open(remote_path, mode) as f:
                 f.write(content)
@@ -549,6 +543,7 @@ class SSHSession:
         sftp = None
         try:
             sftp = self.client.open_sftp()
+            remote_path = self._safe_sftp_path(sftp, remote_path)
             st = sftp.stat(remote_path)
             import stat as stat_mod
 
@@ -592,6 +587,7 @@ class SSHSession:
         sftp = None
         try:
             sftp = self.client.open_sftp()
+            remote_path = self._safe_sftp_path(sftp, remote_path)
             sftp.remove(remote_path)
             return {
                 "success": True,
@@ -624,6 +620,7 @@ class SSHSession:
         sftp = None
         try:
             sftp = self.client.open_sftp()
+            remote_path = self._safe_sftp_path(sftp, remote_path)
             try:
                 sftp.mkdir(remote_path)
             except OSError:

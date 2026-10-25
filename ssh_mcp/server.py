@@ -17,12 +17,10 @@ from mcp.types import (
     ListToolsResult,
     PaginatedRequestParams,
     TextContent,
-    Tool,
 )
 
 from .audit_logger import get_audit_logger
-from .config_manager import ConfigManager, SSHConfig, SSHHost
-from .connection_config import ConnectionConfig
+from .config_manager import ConfigManager, SSHHost
 from .handlers import HANDLERS, schemas
 from .handlers.context import HandlerContext
 from .key_manager import KeyManager
@@ -260,141 +258,9 @@ class SSHMCPServer:
             )
 
     async def _handle_connect(self, args: dict) -> list[TextContent]:
-        """合并 ssh_config + ssh_login + ssh_connect"""
-        host_config = None
-        save_config = args.get("save_config", False)
+        from .handlers.connect import handle_connect
 
-        # Coerce port to int (MCP clients may send it as string "22")
-        port = args.get("port", 22)
-        if isinstance(port, str):
-            try:
-                port = int(port)
-            except (ValueError, TypeError):
-                port = 22
-
-        # Priority 1: user-provided host
-        if args.get("host"):
-            host_config = SSHHost(
-                name="user-server",
-                host=args["host"],
-                port=port,
-                username=args.get("username", "root"),
-                password=args.get("password", ""),
-                timeout=args.get("timeout", 30),
-                keepalive_interval=args.get("keepalive_interval", 30),
-                session_timeout=args.get("session_timeout", 7200)
-            )
-            self._logger.info(f"Using user-provided host: {args['host']}")
-
-        # Priority 2: hosts.json by name
-        if not host_config and args.get("name"):
-            host_config = self.config_manager.get_host_by_name(args["name"])
-            if not host_config:
-                return [TextContent(type="text", text=f"Host '{args['name']}' not found in config/hosts.json")]
-
-        # Priority 3: env vars (fallback)
-        if not host_config and self._env_config and self._env_config.get("host"):
-            host_config = SSHHost(
-                name="env-server",
-                host=self._env_config.get("host", "127.0.0.1"),
-                port=self._env_config.get("port", 22),
-                username=self._env_config.get("username", "root"),
-                password=self._env_config.get("password", ""),
-                timeout=self._env_config.get("timeout", 30),
-                keepalive_interval=self._env_config.get("keepalive_interval", 30),
-                session_timeout=self._env_config.get("session_timeout", 7200),
-                sudo_password=self._env_config.get("sudo_password", ""),
-            )
-            self._logger.info(f"Using environment variable host: {host_config.host}")
-
-        if not host_config:
-            return [TextContent(
-                type="text",
-                text="No host configured. Provide host/name parameters, or set SSH_HOST env var."
-            )]
-
-        if save_config and host_config.password:
-            saved = SSHConfig(
-                host=host_config.host,
-                port=host_config.port,
-                username=host_config.username,
-                password=host_config.password,
-                timeout=host_config.timeout
-            )
-            self.config_manager.save(saved)
-
-        client_type = self._env_config.get("client_type", "paramiko")
-
-        # sudo_password: 优先用 ssh_connect 参数，其次 hosts.json 配置，最后环境变量
-        sudo_password = (
-            args.get("sudo_password")
-            or getattr(host_config, 'sudo_password', '')
-            or os.getenv("SSH_SUDO_PASSWORD", "")
-            or None
-        )
-
-        config = ConnectionConfig(
-            host=host_config.host,
-            port=host_config.port,
-            username=host_config.username,
-            password=host_config.password,
-            auth_method="password" if host_config.password else "private_key",
-            timeout=host_config.timeout,
-            keepalive_interval=getattr(host_config, 'keepalive_interval', 30),
-            session_timeout=getattr(host_config, 'session_timeout', 7200),
-            client_type=client_type,
-            strict_host_key_checking=args.get("strict_host_key_checking", True),
-            known_hosts_path=args.get("known_hosts_path"),
-            accept_new_host_key=args.get("accept_new_host_key", True),
-            private_key_path=Path(args["private_key_path"]) if args.get("private_key_path") else None,
-            passphrase=args.get("passphrase"),
-            sudo_password=sudo_password,
-        )
-
-        try:
-            session_info = await self.session_manager.create_session(config)
-
-            if self._audit:
-                self._audit.log_connect(
-                    username=config.username, host=config.host, port=config.port,
-                    client_type=config.client_type, session_id=session_info.session_id, success=True
-                )
-
-            output = (f"Connected to {session_info.host}:{session_info.port}\n"
-                      f"Session ID: {session_info.session_id}\n"
-                      f"Username: {session_info.username}\n"
-                      f"Connected at: {session_info.connected_at.isoformat()}")
-            if save_config:
-                output += "\nConfig saved for future use."
-
-            command = args.get("command")
-            if command:
-                session = await self.session_manager.get_session(session_info.session_id)
-                result = await session.execute_command(command)
-                output += "\n\n--- Command Output ---\n"
-                output += f"Exit Code: {result['exit_code']}\n"
-                if result["stdout"]:
-                    output += f"\n{result['stdout']}"
-                if result["stderr"]:
-                    output += f"\n--- STDERR ---\n{result['stderr']}"
-
-            return [TextContent(type="text", text=output)]
-        except Exception as e:
-            self._logger.error(f"Connection failed: {e}")
-            if self._audit:
-                self._audit.log_connect(
-                    username=config.username, host=config.host, port=config.port,
-                    client_type=config.client_type, success=False, error_message=str(e)
-                )
-            return [TextContent(
-                type="text",
-                text=f"Connection failed: {str(e)}\n\n"
-                     f"Check:\n"
-                     f"1. Server address and port\n"
-                     f"2. Username and password/key\n"
-                     f"3. Network connectivity\n"
-                     f"4. SSH service is running"
-            )]
+        return await handle_connect(self._ctx, args)
 
     async def _ensure_session(self, args: dict) -> str | None:
         """Ensure an active session exists.
@@ -450,131 +316,9 @@ class SSHMCPServer:
         return None
 
     async def _handle_execute(self, args: dict) -> list[TextContent]:
-        """合并 ssh_execute + ssh_background_task + ssh_fallback_execute + ssh_execute_wait + ssh_task_status"""
-        from .security import SecurityError, command_validator, path_validator
+        from .handlers.execute import handle_execute
 
-        command = args["command"]
-        timeout = args.get("timeout", 120)  # 默认 120s，避免 docker pull/pg_basebackup 等长任务超时
-        background = args.get("background", None)
-
-        # Resolve session via session_id / name / host / env fallback
-        session_id = await self._ensure_session(args)
-        if not session_id:
-            return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
-
-        # Security validation with multi-layer confirmation
-        # confirm_dangerous=True 时跳过安全检查（用户明确确认执行危险操作）
-        confirm_dangerous = args.get("confirm_dangerous", False)
-        confirmation_layer = args.get("confirmation_layer", 1)  # 当前确认层级
-        
-        # 多层安全确认检查
-        can_execute, confirmation_message = command_validator.check_multi_layer_confirmation(
-            command, confirm_dangerous, confirmation_layer
-        )
-        
-        if not can_execute:
-            self._logger.warning(f"Command blocked by multi-layer confirmation: {command}")
-            return [TextContent(
-                type="text",
-                text=f"""❌ 操作已被安全机制阻止
-
-{confirmation_message}
-
-🛡️ 当前安全级别: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}
-🔍 风险评估: {command_validator.assess_risk_level(command).value}
-📊 需要确认层级: {command_validator.get_required_confirmations(command)}
-
-💡 提示：
-- 对于危险操作，系统要求多层确认以确保安全
-- 请仔细阅读警告信息，确保完全理解操作后果
-- 如确需执行，请设置 confirm_dangerous=true 并增加 confirmation_layer 参数
-"""
-            )]
-        
-        # 如果通过了多层确认，记录日志
-        if confirmation_message:
-            self._logger.info(f"Multi-layer confirmation passed: {confirmation_message}")
-        
-        # 原有的安全检查逻辑（保持兼容性）
-        if not confirm_dangerous:
-            try:
-                command_validator.validate_command(command)
-            except SecurityError as e:
-                self._logger.error(f"Command blocked: {e}")
-                return [TextContent(
-                    type="text",
-                    text=f"""❌ 命令已被安全机制阻止
-
-Command: {command}
-Reason: {str(e)}
-
-Solutions:
-1. Set SSH_SECURITY_LEVEL=relaxed in MCP env config
-2. Add SSH_EXTRA_ALLOWED_COMMANDS with the blocked command
-3. Set confirm_dangerous=true in ssh_execute args to bypass (use with caution!)
-
-Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
-                )]
-        else:
-            # 风险评估和日志记录
-            risk_level, risk_desc = command_validator.get_risk_description(command)
-            self._logger.warning(f"Dangerous command execution approved: {command} | Risk: {risk_level.value} - {risk_desc}")
-
-        # Auto-detect background if not specified
-        if background is None:
-            background = self._should_run_background(command)
-
-        if background:
-            return await self._execute_background(session_id, command, args, timeout)
-
-        # Normal execution
-        session = await self.session_manager.get_session(session_id)
-        if not session:
-            return [TextContent(type="text", text=f"Session not found: {session_id}")]
-
-        # Sudo 包装：use_sudo=True 时用 sudo -S 执行，密码通过 stdin 传递
-        # get_pty=True 分配伪终端，解决远端 sudoers 配置 requiretty 的问题
-        stdin_data = None
-        get_pty = False
-        use_sudo = args.get("use_sudo", False)
-        if use_sudo:
-            sudo_pwd = getattr(session.config, 'sudo_password', None)
-            if not sudo_pwd:
-                return [TextContent(type="text", text=(
-                    "use_sudo=True but no sudo_password configured.\n"
-                    "Please set sudo_password in ssh_connect or SSH_SUDO_PASSWORD env var."
-                ))]
-            # sudo -S 从 stdin 读密码，-p '' 抑制提示符，bash -c 包装原始命令
-            command = f"sudo -S -p '' bash -c {shlex.quote(command)}"
-            stdin_data = sudo_pwd + "\n"
-            get_pty = True
-
-        result = await session.execute_command(command, timeout=timeout, stdin_data=stdin_data, get_pty=get_pty)
-
-        if self._audit:
-            import time
-            session_info = await self.session_manager.get_session(session_id)
-            self._audit.log_command(
-                username=session_info.config.username if session_info else "unknown",
-                host=session_info.config.host if session_info else "unknown",
-                command=command,
-                return_code=result.get('exit_code', -1),
-                stdout_length=len(result.get('stdout', '')),
-                stderr_length=len(result.get('stderr', '')),
-                session_id=session_id,
-                execution_time_ms=0
-            )
-
-        # 统一输出格式：包含 session 标识，便于确认命令在哪个主机执行
-        # 格式：Exit Code / Session / STDOUT / STDERR，各区块用 --- 分隔
-        output = f"Exit Code: {result['exit_code']}\n"
-        output += f"Session: {session_id} ({session.config.host}:{session.config.port})\n"
-        if result["stdout"]:
-            output += f"\n--- STDOUT ---\n{result['stdout']}"
-        if result["stderr"]:
-            output += f"\n--- STDERR ---\n{result['stderr']}"
-
-        return [TextContent(type="text", text=output)]
+        return await handle_execute(self._ctx, args)
 
     async def _execute_background(self, session_id: str, command: str, args: dict, timeout: int) -> list[TextContent]:
         """Execute a command as a background task with proper nohup + bash -c wrapping"""
@@ -588,7 +332,7 @@ Current security level: {os.getenv('SSH_SECURITY_LEVEL', 'balanced')}"""
 
         # Validate the base command
         try:
-            command_validator.validate_command(command.split()[0] if command.split() else "")
+            command_validator.validate_command(command)
         except SecurityError as e:
             return [TextContent(type="text", text=f"Security error: {str(e)}")]
 
@@ -1116,122 +860,9 @@ Use ssh_execute to check: cat {log_file}
         return [TextContent(type="text", text=output)]
 
     async def _handle_file_transfer(self, args: dict) -> list[TextContent]:
-        session_id = await self._ensure_session(args)
-        if not session_id:
-            return [TextContent(type="text", text="No session_id, name, host, or SSH_HOST env var configured.")]
-        session = await self.session_manager.get_session(session_id)
-        if not session:
-            return [TextContent(type="text", text=f"Session not found: {session_id}")]
+        from .handlers.file_transfer import handle_file_transfer
 
-        direction = args.get("direction", "upload")
-        local_path = args.get("local_path", "")
-        remote_path = args.get("remote_path", "")
-        content = args.get("content", "")
-
-        if direction == "upload":
-            if not local_path or not remote_path:
-                return [TextContent(type="text", text="upload requires local_path and remote_path")]
-            result = await session.upload_file(local_path, remote_path)
-        elif direction == "download":
-            if not local_path or not remote_path:
-                return [TextContent(type="text", text="download requires local_path and remote_path")]
-            result = await session.download_file(remote_path, local_path)
-        elif direction == "list":
-            result = await session.list_directory(remote_path or ".")
-        elif direction == "write":
-            if not remote_path:
-                return [TextContent(type="text", text="write requires remote_path")]
-            result = await session.write_file(remote_path, content, append=False)
-        elif direction == "append":
-            if not remote_path:
-                return [TextContent(type="text", text="append requires remote_path")]
-            result = await session.write_file(remote_path, content, append=True)
-        elif direction == "delete":
-            if not remote_path:
-                return [TextContent(type="text", text="delete requires remote_path")]
-            result = await session.delete_file(remote_path)
-        elif direction == "mkdir":
-            if not remote_path:
-                return [TextContent(type="text", text="mkdir requires remote_path")]
-            result = await session.make_dir(remote_path)
-        elif direction == "stat":
-            if not remote_path:
-                return [TextContent(type="text", text="stat requires remote_path")]
-            result = await session.stat_file(remote_path)
-        elif direction == "remote_copy":
-            # 服务器到服务器直接传输，避免本地中转
-            import re
-            target_host = args.get("target_host", "")
-            target_port = args.get("target_port", 22)
-            target_user = args.get("target_user", "root")
-            target_path = args.get("target_path", "")
-            target_password = args.get("target_password", "")
-            use_rsync = args.get("use_rsync", False)
-
-            if not target_host or not target_path or not remote_path:
-                return [TextContent(type="text", text="remote_copy requires remote_path, target_host, and target_path")]
-
-            # 校验 host/user 不含 shell 元字符
-            if not re.match(r'^[a-zA-Z0-9._-]+$', str(target_host)):
-                return [TextContent(type="text", text=f"Invalid target_host: {target_host}")]
-            if not re.match(r'^[a-zA-Z0-9._-]+$', str(target_user)):
-                return [TextContent(type="text", text=f"Invalid target_user: {target_user}")]
-
-            source = shlex.quote(remote_path)
-            target = f"{target_user}@{target_host}:{shlex.quote(target_path)}"
-
-            if use_rsync:
-                base_cmd = f"rsync -avz --progress -e 'ssh -p {target_port} -o StrictHostKeyChecking=no'"
-            else:
-                base_cmd = f"scp -P {target_port} -o StrictHostKeyChecking=no -r"
-
-            if target_password:
-                transfer_cmd = f"sshpass -p {shlex.quote(target_password)} {base_cmd} {source} {target}"
-            else:
-                transfer_cmd = f"{base_cmd} {source} {target}"
-
-            # 在远端执行传输命令，超时 5 分钟
-            result = await session.execute_command(transfer_cmd, timeout=300)
-
-            output = f"Remote Copy: {remote_path} -> {target_host}:{target_path}\n\n"
-            output += f"Exit Code: {result.get('exit_code', -1)}\n"
-            if result.get("stdout"):
-                output += f"--- STDOUT ---\n{result['stdout']}\n"
-            if result.get("stderr"):
-                output += f"--- STDERR ---\n{result['stderr']}\n"
-
-            if result.get("exit_code") == 0:
-                output = "✅ " + output
-            else:
-                output = "❌ " + output
-                if "sshpass: command not found" in result.get("stderr", ""):
-                    output += "\n💡 Install sshpass on the remote server: apt install sshpass"
-                if "Permission denied" in result.get("stderr", ""):
-                    output += "\n💡 Ensure SSH key is configured or provide target_password."
-
-            return [TextContent(type="text", text=output)]
-        else:
-            return [TextContent(type="text", text=f"Unknown direction: {direction}")]
-
-        if result.get("success"):
-            if direction == "stat":
-                ftype = "dir" if result.get("is_dir") else "file" if result.get("is_file") else "link" if result.get("is_link") else "unknown"
-                output = (f"📊 Stat: {result.get('path')}\n"
-                          f"  Size: {result.get('size')} bytes\n"
-                          f"  Mode: {result.get('mode')}\n"
-                          f"  Type: {ftype}\n"
-                          f"  mtime: {result.get('mtime')}\n"
-                          f"  atime: {result.get('atime')}")
-            elif "files" in result:
-                output = f"📁 Files in {result.get('path', '.')}:\n"
-                for f in result["files"]:
-                    output += f"  - {f}\n"
-            else:
-                output = f"✅ {result.get('message', 'Success')}"
-        else:
-            output = f"❌ {result.get('message', 'Failed')}"
-
-        return [TextContent(type="text", text=output)]
+        return await handle_file_transfer(self._ctx, args)
 
     async def _handle_host(self, args: dict) -> list[TextContent]:
         """合并 ssh_list_hosts + ssh_add_host + ssh_remove_host"""

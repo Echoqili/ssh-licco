@@ -108,7 +108,7 @@ async def handle_connect(ctx: HandlerContext, args: dict) -> list[TextContent]:
             client_type=client_type,
             strict_host_key_checking=args.get("strict_host_key_checking", True),
             known_hosts_path=args.get("known_hosts_path"),
-            accept_new_host_key=args.get("accept_new_host_key", True),
+            accept_new_host_key=args.get("accept_new_host_key", False),
             private_key_path=private_key_path,
             private_key_material=None,
             passphrase=args.get("passphrase"),
