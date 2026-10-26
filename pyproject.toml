@@ -33,6 +33,7 @@ Homepage = "https://github.com/Echoqili/ssh-licco"
 Repository = "https://github.com/Echoqili/ssh-licco"
 [project.optional-dependencies]
 dev = [
+    "requests",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",

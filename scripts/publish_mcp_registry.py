@@ -10,7 +10,7 @@
 import requests
 import os
 import json
-import time
+import re
 
 # 配置
 PYPI_PACKAGE_NAME = "ssh-licco"
@@ -38,7 +38,6 @@ def login_registry():
         print("[ERROR] GITHUB_TOKEN 环境变量为空！")
         return None
     
-    print(f"[DEBUG] GITHUB_TOKEN 长度: {len(GITHUB_TOKEN)}")
     
     try:
         response = requests.post(
@@ -48,26 +47,23 @@ def login_registry():
         )
         
         print(f"[DEBUG] 登录 API 响应: status={response.status_code}")
-        print(f"[DEBUG] 登录 API 响应体: {response.text[:500]}")
         
         if response.status_code == 200:
             data = response.json()
             token = data.get('registry_token') or data.get('access_token')
             print(f"[DEBUG] 解析到 registry_token: {'有值' if token else 'None'}")
             if token:
-                print(f"[DEBUG] token 长度: {len(token)}")
                 print("[OK] 登录成功！")
                 return token
             else:
-                print("[ERROR] 登录响应 200 但没有有效 token！完整响应:")
-                print(json.dumps(data, indent=2))
+                print("[ERROR] 登录响应没有有效 token，停止发布")
                 return None
         else:
             print(f"[ERROR] 登录 API 返回非 200: {response.status_code}")
             return None
             
     except Exception as e:
-        print(f"[ERROR] 登录请求异常: {e}")
+        print(f"[ERROR] 登录请求异常: {type(e).__name__}")
         return None
 
 def build_publish_data(version):
@@ -129,8 +125,9 @@ def build_publish_data(version):
 def publish_to_registry(access_token):
     """发布到 MCP Registry"""
     version = get_version()
-    if not version:
-        version = "1.1.7"
+    if not version or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        print("[ERROR] 无有效发布版本，停止发布")
+        return False
     
     print(f"[DEBUG] 准备发布 {SERVER_NAME} v{version}")
     
@@ -154,7 +151,6 @@ def publish_to_registry(access_token):
         )
         
         print(f"[DEBUG] 发布 API 响应: status={response.status_code}")
-        print(f"[DEBUG] 发布 API 响应体: {response.text[:1000]}")
         
         if response.status_code == 200:
             print(f"[OK] 发布成功！")
@@ -162,15 +158,10 @@ def publish_to_registry(access_token):
             return True
         else:
             print(f"[ERROR] 发布失败: HTTP {response.status_code}")
-            try:
-                error_data = response.json()
-                print(f"[ERROR] 错误详情: {json.dumps(error_data, indent=2)}")
-            except:
-                print(f"[ERROR] 响应文本: {response.text}")
             return False
             
     except Exception as e:
-        print(f"[ERROR] 发布请求异常: {e}")
+        print(f"[ERROR] 发布请求异常: {type(e).__name__}")
         return False
 
 def main():

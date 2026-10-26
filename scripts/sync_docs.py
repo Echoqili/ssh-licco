@@ -49,6 +49,8 @@ def get_test_summary() -> str:
         raise RuntimeError("找不到 pytest，请先安装测试依赖")
 
     output = result.stdout + "\n" + result.stderr
+    if result.returncode != 0:
+        raise RuntimeError(f"测试失败，停止文档同步：\n{output}")
     # pytest 输出示例：
     #   "409 passed, 0 skipped, 2 failed in 1.53s"
     #   "409 passed, 2 warnings in 1.53s"  (无 skipped 时省略)

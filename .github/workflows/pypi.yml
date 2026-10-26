@@ -1,148 +1,177 @@
-name: Publish to PyPI & MCP Registry
+name: Publish to PyPI & GitHub Release
+run-name: Release ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_ref }} (${{ github.event_name == 'push' || inputs.publish }} publish)
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       release_ref:
-        description: 'Existing release tag to build (leave empty for current ref)'
-        required: false
-        default: ''
+        description: 'Existing immutable vX.Y.Z tag to validate or publish'
+        required: true
+        type: string
+      publish:
+        description: 'Upload missing PyPI files and complete GitHub Release (false = validation only)'
+        type: boolean
+        default: false
+      publish_registry:
+        description: 'Also attempt MCP Registry publication (requires registry authorization)'
+        type: boolean
+        default: false
 
+permissions:
+  contents: read
 concurrency:
-  group: pypi-publish-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-${{ github.ref_type == 'tag' && github.ref_name || inputs.release_ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_ref }}
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
 
 jobs:
-  update-docs-and-publish:
+  package:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write
-    outputs:
-      changes_detected: ${{ steps.check-changes.outputs.changes }}
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        ref: ${{ inputs.release_ref || github.ref }}
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    
-    - name: Install dependencies
-      run: |
-        pip install build twine
-        pip install -e ".[dev]"
-
-    - name: Verify version consistency
-      # 防止像 v2.7.0 那样漏了 VERSION / SKILL.md / package.json 导致版本对不上
-      run: python sync_version.py --check
-
-    - name: Run release checks
-      run: |
-        python -m pytest tests -q
-        node --test tests/install.test.cjs
-
-    - name: Sync docs
-      # 仅在非 tag 触发时向 master 回写文档（tag 触发时本地已保证文档同步）
-      if: github.ref_type != 'tag' && inputs.release_ref == ''
-      run: python scripts/sync_docs.py
-
-    - name: Check for changes
-      if: github.ref_type != 'tag' && inputs.release_ref == ''
-      id: check-changes
-      run: |
-        git add -u
-        if git diff --staged --quiet; then
-          echo "changes=false" >> $GITHUB_OUTPUT
-        else
-          echo "changes=true" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Commit and push updates
-      if: github.ref_type != 'tag' && inputs.release_ref == '' && steps.check-changes.outputs.changes == 'true'
-      run: |
-        git config --local user.name "github-actions[bot]"
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git checkout master
-        git commit -m "chore: update documentation for release"
-        git pull origin master --rebase
-        git push origin master
-
-    - name: Build package
-      run: python -m build
-    
-    - name: Check PyPI version
-      id: check-pypi
-      run: |
-        VERSION=$(python -c "from pathlib import Path; print(Path('VERSION').read_text().strip())")
-        echo "Checking PyPI for version $VERSION..."
-
-        # 方法1: PyPI JSON API（带重试，避免缓存/网络波动）
-        HTTP_CODE=""
-        for i in 1 2 3; do
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://pypi.org/pypi/ssh-licco/$VERSION/json")
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "skip_publish=true" >> $GITHUB_OUTPUT
-            echo "Version $VERSION already exists on PyPI, skipping publish."
-            exit 0
-          fi
-          if [ "$HTTP_CODE" = "404" ]; then
-            break
-          fi
-          echo "Attempt $i returned HTTP $HTTP_CODE, retrying..."
-          sleep 3
-        done
-
-        # 方法2: pip index versions 作为交叉验证
-        LATEST=$(pip index versions ssh-licco 2>/dev/null | head -n 1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
-        if [ "$LATEST" = "$VERSION" ]; then
-          echo "skip_publish=true" >> $GITHUB_OUTPUT
-          echo "Version $VERSION found via pip index, skipping publish."
-          exit 0
-        fi
-
-        echo "skip_publish=false" >> $GITHUB_OUTPUT
-        echo "Version $VERSION not found on PyPI, will publish."
-
-    - name: Publish to PyPI
-      if: steps.check-pypi.outputs.skip_publish != 'true'
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
-        attestations: false
-
-  publish-mcp-registry:
-    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
-    needs: update-docs-and-publish
-    
+    defaults:
+      run:
+        working-directory: source
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      sha: ${{ steps.plan.outputs.sha }}
+      version: ${{ steps.plan.outputs.version }}
+      artifact: release-assets-${{ steps.plan.outputs.version }}
     steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: ${{ inputs.release_ref || github.ref }}
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    
-    - name: Install dependencies
-      run: |
-        pip install requests
-    
-    - name: Publish to MCP Registry
-      if: hashFiles('scripts/publish_mcp_registry.py') != ''
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: |
-        python scripts/publish_mcp_registry.py
-      continue-on-error: true
+      - name: Check out release tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          path: release-control
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22'
+      - name: Resolve immutable tag
+        id: plan
+        working-directory: release-control
+        run: python scripts/release_checks.py plan
+      - name: Check out release source
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ steps.plan.outputs.sha }}
+          path: source
+          persist-credentials: false
+      - name: Verify tag and all version sources
+        run: |
+          python ../release-control/scripts/release_checks.py check-tag
+          python sync_version.py --check
+      - name: Install build and test tools
+        run: |
+          python -m pip install --upgrade build twine
+          python -m pip install -e '.[dev]'
+      - name: Test release tooling
+        working-directory: release-control
+        run: python -m pytest tests/test_release_checks.py tests/test_publish_registry.py -q
+      - name: Run release regression tests
+        run: |
+          python -m pytest tests -q
+          node --test tests/install.test.cjs
+      - name: Build and validate distributions
+        run: |
+          python -m build
+          python -m twine check dist/*
+          mkdir -p release-assets
+          npm pack --pack-destination release-assets
+          cp dist/*.whl dist/*.tar.gz release-assets/
+      - name: Verify wheel in an isolated environment
+        run: |
+          python -m venv "$RUNNER_TEMP/local-wheel"
+          "$RUNNER_TEMP/local-wheel/bin/python" -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/local-wheel/bin/python" "$GITHUB_WORKSPACE/release-control/scripts/release_checks.py" installed --source "$GITHUB_WORKSPACE/source"
+      - name: Query PyPI and stage only missing files
+        id: pypi
+        run: python ../release-control/scripts/release_checks.py stage
+      - name: Publish missing distributions to PyPI
+        if: (github.event_name == 'push' || inputs.publish) && steps.pypi.outputs.upload == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: source/publish-dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
+      - name: Verify public PyPI installation against release source
+        if: github.event_name == 'push' || inputs.publish
+        run: |
+          python ../release-control/scripts/release_checks.py verify
+          python -m venv "$RUNNER_TEMP/public-wheel"
+          "$RUNNER_TEMP/public-wheel/bin/python" -m pip install --index-url https://pypi.org/simple "ssh-licco==${RELEASE_TAG#v}"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/public-wheel/bin/python" "$GITHUB_WORKSPACE/release-control/scripts/release_checks.py" installed --source "$GITHUB_WORKSPACE/source"
+      - name: Save verified release assets
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-assets-${{ steps.plan.outputs.version }}
+          path: source/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish run summary
+        if: always()
+        working-directory: ${{ github.workspace }}
+        env:
+          RESULT: ${{ job.status }}
+          SOURCE_SHA: ${{ steps.plan.outputs.sha }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+          MISSING: ${{ steps.pypi.outputs.missing_files }}
+        run: |
+          {
+            echo '## Release verification'
+            printf 'Tag: `%s`\n\nSource commit: `%s`\n\n' "$RELEASE_TAG" "$SOURCE_SHA"
+            printf 'Result: **%s**; publish requested: **%s**; missing PyPI files: **%s**\n' "$RESULT" "$PUBLISH" "$MISSING"
+            echo 'Validation-only runs do not upload to PyPI, create releases, or publish to MCP Registry.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  github-release:
+    needs: package
+    if: github.event_name == 'push' || inputs.publish
+    permissions:
+      contents: write
+    uses: ./.github/workflows/auto-release.yml
+    with:
+      tag: ${{ needs.package.outputs.tag }}
+      sha: ${{ needs.package.outputs.sha }}
+      artifact: ${{ needs.package.outputs.artifact }}
+
+  publish-mcp-registry:
+    needs: [package, github-release]
+    if: inputs.publish_registry && inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.package.outputs.sha }}
+          path: source
+          persist-credentials: false
+      - name: Check out current registry tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          path: release-control
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install requests
+      - name: Publish to MCP Registry
+        working-directory: source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python ../release-control/scripts/publish_mcp_registry.py

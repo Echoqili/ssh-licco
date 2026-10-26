@@ -158,10 +158,15 @@ python sync_version.py 0.5.6
 - `VERSION` - Backup
 
 ### Release Process
-1. Update version: `python sync_version.py x.x.x`
-2. Build: `python -m build`
-3. Upload: `python -m twine upload dist/*`
-4. Create GitHub Release: `git tag vx.x.x && git push origin vx.x.x`
+
+1. Prepare on a separate branch: `python sync_version.py x.y.z --no-commit --no-tag`.
+2. Run Python/Node tests and the version check, then merge the reviewed change.
+3. Push the matching `vX.Y.Z` tag to trigger the existing release workflow.
+4. PyPI upload and public installation checks must pass before GitHub Release creation.
+5. For recovery, dispatch the current workflow with the existing tag; never move old tags.
+
+See [release and recovery instructions](../../RELEASING.md). Manual dispatch defaults to
+validation only. npm registry publication is not required.
 
 ## MCP Tools (7 tools, consolidated from 17)
 
